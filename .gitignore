@@ -1,0 +1,8 @@
+.DS_Store
+Thumbs.db
+.clasp.json
+.clasprc.json
+node_modules/
+*.log
+*_Staging_Backup_*.json
+*_EOD_Report_*.csv
