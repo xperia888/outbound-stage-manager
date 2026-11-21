@@ -24,32 +24,31 @@ function decodeHtmlAttr(str) {
 function createFakeAppsScript() {
     const calls = [];
     const responses = { saveBoardState: [], loadBoardState: [], logScanEvents: [] };
+    const respond = (fn, args) => {
+        if (fn === 'saveBoardState') return responses.saveBoardState.shift() || { ok: true, updatedAt: `t-save-${calls.length}` };
+        if (fn === 'loadBoardState') return responses.loadBoardState.shift() || { ok: true, stateJson: null, updatedAt: null };
+        if (fn === 'logScanEvents') return responses.logScanEvents.shift() || { ok: true, loggedIds: args[0].map(e => e.id) };
+        return { ok: false, error: 'unknown' };
+    };
     const makeRunner = () => {
         let onSuccess = () => {};
         const runner = {
             withSuccessHandler(fn) { onSuccess = fn; return runner; },
             withFailureHandler() { return runner; },
-            saveBoardState(...args) {
-                calls.push({ fn: 'saveBoardState', args });
-                onSuccess(responses.saveBoardState.shift() || { ok: true, updatedAt: `t-save-${calls.length}` });
-            },
-            loadBoardState(...args) {
-                calls.push({ fn: 'loadBoardState', args });
-                onSuccess(responses.loadBoardState.shift() || { ok: true, stateJson: null, updatedAt: null });
-            },
-            logScanEvents(events) {
-                calls.push({ fn: 'logScanEvents', args: [JSON.parse(JSON.stringify(events))] });
-                onSuccess(responses.logScanEvents.shift() || { ok: true, loggedIds: events.map(e => e.id) });
+            api(request) {
+                const { fn, args, key } = JSON.parse(JSON.stringify(request));
+                calls.push({ fn, args, key });
+                onSuccess(respond(fn, args));
             }
         };
         return runner;
     };
     const google = { script: {} };
     Object.defineProperty(google.script, 'run', { get: makeRunner });
-    return { google, calls, responses };
+    return { google, calls, responses, respond };
 }
 
-function loadApp({ withAppsScript = false } = {}) {
+function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl = '', fetchImpl = null } = {}) {
     const timers = [];
     const storage = () => {
         const data = new Map();
@@ -79,10 +78,15 @@ function loadApp({ withAppsScript = false } = {}) {
         JSON, Math, Date, Map, Set, Array, Object, String, Number, Boolean, Promise, Error
     };
     ctx.window = ctx;
+    if (accessCode) ctx.localStorage.setItem('outbound_access_code_v2', accessCode);
+    if (fetchImpl) ctx.fetch = fetchImpl;
     const fake = createFakeAppsScript();
     if (withAppsScript) ctx.google = fake.google;
     vm.createContext(ctx);
-    vm.runInContext(appScript, ctx);
+    const script = cloudApiUrl
+        ? appScript.replace("const CLOUD_API_URL = '';", `const CLOUD_API_URL = ${JSON.stringify(cloudApiUrl)};`)
+        : appScript;
+    vm.runInContext(script, ctx);
     const run = code => vm.runInContext(code, ctx);
     const flushTimers = () => { while (timers.length) timers.shift().fn(); };
     return { ctx, run, flushTimers, fake };
@@ -203,13 +207,14 @@ test('scan log: nothing is queued in Local Mode', () => {
     assert.equal(run('scanLogQueue.length'), 0);
 });
 
-function loadCodeGs() {
+function loadCodeGs({ accessCode = 'secret-1' } = {}) {
     const code = readFileSync(new URL('../Code.gs', import.meta.url), 'utf8');
     const sheets = new Map();
     const makeSheet = () => {
         const rows = [];
         const range = (r, c, nr = 1, nc = 1) => ({
             setValues(vals) { vals.forEach((v, i) => { rows[r - 1 + i] = v; }); return this; },
+            setValue(v) { (rows[r - 1] = rows[r - 1] || [])[c - 1] = v; return this; },
             getValue() { return (rows[r - 1] || [])[c - 1] ?? ''; },
             getValues() { return Array.from({ length: nr }, (_, i) => (rows[r - 1 + i] || []).slice(c - 1, c - 1 + nc)); },
             setNumberFormat() { return this; },
@@ -218,7 +223,14 @@ function loadCodeGs() {
         });
         return {
             rows,
-            getRange(a, c, nr, nc) { return typeof a === 'string' ? range(1, 1) : range(a, c, nr, nc); },
+            getRange(a, c, nr, nc) {
+                if (typeof a !== 'string') return range(a, c, nr, nc);
+                const m = /^([A-Z])(\d+)(?::([A-Z])(\d+))?$/.exec(a);
+                if (!m) return range(1, 1); // whole-column refs like 'A:A' (formatting only)
+                const col = m[1].charCodeAt(0) - 64, row = Number(m[2]);
+                const ncols = m[3] ? m[3].charCodeAt(0) - 64 - col + 1 : 1;
+                return range(row, col, 1, ncols);
+            },
             getLastRow() { return rows.length; },
             setFrozenRows() {}
         };
@@ -240,6 +252,11 @@ function loadCodeGs() {
             })
         },
         Session: { getActiveUser: () => ({ getEmail: () => 'lead@example.com' }) },
+        PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k === 'ACCESS_CODE' ? accessCode : null) }) },
+        ContentService: {
+            MimeType: { JSON: 'json' },
+            createTextOutput: text => ({ text, setMimeType() { return this; } })
+        },
         HtmlService: {},
         Date, JSON, Number, String, Array, Object
     };
@@ -252,12 +269,13 @@ test('Code.gs logScanEvents writes one row per event and skips retried duplicate
     const { ctx, sheets } = loadCodeGs();
     const evt = (id, action) => ({ id, time: 1763700000000, action, slp: '00884101', orderNumber: 'SO-1', toLane: 'S51' });
 
-    const first = ctx.logScanEvents([evt('e1', 'SCAN'), evt('e2', 'MOVE')]);
+    const log = events => ctx.api({ fn: 'logScanEvents', args: [events], key: 'secret-1' });
+    const first = log([evt('e1', 'SCAN'), evt('e2', 'MOVE')]);
     assert.equal(first.ok, true);
     assert.deepEqual([...first.loggedIds], ['e1', 'e2']);
 
     // Retry of e2 (response was lost) plus a new event
-    const second = ctx.logScanEvents([evt('e2', 'MOVE'), evt('e3', 'SHIP')]);
+    const second = log([evt('e2', 'MOVE'), evt('e3', 'SHIP')]);
     assert.deepEqual([...second.loggedIds], ['e2', 'e3'], 'duplicate is confirmed so the page can drop it');
 
     const rows = sheets.get('Scan Log').rows;
@@ -266,4 +284,55 @@ test('Code.gs logScanEvents writes one row per event and skips retried duplicate
     assert.deepEqual(rows.slice(1).map(r => r[12]), ['e1', 'e2', 'e3']);
     assert.equal(rows[1][2], '00884101', 'SLP kept as text');
     assert.equal(rows[1][11], 'lead@example.com');
+});
+
+test('Code.gs api() requires the access code and only exposes the three board functions', () => {
+    const { ctx } = loadCodeGs();
+    assert.equal(ctx.api({ fn: 'loadBoardState', args: [], key: 'wrong' }).unauthorized, true);
+    assert.equal(ctx.api({ fn: 'loadBoardState', args: [] }).unauthorized, true);
+    assert.equal(ctx.api({ fn: 'loadBoardState', args: [], key: 'secret-1' }).ok, true);
+    assert.equal(ctx.api({ fn: 'getStateSheet_', args: [], key: 'secret-1' }).ok, false);
+
+    const viaPost = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ fn: 'loadBoardState', args: [], key: 'secret-1' }) } }).text);
+    assert.equal(viaPost.ok, true, 'GitHub Pages POST reaches the same api()');
+
+    const { ctx: unset } = loadCodeGs({ accessCode: null });
+    const res = unset.api({ fn: 'loadBoardState', args: [], key: '' });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /ACCESS_CODE/);
+});
+
+test('GitHub Pages copy syncs through CLOUD_API_URL with the access code', async () => {
+    const posts = [];
+    const fakeServer = createFakeAppsScript();
+    const fetchImpl = async (url, opts) => {
+        const req = JSON.parse(opts.body);
+        posts.push({ url, contentType: opts.headers['Content-Type'], ...req });
+        return { json: async () => fakeServer.respond(req.fn, req.args) };
+    };
+    const { run } = loadApp({ cloudApiUrl: 'https://script.google.com/macros/s/ABC/exec', fetchImpl });
+    assert.equal(run('isAppsScriptAvailable()'), true);
+
+    run(`addSlpToStaging({ slp: 'SLP-PAGES', orderNumber: 'SO-5', columnId: 'col-s51' })`);
+    run('executeCloudSaveNow()');
+    await new Promise(r => setTimeout(r, 10));
+
+    const save = posts.find(p => p.fn === 'saveBoardState');
+    assert.ok(save, 'board saved over fetch');
+    assert.equal(save.url, 'https://script.google.com/macros/s/ABC/exec');
+    assert.equal(save.key, 'test-code');
+    assert.match(save.contentType, /^text\/plain/, 'text/plain avoids a CORS preflight');
+    assert.ok(JSON.parse(save.args[0]).pallets.some(p => p.slp === 'SLP-PAGES'));
+    assert.equal(run('lastCloudUpdatedAt') !== null, true);
+});
+
+test('no access code: the page waits instead of calling the server; a wrong code is cleared', () => {
+    const { run, fake } = loadApp({ withAppsScript: true, accessCode: '' });
+    run('executeCloudSaveNow()');
+    assert.equal(fake.calls.length, 0, 'no request without a code');
+
+    const second = loadApp({ withAppsScript: true, accessCode: 'old-code' });
+    second.fake.responses.loadBoardState.push({ ok: false, unauthorized: true });
+    second.run(`loadState({ isBackgroundPoll: true, silent: true })`);
+    assert.equal(second.run(`safeStorageGet(ACCESS_CODE_KEY)`), '', 'wrong code forgotten so the device asks again');
 });
