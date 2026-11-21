@@ -15,6 +15,12 @@ const STATE_SHEET = 'StateChunks';   // new chunked storage
 const LEGACY_SHEET = 'State';        // old single-cell storage (read once to migrate)
 const CHUNK_SIZE = 40000;            // safely under the 50,000-char cell limit
 const CHUNK_PREFIX = '~';            // keeps chunks from being read as formulas/numbers/dates
+const SCAN_LOG_SHEET = 'Scan Log';
+const SCAN_LOG_HEADERS = [
+  'Timestamp', 'Action', 'SLP', 'Order', 'From Lane', 'To Lane', 'Stack',
+  'Carrier', 'Destination', 'Dock', 'Device', 'User', 'Event ID'
+];
+const SCAN_LOG_MAX_BATCH = 500;
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
@@ -118,6 +124,78 @@ function saveBoardState(stateJson, baseUpdatedAt) {
     sheet.getRange('B2:C2').setValues([[now, chunks.length]]);
     SpreadsheetApp.flush();
     return { ok: true, updatedAt: now };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getScanLogSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SCAN_LOG_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(SCAN_LOG_SHEET);
+    sheet.getRange(1, 1, 1, SCAN_LOG_HEADERS.length).setValues([SCAN_LOG_HEADERS]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    sheet.getRange('A:A').setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    sheet.getRange('B:M').setNumberFormat('@'); // keep SLP/order codes as text (no lost leading zeros)
+  }
+  return sheet;
+}
+
+/**
+ * Appends one row per scan/move/ship event to the "Scan Log" tab.
+ * Events already logged (same Event ID, e.g. a retry after a dropped connection)
+ * are skipped. Returns the IDs the page can now forget.
+ */
+function logScanEvents(events) {
+  const list = Array.isArray(events) ? events.slice(0, SCAN_LOG_MAX_BATCH) : [];
+  if (list.length === 0) return { ok: true, loggedIds: [] };
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { ok: false, error: 'Busy — try again' };
+  try {
+    const cache = CacheService.getScriptCache();
+    const ids = list.map(e => String((e && e.id) || '')).filter(Boolean);
+    const seen = cache.getAll(ids.map(id => 'scanlog:' + id));
+    let user = '';
+    try { user = Session.getActiveUser().getEmail() || ''; } catch (err) { /* not available for this deployment */ }
+
+    const rows = [];
+    const newIds = [];
+    list.forEach(e => {
+      const id = String((e && e.id) || '');
+      if (!id || seen['scanlog:' + id] || newIds.indexOf(id) !== -1) return;
+      newIds.push(id);
+      rows.push([
+        new Date(Number(e.time) || Date.now()),
+        String(e.action || ''),
+        String(e.slp || ''),
+        String(e.orderNumber || ''),
+        String(e.fromLane || ''),
+        String(e.toLane || ''),
+        e.doubleStacked ? '2x' : '1x',
+        String(e.carrier || ''),
+        String(e.destination || ''),
+        String(e.dockNumber || ''),
+        String(e.device || ''),
+        String(e.user || user),
+        id
+      ]);
+    });
+
+    if (rows.length > 0) {
+      const sheet = getScanLogSheet_();
+      const start = sheet.getLastRow() + 1;
+      sheet.getRange(start, 2, rows.length, SCAN_LOG_HEADERS.length - 1).setNumberFormat('@');
+      sheet.getRange(start, 1, rows.length, SCAN_LOG_HEADERS.length).setValues(rows);
+      const marks = {};
+      newIds.forEach(id => { marks['scanlog:' + id] = '1'; });
+      cache.putAll(marks, 21600); // remember for 6 hours (cache maximum)
+      SpreadsheetApp.flush();
+    }
+    return { ok: true, loggedIds: ids };
   } catch (err) {
     return { ok: false, error: String(err) };
   } finally {

@@ -23,7 +23,7 @@ function decodeHtmlAttr(str) {
 /** Fake google.script.run: each server call answers from a queue of responses. */
 function createFakeAppsScript() {
     const calls = [];
-    const responses = { saveBoardState: [], loadBoardState: [] };
+    const responses = { saveBoardState: [], loadBoardState: [], logScanEvents: [] };
     const makeRunner = () => {
         let onSuccess = () => {};
         const runner = {
@@ -36,6 +36,10 @@ function createFakeAppsScript() {
             loadBoardState(...args) {
                 calls.push({ fn: 'loadBoardState', args });
                 onSuccess(responses.loadBoardState.shift() || { ok: true, stateJson: null, updatedAt: null });
+            },
+            logScanEvents(events) {
+                calls.push({ fn: 'logScanEvents', args: [JSON.parse(JSON.stringify(events))] });
+                onSuccess(responses.logScanEvents.shift() || { ok: true, loggedIds: events.map(e => e.id) });
             }
         };
         return runner;
@@ -159,4 +163,107 @@ test('save conflict merges the other device\'s board and re-saves against its ve
     const savedSlps = JSON.parse(saves[1].args[0]).pallets.map(p => p.slp);
     assert.ok(savedSlps.includes('SLP-MINE') && savedSlps.includes('SLP-THEIRS'));
     assert.equal(run('lastCloudUpdatedAt'), 't-3');
+});
+
+test('scan log: scans and shipments are queued, sent in one batch, then cleared', () => {
+    const { run, flushTimers, fake } = loadApp({ withAppsScript: true });
+    run(`addSlpToStaging({ slp: 'SLP-LOG1', orderNumber: 'SO-9', columnId: 'col-s52' })`);
+    run(`addSlpToStaging({ slp: 'SLP-LOG2', orderNumber: 'SO-9', columnId: 'col-s52', doubleStacked: true })`);
+    run(`shipWholeOrder('SO-9')`);
+    assert.equal(run('scanLogQueue.length'), 4);
+
+    flushTimers();
+    const logCalls = fake.calls.filter(c => c.fn === 'logScanEvents');
+    assert.equal(logCalls.length, 1, 'quick scans are batched into one call');
+    const events = logCalls[0].args[0];
+    assert.deepEqual(events.map(e => `${e.action} ${e.slp}`), ['SCAN SLP-LOG1', 'SCAN SLP-LOG2', 'SHIP SLP-LOG1', 'SHIP SLP-LOG2']);
+    assert.equal(events[0].toLane, 'S52');
+    assert.equal(events[2].fromLane, 'S52');
+    assert.equal(events[1].doubleStacked, true);
+    assert.equal(run('scanLogQueue.length'), 0);
+    assert.equal(run(`JSON.parse(safeStorageGet(SCAN_LOG_QUEUE_KEY)).length`), 0);
+});
+
+test('scan log: events stay queued and are retried when the sheet is unreachable', () => {
+    const { run, flushTimers, fake } = loadApp({ withAppsScript: true });
+    fake.responses.logScanEvents.push({ ok: false, error: 'Busy — try again' });
+    run(`addSlpToStaging({ slp: 'SLP-RETRY', orderNumber: 'SO-7', columnId: 'col-s51' })`);
+    run('flushScanLog()');
+    assert.equal(run('scanLogQueue.length'), 1, 'kept after a failed send');
+    assert.notEqual(run('scanLogFlushTimer'), null, 'retry scheduled');
+
+    flushTimers(); // retry succeeds (default response)
+    assert.equal(fake.calls.filter(c => c.fn === 'logScanEvents').length, 2);
+    assert.equal(run('scanLogQueue.length'), 0);
+});
+
+test('scan log: nothing is queued in Local Mode', () => {
+    const { run } = loadApp();
+    run(`addSlpToStaging({ slp: 'SLP-LOCAL', orderNumber: 'SO-1', columnId: 'col-s51' })`);
+    assert.equal(run('scanLogQueue.length'), 0);
+});
+
+function loadCodeGs() {
+    const code = readFileSync(new URL('../Code.gs', import.meta.url), 'utf8');
+    const sheets = new Map();
+    const makeSheet = () => {
+        const rows = [];
+        const range = (r, c, nr = 1, nc = 1) => ({
+            setValues(vals) { vals.forEach((v, i) => { rows[r - 1 + i] = v; }); return this; },
+            getValue() { return (rows[r - 1] || [])[c - 1] ?? ''; },
+            getValues() { return Array.from({ length: nr }, (_, i) => (rows[r - 1 + i] || []).slice(c - 1, c - 1 + nc)); },
+            setNumberFormat() { return this; },
+            setFontWeight() { return this; },
+            clearContent() { return this; }
+        });
+        return {
+            rows,
+            getRange(a, c, nr, nc) { return typeof a === 'string' ? range(1, 1) : range(a, c, nr, nc); },
+            getLastRow() { return rows.length; },
+            setFrozenRows() {}
+        };
+    };
+    const cacheStore = new Map();
+    const ctx = {
+        SpreadsheetApp: {
+            getActiveSpreadsheet: () => ({
+                getSheetByName: n => sheets.get(n) || null,
+                insertSheet: n => { const s = makeSheet(); sheets.set(n, s); return s; }
+            }),
+            flush() {}
+        },
+        LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
+        CacheService: {
+            getScriptCache: () => ({
+                getAll: keys => Object.fromEntries(keys.filter(k => cacheStore.has(k)).map(k => [k, cacheStore.get(k)])),
+                putAll: obj => Object.entries(obj).forEach(([k, v]) => cacheStore.set(k, v))
+            })
+        },
+        Session: { getActiveUser: () => ({ getEmail: () => 'lead@example.com' }) },
+        HtmlService: {},
+        Date, JSON, Number, String, Array, Object
+    };
+    vm.createContext(ctx);
+    vm.runInContext(code, ctx);
+    return { ctx, sheets };
+}
+
+test('Code.gs logScanEvents writes one row per event and skips retried duplicates', () => {
+    const { ctx, sheets } = loadCodeGs();
+    const evt = (id, action) => ({ id, time: 1763700000000, action, slp: '00884101', orderNumber: 'SO-1', toLane: 'S51' });
+
+    const first = ctx.logScanEvents([evt('e1', 'SCAN'), evt('e2', 'MOVE')]);
+    assert.equal(first.ok, true);
+    assert.deepEqual([...first.loggedIds], ['e1', 'e2']);
+
+    // Retry of e2 (response was lost) plus a new event
+    const second = ctx.logScanEvents([evt('e2', 'MOVE'), evt('e3', 'SHIP')]);
+    assert.deepEqual([...second.loggedIds], ['e2', 'e3'], 'duplicate is confirmed so the page can drop it');
+
+    const rows = sheets.get('Scan Log').rows;
+    assert.equal(rows.length, 4, 'header + 3 events, no duplicate');
+    assert.equal(rows[0][0], 'Timestamp');
+    assert.deepEqual(rows.slice(1).map(r => r[12]), ['e1', 'e2', 'e3']);
+    assert.equal(rows[1][2], '00884101', 'SLP kept as text');
+    assert.equal(rows[1][11], 'lead@example.com');
 });

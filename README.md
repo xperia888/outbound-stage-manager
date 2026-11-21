@@ -18,8 +18,8 @@ Outbound pallet management app: ONUS-ONT Outbound Pallet Staging Manager (v2). A
 | File | Purpose |
 |---|---|
 | `index.html` | The full app (HTML, Tailwind CSS, JavaScript) |
-| `Code.gs` | Apps Script backend: serves the page and stores board state in the `StateChunks` sheet |
-| `tests/board-sync.test.mjs` | Tests for sync, merge and handler escaping (`node --test`) |
+| `Code.gs` | Apps Script backend: serves the page, stores board state in the `StateChunks` tab and writes the `Scan Log` tab |
+| `tests/board-sync.test.mjs` | Tests for sync, merge, scan log and handler escaping (`node --test`) |
 
 ## Running modes
 
@@ -38,6 +38,20 @@ Board state is saved to the `StateChunks` tab, split across rows to stay under t
 ## Multi-device sync
 
 Each save sends the cloud version the device last saw. If another device saved in the meantime, the server returns its board instead of overwriting it. The page then merges the two boards, keeping scans, moves and shipments from both devices, and saves again. A pallet shipped on one device stays shipped even if another device edited it.
+
+## Scan Log
+
+When running from Apps Script, every action is also written as a row in the sheet's **Scan Log** tab (created automatically):
+
+| Timestamp | Action | SLP | Order | From Lane | To Lane | Stack | Carrier | Destination | Dock | Device | User | Event ID |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+
+Actions: `SCAN`, `MOVE`, `CONSOLIDATE`, `DOCK`, `SHIP` (To Lane = dock), `REMOVE`.
+
+- Events wait in a queue saved on the device and are sent in batches. If the connection drops, they are retried until the sheet confirms them, so nothing is lost when wifi drops.
+- Retried events are never written twice (matched by Event ID).
+- **Device** is a short ID saved in each browser (for example `Android-K3F9`). **User** is the Google account email, which Google only provides when the web app runs as the user accessing it, or within your Workspace domain.
+- SLP and order codes are stored as text, so leading zeros are kept.
 
 ## Tests
 
