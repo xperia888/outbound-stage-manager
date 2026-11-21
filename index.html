@@ -550,4 +550,1601 @@
     position: fixed;
     bottom: 18px;
     right: 18px;
-    background
+    background: #1e293b;
+    color: #fff;
+    border: 1px solid var(--primary);
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.45);
+    z-index: 2000;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.2s ease;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  #qrReader {
+    width: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+  }
+
+  /* Dwell Time Bar */
+  .dwell-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+  .dwell-bar span.dwell-lbl {
+    color: var(--text-muted);
+    font-weight: 700;
+    padding: 0 4px;
+  }
+  .dwell-btn {
+    background: transparent;
+    color: var(--text-muted);
+    padding: 3px 7px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .dwell-btn.active {
+    background: var(--danger);
+    color: #fff;
+  }
+
+  /* Consolidation Suggestion Card */
+  .consol-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .consol-card.recommended {
+    border-color: var(--success);
+    background: rgba(16, 185, 129, 0.08);
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-badge">ONUS-ONT</span>
+    <div>
+      <div class="brand-title">Outbound Pallet Staging Manager</div>
+      <div class="brand-sub">Multi-SLP / Pallet Scan • Dwell Alert • Zero-Blocking Consolidation</div>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <div class="dwell-bar" title="Set Aging Alert Threshold">
+      <span class="dwell-lbl">Alert &gt;</span>
+      <button type="button" class="dwell-btn" data-days="1" onclick="setDwellThreshold(1)">1d</button>
+      <button type="button" class="dwell-btn" data-days="2" onclick="setDwellThreshold(2)">2d</button>
+      <button type="button" class="dwell-btn" data-days="3" onclick="setDwellThreshold(3)">3d</button>
+      <button type="button" class="dwell-btn" data-days="7" onclick="setDwellThreshold(7)">7d</button>
+    </div>
+    <div class="sync-pill" id="syncStatusPill">
+      <span class="sync-dot" id="syncDot"></span>
+      <span id="syncText">Connecting...</span>
+    </div>
+    <button class="btn-ghost btn-sm" onclick="syncFromCloud()">↻ Sync</button>
+    <button class="btn-purple btn-sm" onclick="openConsolidateModal()">⚡ Consolidate</button>
+  </div>
+</header>
+
+<div class="container">
+  <!-- Overdue Alert Banner -->
+  <div class="alert-banner" id="overdueBanner">
+    <div class="alert-text" id="overdueBannerText">⚠️ Overdue staged pallets detected!</div>
+    <button class="btn-danger btn-xs" onclick="filterOverdue()">View Overdue Only</button>
+  </div>
+
+  <!-- KPI Row -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Staged Pallets</div>
+      <div class="kpi-val" id="kpiTotalPallets">0</div>
+      <div class="kpi-sub" id="kpiFloorSpots">0 floor spots used</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Active Lanes</div>
+      <div class="kpi-val" id="kpiActiveLanes">0 / 0</div>
+      <div class="kpi-sub" id="kpiCapPct">0% floor capacity</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Double Stacked</div>
+      <div class="kpi-val" id="kpiStacked" style="color:var(--warning)">0</div>
+      <div class="kpi-sub">2-high floor positions</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label" id="kpiOverdueLabel">Overdue (&gt; 7 Days)</div>
+      <div class="kpi-val" id="kpiOverdue" style="color:var(--danger)">0</div>
+      <div class="kpi-sub">Requires immediate follow-up</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Shipped Today</div>
+      <div class="kpi-val" id="kpiShippedToday" style="color:var(--success)">0</div>
+      <div class="kpi-sub" id="kpiOnDock">0 currently on dock</div>
+    </div>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('staging', this)">📦 Staging Lanes</button>
+    <button class="tab-btn" onclick="switchTab('dock', this)">🚛 Loading Dock</button>
+    <button class="tab-btn" onclick="switchTab('eod', this)">📊 EOD Report</button>
+    <button class="tab-btn" onclick="switchTab('settings', this)">⚙️ Lanes &amp; Settings</button>
+  </div>
+
+  <!-- TAB 1: STAGING LANES -->
+  <div id="tab-staging" class="tab-panel active">
+    <!-- Quick Scan Entry -->
+    <div class="scan-box">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <div style="font-weight:800; font-size:14px;">⚡ Scan / Stage Pallet(s) into Lane</div>
+        <button class="btn-primary btn-sm" onclick="openCameraScanner('slp')">📷 Camera QR Scanner</button>
+      </div>
+      <div class="scan-grid">
+        <div class="field-group">
+          <label>Staging Lane *</label>
+          <select id="scanLaneSelect"></select>
+        </div>
+        <div class="field-group" style="grid-column: span 2;">
+          <label>SLP / Pallet QR Code(s) — Scan Multiple (Comma, Space, or Newline) *</label>
+          <textarea id="scanSlpInput" rows="2" placeholder="Scan 1 or multiple SLP codes (e.g. SLP-1001, SLP-1002)..." onkeydown="handleSlpKeydown(event)"></textarea>
+        </div>
+        <div class="field-group">
+          <label>Order / Load # (Optional)</label>
+          <input type="text" id="scanOrderInput" placeholder="e.g. SO-88421" onkeydown="if(event.key==='Enter'){event.preventDefault();stageScannedPallet();}" />
+        </div>
+        <div class="field-group">
+          <label>Carrier (Optional)</label>
+          <input type="text" id="scanCarrierInput" list="carrierList" placeholder="e.g. FedEx Freight" onkeydown="if(event.key==='Enter'){event.preventDefault();stageScannedPallet();}" />
+          <datalist id="carrierList">
+            <option value="FedEx Freight"></option>
+            <option value="UPS Freight / TForce"></option>
+            <option value="XPO Logistics"></option>
+            <option value="Old Dominion"></option>
+            <option value="Estes Express"></option>
+            <option value="R+L Carriers"></option>
+            <option value="Amazon Relay"></option>
+            <option value="Will Call / Customer Pickup"></option>
+          </datalist>
+        </div>
+        <div class="field-group">
+          <label>Stacking Mode</label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="scanStackedCheck" />
+            <span>Double-Stacked (2-High)</span>
+          </label>
+        </div>
+        <div class="field-group">
+          <label>&nbsp;</label>
+          <button class="btn-success" style="height:38px;" onclick="stageScannedPallet()">➕ Stage Pallet(s)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter & Search -->
+    <div class="toolbar">
+      <div class="search-wrap">
+        <input type="text" id="searchInput" placeholder="🔍 Search SLP, Order #, Carrier, Lane, or Dock..." oninput="renderAll()" />
+      </div>
+      <div class="filter-pills">
+        <button class="pill active" data-filter="all" onclick="setFilter('all', this)">All Lanes</button>
+        <button class="pill" data-filter="occupied" onclick="setFilter('occupied', this)">Occupied</button>
+        <button class="pill" data-filter="empty" onclick="setFilter('empty', this)">Available</button>
+        <button class="pill" data-filter="overdue" onclick="setFilter('overdue', this)" id="overdueFilterPill">⚠️ Overdue (&gt;7d)</button>
+        <button class="pill" data-filter="stacked" onclick="setFilter('stacked', this)">Double Stacked</button>
+      </div>
+    </div>
+
+    <!-- Lanes Grid -->
+    <div class="lane-grid" id="laneGrid"></div>
+  </div>
+
+  <!-- TAB 2: LOADING DOCK -->
+  <div id="tab-dock" class="tab-panel">
+    <div class="toolbar">
+      <div>
+        <h3 style="font-size:16px;">🚛 Active Loading Dock Doors</h3>
+        <div style="font-size:12px; color:var(--text-muted);">Pallets staged at dock doors ready to load and mark shipped.</div>
+      </div>
+      <button class="btn-success btn-sm" onclick="shipAllOnDock()">✅ Mark All Dock Pallets Shipped</button>
+    </div>
+    <div class="dock-grid" id="dockGrid"></div>
+  </div>
+
+  <!-- TAB 3: EOD REPORT -->
+  <div id="tab-eod" class="tab-panel">
+    <div class="toolbar">
+      <div>
+        <h3 style="font-size:16px;">📊 End-of-Day (EOD) Staging &amp; Shipping Report</h3>
+        <div style="font-size:12px; color:var(--text-muted);" id="eodDateLabel"></div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn-primary btn-sm" onclick="exportEodCsv()">⬇️ Export CSV</button>
+        <button class="btn-ghost btn-sm" onclick="copyEodSummary()">📋 Copy EOD Text</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" style="margin-bottom:14px;">
+      <div class="kpi-card">
+        <div class="kpi-label">EOD Staged Remaining</div>
+        <div class="kpi-val" id="eodRemaining">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">EOD Shipped Count</div>
+        <div class="kpi-val" id="eodShipped" style="color:var(--success)">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label" id="eodOverdueLabel">Overdue Aging (&gt;7d)</div>
+        <div class="kpi-val" id="eodOverdue" style="color:var(--danger)">0</div>
+      </div>
+    </div>
+
+    <h4 style="margin-bottom:8px; font-size:14px;">Today's Shipped Pallets Log</h4>
+    <div class="table-wrap" style="margin-bottom:18px;">
+      <table>
+        <thead>
+          <tr>
+            <th>SLP / Pallet ID</th>
+            <th>Order #</th>
+            <th>Carrier</th>
+            <th>From Lane</th>
+            <th>Dock Door</th>
+            <th>Shipped Time</th>
+          </tr>
+        </thead>
+        <tbody id="eodShippedTable"></tbody>
+      </table>
+    </div>
+
+    <h4 style="margin-bottom:8px; font-size:14px;">Current Staged Inventory Snapshot</h4>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Lane</th>
+            <th>SLP / Pallet ID</th>
+            <th>Order #</th>
+            <th>Carrier</th>
+            <th>Stacked</th>
+            <th>Staged Date</th>
+            <th>Age</th>
+          </tr>
+        </thead>
+        <tbody id="eodStagedTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TAB 4: SETTINGS & LANE MANAGEMENT -->
+  <div id="tab-settings" class="tab-panel">
+    <div class="scan-box">
+      <h3 style="font-size:15px; margin-bottom:10px;">⚙️ Warehouse &amp; Alert Configuration</h3>
+      <div class="scan-grid" style="margin-bottom:14px;">
+        <div class="field-group">
+          <label>Warehouse Code</label>
+          <input type="text" id="settingWarehouse" value="ONUS-ONT" onchange="saveSettings()" />
+        </div>
+        <div class="field-group">
+          <label>Dwell Alert Threshold (Days)</label>
+          <input type="number" id="settingOverdueDays" min="1" max="60" value="7" onchange="saveSettings()" />
+        </div>
+        <div class="field-group">
+          <label>Dock Doors (Comma Separated)</label>
+          <input type="text" id="settingDockDoors" value="D1, D2, D3, D4, D5, D6, D7, D8" onchange="saveSettings()" />
+        </div>
+      </div>
+
+      <h3 style="font-size:15px; margin:16px 0 10px;">➕ Add / Batch Generate Staging Lanes</h3>
+      <div class="scan-grid">
+        <div class="field-group">
+          <label>New Lane ID (e.g. s63)</label>
+          <input type="text" id="newLaneId" placeholder="s63" />
+        </div>
+        <div class="field-group">
+          <label>Floor Spot Capacity</label>
+          <input type="number" id="newLaneCap" value="6" min="1" max="50" />
+        </div>
+        <div class="field-group">
+          <label>Default Carrier</label>
+          <input type="text" id="newLaneCarrier" placeholder="Optional" />
+        </div>
+        <div class="field-group">
+          <label>&nbsp;</label>
+          <button class="btn-primary" onclick="addSingleLane()">Add Lane</button>
+        </div>
+      </div>
+
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:8px; justify-content:space-between; align-items:center;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn-ghost btn-sm" onclick="exportBackupJson()">💾 Export JSON Backup</button>
+          <label class="btn-ghost btn-sm" style="cursor:pointer;">
+            📂 Import JSON Backup
+            <input type="file" accept=".json" style="display:none" onchange="importBackupJson(event)" />
+          </label>
+        </div>
+        <button class="btn-danger btn-sm" onclick="resetDefaultLanes()">Reset Default Lanes (s51–s62)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: MOVE / ASSIGN DOCK / EDIT PALLET -->
+<div class="modal-backdrop" id="palletModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="palletModalTitle">Manage Pallet</div>
+      <button class="btn-ghost btn-xs" onclick="closeModal('palletModal')">✕</button>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <input type="hidden" id="editPalletSlp" />
+      <input type="hidden" id="editPalletFromLane" />
+      <div class="field-group">
+        <label>SLP / Pallet ID</label>
+        <input type="text" id="modalSlpDisplay" disabled />
+      </div>
+      <div class="field-group">
+        <label>Order / Load #</label>
+        <input type="text" id="modalOrderInput" />
+      </div>
+      <div class="field-group">
+        <label>Carrier</label>
+        <input type="text" id="modalCarrierInput" list="carrierList" />
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="modalStackedCheck" />
+        <span>Double-Stacked (Counts as 0.5 floor spot)</span>
+      </label>
+
+      <div style="border-top:1px solid var(--border); padding-top:12px;">
+        <div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px;">MOVE TO ANOTHER STAGING LANE</div>
+        <div style="display:flex; gap:8px;">
+          <select id="modalTargetLane"></select>
+          <button class="btn-primary" onclick="movePalletToLane()">Move Lane</button>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border); padding-top:12px;">
+        <div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px;">SEND TO LOADING DOCK DOOR</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <select id="modalTargetDock" style="flex:1;"></select>
+          <button class="btn-warning" onclick="sendPalletToDock(false)">Move This Pallet</button>
+          <button class="btn-purple" id="btnMoveWholeOrderDock" onclick="sendPalletToDock(true)" style="display:none;">Move Whole Order</button>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; margin-top:8px;">
+        <button class="btn-danger btn-sm" onclick="deletePallet()">Remove Pallet</button>
+        <button class="btn-success" onclick="savePalletEdits()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: LANE SETTINGS / BULK DOCK -->
+<div class="modal-backdrop" id="laneModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="laneModalTitle">Lane Settings</div>
+      <button class="btn-ghost btn-xs" onclick="closeModal('laneModal')">✕</button>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <input type="hidden" id="editLaneId" />
+      <div class="field-group">
+        <label>Floor Spot Capacity</label>
+        <input type="number" id="editLaneCap" min="1" max="50" />
+      </div>
+      <div class="field-group">
+        <label>Assigned Carrier</label>
+        <input type="text" id="editLaneCarrier" list="carrierList" placeholder="e.g. FedEx Freight" />
+      </div>
+      <div class="field-group">
+        <label>Reserved Loading Dock Door</label>
+        <select id="editLaneDock"></select>
+      </div>
+      <div style="border-top:1px solid var(--border); padding-top:12px;">
+        <div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px;">BULK ACTION FOR ALL PALLETS IN LANE</div>
+        <div style="display:flex; gap:8px;">
+          <select id="bulkLaneDockSelect"></select>
+          <button class="btn-warning" onclick="sendEntireLaneToDock()">Send All to Dock</button>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-top:8px;">
+        <button class="btn-danger btn-sm" onclick="deleteLane()">Delete Lane</button>
+        <button class="btn-success" onclick="saveLaneEdits()">Save Lane</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CONSOLIDATION SUGGESTIONS -->
+<div class="modal-backdrop" id="consolidateModal">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header">
+      <div class="modal-title">⚡ Lane Consolidation (Zero-Blocking Smart Plan)</div>
+      <button class="btn-ghost btn-xs" onclick="closeModal('consolidateModal')">✕</button>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
+      Groups pallets by <b>Order #</b> or <b>Carrier</b> and calculates exact floor spot capacity so target lanes never overflow or block access.
+    </p>
+    <div id="consolidateList" style="display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- MODAL: CAMERA SCANNER -->
+<div class="modal-backdrop" id="cameraModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">📷 Scan Pallet / SLP QR Code</div>
+      <button class="btn-ghost btn-xs" onclick="stopCameraScanner()">✕</button>
+    </div>
+    <div id="qrReader"></div>
+    <div style="font-size:12px; color:var(--text-muted); margin-top:10px; text-align:center;">
+      Point camera at SLP barcode or QR code. Automatically adds each scanned code.
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// =========================================================================
+// EXTERNAL GOOGLE APPS SCRIPT ENDPOINT (CORS-SAFE FOR GITHUB PAGES)
+// =========================================================================
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzg4gF-j9v8-Z_j-pM39T4h2o2b3X8C0W_tW4b9M8yR9X5b7F4V1z/exec";
+const STORAGE_KEY = "ONUS_ONT_STAGING_V2";
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+let state = {
+  warehouse: "ONUS-ONT",
+  overdueDays: 7,
+  dockDoors: ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"],
+  lanes: [],
+  dockQueue: [],
+  shippedHistory: [],
+  updatedAt: new Date().toISOString()
+};
+
+let activeFilter = "all";
+let html5QrCode = null;
+let lastScannedCode = "";
+let lastScannedTime = 0;
+
+// =========================================================================
+// DEFAULT DATA INITIALIZATION (s51 - s62)
+// =========================================================================
+function buildDefaultLanes() {
+  const arr = [];
+  for (let i = 51; i <= 62; i++) {
+    arr.push({
+      id: "s" + i,
+      capacity: 6,
+      carrier: "",
+      dockDoor: "",
+      pallets: []
+    });
+  }
+  return arr;
+}
+
+function loadLocalState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      state = { ...state, ...parsed };
+      if (!Array.isArray(state.lanes) || state.lanes.length === 0) {
+        state.lanes = buildDefaultLanes();
+      }
+      if (!Array.isArray(state.dockQueue)) state.dockQueue = [];
+      if (!Array.isArray(state.shippedHistory)) state.shippedHistory = [];
+      if (!state.overdueDays || state.overdueDays < 1) state.overdueDays = 7;
+    } else {
+      state.lanes = buildDefaultLanes();
+    }
+  } catch (e) {
+    state.lanes = buildDefaultLanes();
+  }
+}
+
+function saveLocalState() {
+  state.updatedAt = new Date().toISOString();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+// =========================================================================
+// GOOGLE APPS SCRIPT CLOUD SYNC (FETCH API FOR EXTERNAL WEB HOSTING)
+// =========================================================================
+function setSyncStatus(status, label) {
+  const dot = document.getElementById("syncDot");
+  const txt = document.getElementById("syncText");
+  dot.className = "sync-dot " + (status === "online" ? "online" : status === "error" ? "error" : "");
+  txt.textContent = label;
+}
+
+async function syncToCloud() {
+  saveLocalState();
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("YOUR_SCRIPT_ID")) {
+    setSyncStatus("online", "Local Saved");
+    return;
+  }
+  setSyncStatus("syncing", "Syncing...");
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      mode: "cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "saveStagingState", payload: state })
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      setSyncStatus("online", "Cloud Synced");
+    } else {
+      setSyncStatus("error", "Sync Error (Local Saved)");
+    }
+  } catch (err) {
+    console.warn("Cloud sync error:", err);
+    setSyncStatus("error", "Offline (Local Saved)");
+  }
+}
+
+async function syncFromCloud() {
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("YOUR_SCRIPT_ID")) {
+    setSyncStatus("online", "Local Ready");
+    renderAll();
+    return;
+  }
+  setSyncStatus("syncing", "Loading Cloud...");
+  try {
+    const url = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes("?") ? "&" : "?") + "action=getStagingState&t=" + Date.now();
+    const res = await fetch(url, { method: "GET", mode: "cors" });
+    const data = await res.json();
+    if (data && data.ok && data.state && Array.isArray(data.state.lanes)) {
+      state = { ...state, ...data.state };
+      saveLocalState();
+      setSyncStatus("online", "Cloud Synced");
+      showToast("Synced with Google Sheets");
+    } else {
+      setSyncStatus("online", "Local Ready");
+    }
+  } catch (err) {
+    console.warn("Cloud fetch failed:", err);
+    setSyncStatus("error", "Offline Mode");
+  }
+  renderAll();
+}
+
+// =========================================================================
+// HELPERS: CAPACITY, AGING, AUDIO FEEDBACK & MULTI-SLP PARSER
+// =========================================================================
+function getLaneFloorSpots(lane) {
+  return (lane.pallets || []).reduce((sum, p) => sum + (p.stacked ? 0.5 : 1), 0);
+}
+
+function getPalletAgeDays(stagedAtIso) {
+  const diff = Date.now() - new Date(stagedAtIso).getTime();
+  return Math.max(0, diff / DAY_MS);
+}
+
+function isPalletOverdue(pallet) {
+  return getPalletAgeDays(pallet.stagedAt) >= (Number(state.overdueDays) || 7);
+}
+
+function formatAgeLabel(stagedAtIso) {
+  const days = getPalletAgeDays(stagedAtIso);
+  if (days < 1) {
+    const hrs = Math.max(1, Math.floor(days * 24));
+    return hrs + "h ago";
+  }
+  return days.toFixed(1) + "d ago";
+}
+
+function setDwellThreshold(days) {
+  state.overdueDays = Number(days) || 7;
+  const settingsInput = document.getElementById("settingOverdueDays");
+  if (settingsInput) settingsInput.value = state.overdueDays;
+  syncToCloud();
+  renderAll();
+  showToast("Dwell alert threshold set to > " + state.overdueDays + " day(s)");
+}
+
+function parseSlpCodes(raw) {
+  if (!raw) return [];
+  const tokens = raw
+    .split(/[\s,;\n\r\t]+/)
+    .map(s => s.trim().toUpperCase())
+    .filter(Boolean);
+  return [...new Set(tokens)];
+}
+
+function playBeep(success = true) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = success ? "sine" : "sawtooth";
+    osc.frequency.value = success ? 880 : 220;
+    gain.gain.value = 0.12;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    setTimeout(() => { osc.stop(); ctx.close(); }, success ? 110 : 280);
+  } catch (e) {}
+}
+
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// =========================================================================
+// SCAN & STAGE PALLET(S)
+// =========================================================================
+function handleSlpKeydown(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    const val = document.getElementById("scanSlpInput").value;
+    if (val.trim().endsWith(",")) {
+      return;
+    }
+    stageScannedPallet();
+  }
+}
+
+function stageScannedPallet() {
+  const laneId = document.getElementById("scanLaneSelect").value;
+  const rawSlp = document.getElementById("scanSlpInput").value;
+  const orderNo = document.getElementById("scanOrderInput").value.trim().toUpperCase();
+  const carrier = document.getElementById("scanCarrierInput").value.trim();
+  const stacked = document.getElementById("scanStackedCheck").checked;
+
+  const slpList = parseSlpCodes(rawSlp);
+  if (!laneId || slpList.length === 0) {
+    playBeep(false);
+    showToast("⚠️ Enter or scan at least one SLP / Pallet code");
+    document.getElementById("scanSlpInput").focus();
+    return;
+  }
+
+  const targetLane = state.lanes.find(l => l.id === laneId);
+  if (!targetLane) return;
+
+  const existingIds = new Set();
+  state.lanes.forEach(l => l.pallets.forEach(p => existingIds.add(p.slp)));
+  state.dockQueue.forEach(d => existingIds.add(d.slp));
+
+  const duplicates = slpList.filter(code => existingIds.has(code));
+  const validCodes = slpList.filter(code => !existingIds.has(code));
+
+  if (validCodes.length === 0) {
+    playBeep(false);
+    showToast("⚠️ Already staged: " + duplicates.join(", "));
+    document.getElementById("scanSlpInput").select();
+    return;
+  }
+
+  const spotPerPallet = stacked ? 0.5 : 1;
+  const currentSpots = getLaneFloorSpots(targetLane);
+  const addedSpots = validCodes.length * spotPerPallet;
+
+  if (currentSpots + addedSpots > targetLane.capacity) {
+    if (!confirm(`Lane ${targetLane.id.toUpperCase()} will exceed capacity (${currentSpots + addedSpots}/${targetLane.capacity} spots). Stage anyway?`)) {
+      return;
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  validCodes.forEach(code => {
+    targetLane.pallets.push({
+      slp: code,
+      orderNo: orderNo,
+      carrier: carrier || targetLane.carrier || "",
+      stacked: stacked,
+      stagedAt: nowIso
+    });
+  });
+
+  if (carrier && !targetLane.carrier) {
+    targetLane.carrier = carrier;
+  }
+
+  playBeep(true);
+  document.getElementById("scanSlpInput").value = "";
+  document.getElementById("scanSlpInput").focus();
+
+  let msg = `✅ Staged ${validCodes.length} pallet(s) into ${targetLane.id.toUpperCase()}`;
+  if (duplicates.length > 0) {
+    msg += ` (Skipped dup: ${duplicates.join(", ")})`;
+  }
+  showToast(msg);
+  syncToCloud();
+  renderAll();
+}
+
+// =========================================================================
+// CAMERA QR SCANNER (AUTO-START & CONTINUOUS MULTI-SCAN)
+// =========================================================================
+function openCameraScanner() {
+  document.getElementById("cameraModal").classList.add("open");
+  if (!window.Html5Qrcode) {
+    showToast("Camera library unavailable");
+    return;
+  }
+  html5QrCode = new Html5Qrcode("qrReader");
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 12, qrbox: { width: 250, height: 250 } },
+    (decodedText) => {
+      const clean = decodedText.trim().toUpperCase();
+      const now = Date.now();
+      if (clean === lastScannedCode && now - lastScannedTime < 1800) return;
+      lastScannedCode = clean;
+      lastScannedTime = now;
+
+      const input = document.getElementById("scanSlpInput");
+      const currentCodes = parseSlpCodes(input.value);
+      if (!currentCodes.includes(clean)) {
+        currentCodes.push(clean);
+        input.value = currentCodes.join(", ");
+        playBeep(true);
+        showToast("Scanned: " + clean + ` (${currentCodes.length} queued)`);
+      }
+    },
+    () => {}
+  ).catch(() => {
+    showToast("Camera permission denied or unavailable");
+  });
+}
+
+function stopCameraScanner() {
+  document.getElementById("cameraModal").classList.remove("open");
+  if (html5QrCode) {
+    html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+    html5QrCode = null;
+  }
+  document.getElementById("scanSlpInput").focus();
+}
+
+// =========================================================================
+// PALLET & LANE MANAGEMENT MODALS
+// =========================================================================
+function openPalletModal(laneId, slp) {
+  const lane = state.lanes.find(l => l.id === laneId);
+  if (!lane) return;
+  const pallet = lane.pallets.find(p => p.slp === slp);
+  if (!pallet) return;
+
+  document.getElementById("editPalletSlp").value = slp;
+  document.getElementById("editPalletFromLane").value = laneId;
+  document.getElementById("modalSlpDisplay").value = slp;
+  document.getElementById("modalOrderInput").value = pallet.orderNo || "";
+  document.getElementById("modalCarrierInput").value = pallet.carrier || "";
+  document.getElementById("modalStackedCheck").checked = !!pallet.stacked;
+
+  const btnWholeOrder = document.getElementById("btnMoveWholeOrderDock");
+  if (pallet.orderNo) {
+    let orderCount = 0;
+    state.lanes.forEach(l => l.pallets.forEach(p => {
+      if (p.orderNo === pallet.orderNo) orderCount++;
+    }));
+    if (orderCount > 1) {
+      btnWholeOrder.style.display = "inline-flex";
+      btnWholeOrder.textContent = `Move Whole Order (${orderCount})`;
+    } else {
+      btnWholeOrder.style.display = "none";
+    }
+  } else {
+    btnWholeOrder.style.display = "none";
+  }
+
+  const targetLaneSel = document.getElementById("modalTargetLane");
+  targetLaneSel.innerHTML = state.lanes
+    .filter(l => l.id !== laneId)
+    .map(l => `<option value="${l.id}">${l.id.toUpperCase()} (${getLaneFloorSpots(l)}/${l.capacity} spots)</option>`)
+    .join("");
+
+  const targetDockSel = document.getElementById("modalTargetDock");
+  targetDockSel.innerHTML = state.dockDoors
+    .map(d => `<option value="${d}" ${lane.dockDoor === d ? "selected" : ""}>Dock ${d}</option>`)
+    .join("");
+
+  document.getElementById("palletModal").classList.add("open");
+}
+
+function savePalletEdits() {
+  const laneId = document.getElementById("editPalletFromLane").value;
+  const slp = document.getElementById("editPalletSlp").value;
+  const lane = state.lanes.find(l => l.id === laneId);
+  if (!lane) return;
+  const pallet = lane.pallets.find(p => p.slp === slp);
+  if (!pallet) return;
+
+  pallet.orderNo = document.getElementById("modalOrderInput").value.trim().toUpperCase();
+  pallet.carrier = document.getElementById("modalCarrierInput").value.trim();
+  pallet.stacked = document.getElementById("modalStackedCheck").checked;
+
+  closeModal("palletModal");
+  syncToCloud();
+  renderAll();
+  showToast("Updated pallet " + slp);
+}
+
+function movePalletToLane() {
+  const fromId = document.getElementById("editPalletFromLane").value;
+  const slp = document.getElementById("editPalletSlp").value;
+  const toId = document.getElementById("modalTargetLane").value;
+
+  const fromLane = state.lanes.find(l => l.id === fromId);
+  const toLane = state.lanes.find(l => l.id === toId);
+  if (!fromLane || !toLane) return;
+
+  const idx = fromLane.pallets.findIndex(p => p.slp === slp);
+  if (idx === -1) return;
+
+  const [pallet] = fromLane.pallets.splice(idx, 1);
+  toLane.pallets.push(pallet);
+
+  closeModal("palletModal");
+  syncToCloud();
+  renderAll();
+  showToast(`Moved ${slp} → ${toId.toUpperCase()}`);
+}
+
+function sendPalletToDock(moveEntireOrder = false) {
+  const fromId = document.getElementById("editPalletFromLane").value;
+  const slp = document.getElementById("editPalletSlp").value;
+  const dockDoor = document.getElementById("modalTargetDock").value;
+
+  const fromLane = state.lanes.find(l => l.id === fromId);
+  if (!fromLane) return;
+  const targetPallet = fromLane.pallets.find(p => p.slp === slp);
+  if (!targetPallet) return;
+
+  const orderNo = targetPallet.orderNo;
+  let movedCount = 0;
+
+  if (moveEntireOrder && orderNo) {
+    state.lanes.forEach(lane => {
+      const remaining = [];
+      lane.pallets.forEach(p => {
+        if (p.orderNo === orderNo) {
+          state.dockQueue.push({
+            ...p,
+            fromLane: lane.id,
+            dockDoor: dockDoor,
+            movedToDockAt: new Date().toISOString()
+          });
+          movedCount++;
+        } else {
+          remaining.push(p);
+        }
+      });
+      lane.pallets = remaining;
+    });
+    showToast(`Sent all ${movedCount} pallet(s) of Order ${orderNo} → Dock ${dockDoor}`);
+  } else {
+    const idx = fromLane.pallets.findIndex(p => p.slp === slp);
+    if (idx !== -1) {
+      const [pallet] = fromLane.pallets.splice(idx, 1);
+      state.dockQueue.push({
+        ...pallet,
+        fromLane: fromId,
+        dockDoor: dockDoor,
+        movedToDockAt: new Date().toISOString()
+      });
+      showToast(`Sent ${slp} → Dock ${dockDoor}`);
+    }
+  }
+
+  closeModal("palletModal");
+  syncToCloud();
+  renderAll();
+}
+
+function deletePallet() {
+  const fromId = document.getElementById("editPalletFromLane").value;
+  const slp = document.getElementById("editPalletSlp").value;
+  if (!confirm(`Remove ${slp} from staging without shipping?`)) return;
+
+  const lane = state.lanes.find(l => l.id === fromId);
+  if (!lane) return;
+  lane.pallets = lane.pallets.filter(p => p.slp !== slp);
+
+  closeModal("palletModal");
+  syncToCloud();
+  renderAll();
+  showToast("Removed " + slp);
+}
+
+// =========================================================================
+// LANE SETTINGS MODAL
+// =========================================================================
+function openLaneModal(laneId) {
+  const lane = state.lanes.find(l => l.id === laneId);
+  if (!lane) return;
+
+  document.getElementById("editLaneId").value = lane.id;
+  document.getElementById("laneModalTitle").textContent = `Lane ${lane.id.toUpperCase()} Settings`;
+  document.getElementById("editLaneCap").value = lane.capacity;
+  document.getElementById("editLaneCarrier").value = lane.carrier || "";
+
+  const dockOpts = `<option value="">-- None --</option>` +
+    state.dockDoors.map(d => `<option value="${d}" ${lane.dockDoor === d ? "selected" : ""}>Dock ${d}</option>`).join("");
+  document.getElementById("editLaneDock").innerHTML = dockOpts;
+
+  document.getElementById("bulkLaneDockSelect").innerHTML = state.dockDoors
+    .map(d => `<option value="${d}" ${lane.dockDoor === d ? "selected" : ""}>Dock ${d}</option>`)
+    .join("");
+
+  document.getElementById("laneModal").classList.add("open");
+}
+
+function saveLaneEdits() {
+  const laneId = document.getElementById("editLaneId").value;
+  const lane = state.lanes.find(l => l.id === laneId);
+  if (!lane) return;
+
+  lane.capacity = Math.max(1, parseInt(document.getElementById("editLaneCap").value, 10) || 6);
+  lane.carrier = document.getElementById("editLaneCarrier").value.trim();
+  lane.dockDoor = document.getElementById("editLaneDock").value;
+
+  closeModal("laneModal");
+  syncToCloud();
+  renderAll();
+  showToast(`Saved Lane ${lane.id.toUpperCase()}`);
+}
+
+function sendEntireLaneToDock() {
+  const laneId = document.getElementById("editLaneId").value;
+  const dockDoor = document.getElementById("bulkLaneDockSelect").value;
+  const lane = state.lanes.find(l => l.id === laneId);
+  if (!lane || lane.pallets.length === 0) {
+    showToast("Lane is already empty");
+    return;
+  }
+
+  const count = lane.pallets.length;
+  const nowIso = new Date().toISOString();
+  lane.pallets.forEach(p => {
+    state.dockQueue.push({
+      ...p,
+      fromLane: lane.id,
+      dockDoor: dockDoor,
+      movedToDockAt: nowIso
+    });
+  });
+  lane.pallets = [];
+
+  closeModal("laneModal");
+  syncToCloud();
+  renderAll();
+  showToast(`Moved all ${count} pallets from ${laneId.toUpperCase()} → Dock ${dockDoor}`);
+}
+
+function deleteLane() {
+  const laneId = document.getElementById("editLaneId").value;
+  const lane = state.lanes.find(l => l.id === laneId);
+  if (!lane) return;
+  if (lane.pallets.length > 0) {
+    alert("Cannot delete a lane that still contains pallets. Move or clear pallets first.");
+    return;
+  }
+  if (!confirm(`Delete lane ${laneId.toUpperCase()}?`)) return;
+  state.lanes = state.lanes.filter(l => l.id !== laneId);
+  closeModal("laneModal");
+  syncToCloud();
+  renderAll();
+  showToast(`Deleted lane ${laneId.toUpperCase()}`);
+}
+
+// =========================================================================
+// ZERO-BLOCKING CONSOLIDATION ENGINE
+// =========================================================================
+function openConsolidateModal() {
+  const container = document.getElementById("consolidateList");
+  const suggestions = [];
+
+  // 1. Group by Order # across multiple lanes (zero-blocking: target lane must have room for ALL pallets of that order)
+  const orderMap = {};
+  state.lanes.forEach(lane => {
+    lane.pallets.forEach(p => {
+      if (!p.orderNo) return;
+      if (!orderMap[p.orderNo]) orderMap[p.orderNo] = [];
+      orderMap[p.orderNo].push({ lane, pallet: p });
+    });
+  });
+
+  Object.entries(orderMap).forEach(([orderNo, entries]) => {
+    const distinctLanes = [...new Set(entries.map(e => e.lane.id))];
+    if (distinctLanes.length < 2) return;
+
+    // Pick best target lane that holds the most pallets of this order AND has free space for the rest
+    let bestTarget = null;
+    distinctLanes.forEach(candId => {
+      const candLane = state.lanes.find(l => l.id === candId);
+      const movingEntries = entries.filter(e => e.lane.id !== candId);
+      const neededSpots = movingEntries.reduce((s, e) => s + (e.pallet.stacked ? 0.5 : 1), 0);
+      const freeSpots = candLane.capacity - getLaneFloorSpots(candLane);
+      if (freeSpots >= neededSpots) {
+        if (!bestTarget || movingEntries.length < bestTarget.movingCount) {
+          bestTarget = {
+            targetLane: candLane,
+            movingCount: movingEntries.length,
+            neededSpots,
+            freeSpots,
+            sourceLanes: [...new Set(movingEntries.map(e => e.lane.id))]
+          };
+        }
+      }
+    });
+
+    if (bestTarget) {
+      suggestions.push({
+        type: "ORDER",
+        key: orderNo,
+        title: `Order #${orderNo} (${entries.length} pallets across ${distinctLanes.length} lanes)`,
+        desc: `Move ${bestTarget.movingCount} pallet(s) from ${bestTarget.sourceLanes.map(s => s.toUpperCase()).join(", ")} → ${bestTarget.targetLane.id.toUpperCase()} (${bestTarget.freeSpots} spots free, needs ${bestTarget.neededSpots}).`,
+        targetLaneId: bestTarget.targetLane.id
+      });
+    }
+  });
+
+  // 2. Group by Carrier across partially filled lanes
+  const carrierMap = {};
+  state.lanes.forEach(lane => {
+    lane.pallets.forEach(p => {
+      const c = (p.carrier || lane.carrier || "").trim();
+      if (!c) return;
+      if (!carrierMap[c]) carrierMap[c] = [];
+      carrierMap[c].push({ lane, pallet: p });
+    });
+  });
+
+  Object.entries(carrierMap).forEach(([carrier, entries]) => {
+    const distinctLanes = [...new Set(entries.map(e => e.lane.id))];
+    if (distinctLanes.length < 2) return;
+
+    distinctLanes.forEach(candId => {
+      const candLane = state.lanes.find(l => l.id === candId);
+      const movingEntries = entries.filter(e => e.lane.id !== candId);
+      const neededSpots = movingEntries.reduce((s, e) => s + (e.pallet.stacked ? 0.5 : 1), 0);
+      const freeSpots = candLane.capacity - getLaneFloorSpots(candLane);
+      if (freeSpots >= neededSpots && movingEntries.length > 0) {
+        suggestions.push({
+          type: "CARRIER",
+          key: carrier,
+          title: `Carrier: ${carrier} (${entries.length} pallets across ${distinctLanes.length} lanes)`,
+          desc: `Consolidate ${movingEntries.length} pallet(s) into ${candLane.id.toUpperCase()} (${freeSpots} spots available, requires ${neededSpots}).`,
+          targetLaneId: candLane.id
+        });
+      }
+    });
+  });
+
+  if (suggestions.length === 0) {
+    container.innerHTML = `<div class="empty-lane">✅ All split orders &amp; carriers are already consolidated or target lanes are at full capacity.</div>`;
+  } else {
+    container.innerHTML = suggestions.map((s, idx) => `
+      <div class="consol-card ${s.type === "ORDER" ? "recommended" : ""}">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px;">
+          <strong style="font-size:13px;">${escapeHtml(s.title)}</strong>
+          <span class="badge ${s.type === "ORDER" ? "badge-order" : "badge-carrier"}">${s.type}</span>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">${escapeHtml(s.desc)}</div>
+        <button class="btn-success btn-xs" onclick="executeConsolidation('${s.type}', '${escapeHtml(s.key)}', '${s.targetLaneId}')">
+          ⚡ Execute Merge → ${s.targetLaneId.toUpperCase()}
+        </button>
+      </div>
+    `).join("");
+  }
+
+  document.getElementById("consolidateModal").classList.add("open");
+}
+
+function executeConsolidation(type, key, targetLaneId) {
+  const targetLane = state.lanes.find(l => l.id === targetLaneId);
+  if (!targetLane) return;
+
+  let moved = 0;
+  state.lanes.forEach(lane => {
+    if (lane.id === targetLaneId) return;
+    const stay = [];
+    lane.pallets.forEach(p => {
+      const match = type === "ORDER"
+        ? (p.orderNo === key)
+        : ((p.carrier || lane.carrier || "").trim() === key);
+      if (match) {
+        targetLane.pallets.push(p);
+        moved++;
+      } else {
+        stay.push(p);
+      }
+    });
+    lane.pallets = stay;
+  });
+
+  closeModal("consolidateModal");
+  syncToCloud();
+  renderAll();
+  showToast(`Consolidated ${moved} pallet(s) into ${targetLaneId.toUpperCase()}`);
+}
+
+// =========================================================================
+// LOADING DOCK OPERATIONS
+// =========================================================================
+function shipDockDoor(door) {
+  const matching = state.dockQueue.filter(item => item.dockDoor === door);
+  if (matching.length === 0) return;
+
+  const nowIso = new Date().toISOString();
+  matching.forEach(item => {
+    state.shippedHistory.unshift({
+      ...item,
+      shippedAt: nowIso
+    });
+  });
+
+  state.dockQueue = state.dockQueue.filter(item => item.dockDoor !== door);
+  syncToCloud();
+  renderAll();
+  showToast(`✅ Shipped ${matching.length} pallet(s) from Dock ${door}`);
+}
+
+function shipAllOnDock() {
+  if (state.dockQueue.length === 0) {
+    showToast("No pallets currently at loading dock");
+    return;
+  }
+  if (!confirm(`Mark all ${state.dockQueue.length} pallet(s) at loading docks as SHIPPED?`)) return;
+
+  const nowIso = new Date().toISOString();
+  const count = state.dockQueue.length;
+  state.dockQueue.forEach(item => {
+    state.shippedHistory.unshift({
+      ...item,
+      shippedAt: nowIso
+    });
+  });
+  state.dockQueue = [];
+  syncToCloud();
+  renderAll();
+  showToast(`✅ Marked ${count} dock pallet(s) as SHIPPED`);
+}
+
+function returnDockItemToLane(slp) {
+  const idx = state.dockQueue.findIndex(item => item.slp === slp);
+  if (idx === -1) return;
+  const [item] = state.dockQueue.splice(idx, 1);
+
+  const targetLane = state.lanes.find(l => l.id === item.fromLane) || state.lanes[0];
+  if (targetLane) {
+    targetLane.pallets.push({
+      slp: item.slp,
+      orderNo: item.orderNo || "",
+      carrier: item.carrier || "",
+      stacked: !!item.stacked,
+      stagedAt: item.stagedAt || new Date().toISOString()
+    });
+    showToast(`Returned ${slp} → ${targetLane.id.toUpperCase()}`);
+  }
+  syncToCloud();
+  renderAll();
+}
+
+// =========================================================================
+// SETTINGS, BACKUP & EOD EXPORT
+// =========================================================================
+function saveSettings() {
+  state.warehouse = document.getElementById("settingWarehouse").value.trim() || "ONUS-ONT";
+  state.overdueDays = Math.max(1, parseInt(document.getElementById("settingOverdueDays").value, 10) || 7);
+  const doorsRaw = document.getElementById("settingDockDoors").value;
+  const doors = doorsRaw.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+  if (doors.length > 0) state.dockDoors = doors;
+
+  syncToCloud();
+  renderAll();
+  showToast("Settings saved");
+}
+
+function addSingleLane() {
+  const id = document.getElementById("newLaneId").value.trim().toLowerCase();
+  const cap = Math.max(1, parseInt(document.getElementById("newLaneCap").value, 10) || 6);
+  const carrier = document.getElementById("newLaneCarrier").value.trim();
+
+  if (!id) {
+    showToast("Enter a lane ID (e.g. s63)");
+    return;
+  }
+  if (state.lanes.some(l => l.id.toLowerCase() === id)) {
+    showToast("Lane " + id.toUpperCase() + " already exists");
+    return;
+  }
+
+  state.lanes.push({ id, capacity: cap, carrier, dockDoor: "", pallets: [] });
+  document.getElementById("newLaneId").value = "";
+  document.getElementById("newLaneCarrier").value = "";
+  syncToCloud();
+  renderAll();
+  showToast("Added lane " + id.toUpperCase());
+}
+
+function resetDefaultLanes() {
+  if (!confirm("Reset lanes back to default s51–s62? Any currently staged pallets in lanes will be cleared.")) return;
+  state.lanes = buildDefaultLanes();
+  syncToCloud();
+  renderAll();
+  showToast("Reset lanes to s51–s62");
+}
+
+function exportBackupJson() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${state.warehouse}_staging_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+}
+
+function importBackupJson(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      if (!Array.isArray(parsed.lanes)) throw new Error("Invalid format");
+      state = { ...state, ...parsed };
+      syncToCloud();
+      renderAll();
+      showToast("Backup restored successfully");
+    } catch (err) {
+      alert("Invalid backup JSON file");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function getTodayShipped() {
+  const todayStr = new Date().toDateString();
+  return (state.shippedHistory || []).filter(h => new Date(h.shippedAt).toDateString() === todayStr);
+}
+
+function exportEodCsv() {
+  const rows = [["Status", "Lane/Dock", "SLP_ID", "Order_No", "Carrier", "Double_Stacked", "Timestamp", "Age_Days"]];
+  state.lanes.forEach(l => {
+    l.pallets.forEach(p => {
+      rows.push([
+        isPalletOverdue(p) ? "OVERDUE_STAGED" : "STAGED",
+        l.id.toUpperCase(),
+        p.slp,
+        p.orderNo || "",
+        p.carrier || l.carrier || "",
+        p.stacked ? "YES" : "NO",
+        p.stagedAt,
+        getPalletAgeDays(p.stagedAt).toFixed(1)
+      ]);
+    });
+  });
+  getTodayShipped().forEach(s => {
+    rows.push([
+      "SHIPPED_TODAY",
+      "DOCK_" + s.dockDoor,
+      s.slp,
+      s.orderNo || "",
+      s.carrier || "",
+      s.stacked ? "YES" : "NO",
+      s.shippedAt,
+      "0"
+    ]);
+  });
+
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${state.warehouse}_EOD_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+}
+
+function copyEodSummary() {
+  const shipped = getTodayShipped();
+  let totalStaged = 0;
+  let overdueCount = 0;
+  state.lanes.forEach(l => {
+    totalStaged += l.pallets.length;
+    overdueCount += l.pallets.filter(isPalletOverdue).length;
+  });
+
+  const lines = [
+    `[${state.warehouse}] EOD Outbound Staging Report - ${new Date().toLocaleDateString()}`,
+    `• Staged Pallets Remaining: ${totalStaged}`,
+    `• Overdue Aging (>${state.overdueDays}d): ${overdueCount}`,
+    `• At Loading Dock: ${state.dockQueue.length}`,
+    `• Shipped Today: ${shipped.length}`
+  ];
+  navigator.clipboard.writeText(lines.join("\n")).then(() => showToast("Copied EOD summary to clipboard"));
+}
+
+// =========================================================================
+// NAVIGATION, FILTERS & RENDERING
+// =========================================================================
+function switchTab(tabName, btn) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+  document.getElementById("tab-" + tabName).classList.add("active");
+  renderAll();
+}
+
+function setFilter(filterName, btn) {
+  activeFilter = filterName;
+  document.querySelectorAll(".pill").forEach(p => p.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+  renderAll();
+}
+
+function filterOverdue() {
+  const pill = document.getElementById("overdueFilterPill");
+  setFilter("overdue", pill);
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove("open");
+}
+
+function renderAll() {
+  const threshold = Number(state.overdueDays) || 7;
+
+  // Update dwell threshold buttons
+  document.querySelectorAll(".dwell-btn").forEach(b => {
+    b.classList.toggle("active", Number(b.dataset.days) === threshold);
+  });
+  document.getElementById("kpiOverdueLabel").textContent = `Overdue (> ${threshold} Days)`;
+  document.getElementById("overdueFilterPill").textContent = `⚠️ Overdue (>${threshold}d)`;
+  document.getElementById("eodOverdueLabel").textContent = `Overdue Aging (>${threshold}d)`;
+
+  // Populate Lane Dropdown
+  const prevLane = document.getElementById("scanLaneSelect").value;
+  document.getElementById("scanLaneSelect").innerHTML = state.lanes.map(l => {
+    const spots = getLaneFloorSpots(l);
+    return `<option value="${l.id}" ${l.id === prevLane ? "selected" : ""}>${l.id.toUpperCase()} (${spots}/${l.capacity} spots)${l.carrier ? " - " + l.carrier : ""}</option>`;
+  }).join("");
+
+  // Compute KPIs
+  let totalPallets = 0;
+  let totalSpots = 0;
+  let totalCap = 0;
+  let activeLanes = 0;
+  let stackedCount = 0;
+  let overdueCount = 0;
+
+  state.lanes.forEach(l => {
+    totalCap += l.capacity;
+    const spots = getLaneFloorSpots(l);
+    totalSpots += spots;
+    if (l.pallets.length > 0) activeLanes++;
+    l.pallets.forEach(p => {
+      totalPallets++;
+      if (p.stacked) stackedCount++;
+      if (isPalletOverdue(p)) overdueCount++;
+    });
+  });
+
+  const shippedToday = getTodayShipped();
+  document.getElementById("kpiTotalPallets").textContent = totalPallets;
+  document.getElementById("kpiFloorSpots").textContent = `${totalSpots} / ${totalCap} floor spots used`;
+  document.getElementById("kpiActiveLanes").textContent = `${activeLanes} / ${state.lanes.length}`;
+  document.getElementById("kpiCapPct").textContent = totalCap ? Math.round((totalSpots / totalCap) * 100) + "% floor capacity" : "0%";
+  document.getElementById("kpiStacked").textContent = stackedCount;
+  document.getElementById("kpiOverdue").textContent = overdueCount;
+  document.getElementById("kpiShippedToday").textContent = shippedToday.length;
+  document.getElementById("kpiOnDock").textContent = `${state.dockQueue.length} currently on dock`;
+
+  const banner = document.getElementById("overdueBanner");
+  if (overdueCount > 0) {
+    banner.classList.add("visible");
+    document.getElementById("overdueBannerText").textContent = `⚠️ ${overdueCount} staged pallet(s) exceed ${threshold} day(s) dwell time!`;
+  } else {
+    banner.classList.remove("visible");
+  }
+
+  renderLanes();
+  renderDock();
+  renderEod(totalPallets, overdueCount, shippedToday);
+}
+
+function renderLanes() {
+  const q = document.getElementById("searchInput").value.trim().toLowerCase();
+  const grid = document.getElementById("laneGrid");
+
+  const filteredLanes = state.lanes.filter(lane => {
+    const spots = getLaneFloorSpots(lane);
+    const hasOverdue = lane.pallets.some(isPalletOverdue);
+    const hasStacked = lane.pallets.some(p => p.stacked);
+
+    if (activeFilter === "occupied" && lane.pallets.length === 0) return false;
+    if (activeFilter === "empty" && spots >= lane.capacity) return false;
+    if (activeFilter === "overdue" && !hasOverdue) return false;
+    if (activeFilter === "stacked" && !hasStacked) return false;
+
+    if (!q) return true;
+    const laneMatch = lane.id.toLowerCase().includes(q) ||
+      (lane.carrier || "").toLowerCase().includes(q) ||
+      (lane.dockDoor || "").toLowerCase().includes(q);
+    const palletMatch = lane.pallets.some(p =>
+      p.slp.toLowerCase().includes(q) ||
+      (p.orderNo || "").toLowerCase().includes(q) ||
+      (p.carrier || "").toLowerCase().includes(q)
+    );
+    return laneMatch || palletMatch;
+  });
+
+  grid.innerHTML = filteredLanes.map(lane => {
+    const spots = getLaneFloorSpots(lane);
+    const pct = Math.min(100, Math.round((spots / lane.capacity) * 100));
+    const hasOverdue = lane.pallets.some(isPalletOverdue);
+    const isFull = spots >= lane.capacity;
+    const barClass = isFull ? "full" : pct >= 75 ? "warn" : "";
+
+    const palletsHtml = lane.pallets.length === 0
+      ? `<div class="empty-lane">Empty Staging Lane</div>`
+      : `<div class="pallet-list">` + lane.pallets.map(p => {
+          const overdue = isPalletOverdue(p);
+          return `
+            <div class="pallet-item ${overdue ? "overdue" : ""}">
+              <div class="pallet-main">
+                <div class="pallet-id">
+                  ${escapeHtml(p.slp)}
+                  ${p.stacked ? `<span class="badge badge-stack">2-HIGH</span>` : ""}
+                  ${overdue ? `<span class="badge badge-overdue">OVERDUE</span>` : ""}
+                </div>
+                <div class="pallet-meta">
+                  ${p.orderNo ? `<span class="badge badge-order">${escapeHtml(p.orderNo)}</span>` : ""}
+                  ${p.carrier ? `<span>${escapeHtml(p.carrier)}</span>` : ""}
+                  <span>• ${formatAgeLabel(p.stagedAt)}</span>
+                </div>
+              </div>
+              <div class="pallet-actions">
+                <button class="btn-ghost btn-xs" onclick="openPalletModal('${lane.id}', '${escapeHtml(p.slp)}')">Edit / Move</button>
+              </div>
+            </div>
+          `;
+        }).join("") + `</div>`;
+
+    return `
+      <div class="lane-card ${hasOverdue ? "has-overdue" : isFull ? "is-full" : ""}">
+        <div class="lane-header">
+          <div>
+            <div class="lane-title-row">
+              <span class="lane-code">${lane.id.toUpperCase()}</span>
+              ${lane.carrier ? `<span class="badge badge-carrier">${escapeHtml(lane.carrier)}</span>` : ""}
+              ${lane.dockDoor ? `<span class="badge badge-dock">Dock ${escapeHtml(lane.dockDoor)}</span>` : ""}
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">
+              ${lane.pallets.length} pallet(s) • ${spots}/${lane.capacity} floor spots
+            </div>
+          </div>
+          <button class="btn-ghost btn-xs" onclick="openLaneModal('${lane.id}')">⚙️ Lane</button>
+        </div>
+        <div class="cap-bar-wrap">
+          <div class="cap-bar-fill ${barClass}" style="width:${pct}%"></div>
+        </div>
+        ${palletsHtml}
+      </div>
+    `;
+  }).join("");
+}
+
+function renderDock() {
+  const grid = document.getElementById("dockGrid");
+  grid.innerHTML = state.dockDoors.map(door => {
+    const items = state.dockQueue.filter(i => i.dockDoor === door);
+    const listHtml = items.length === 0
+      ? `<div class="empty-lane">No pallets staged at Dock ${door}</div>`
+      : `<div class="pallet-list" style="margin-bottom:10px;">` + items.map(item => `
+          <div class="pallet-item">
+            <div class="pallet-main">
+              <div class="pallet-id">${escapeHtml(item.slp)} ${item.stacked ? `<span class="badge badge-stack">2-HIGH</span>` : ""}</div>
+              <div class="pallet-meta">
+                ${item.orderNo ? `<span class="badge badge-order">${escapeHtml(item.orderNo)}</span>` : ""}
+                <span>From ${escapeHtml((item.fromLane || "").toUpperCase())}</span>
+                ${item.carrier ? `<span>• ${escapeHtml(item.carrier)}</span>` : ""}
+              </div>
+            </div>
+            <button class="btn-ghost btn-xs" onclick="returnDockItemToLane('${escapeHtml(item.slp)}')">↩ Return</button>
+          </div>
+        `).join("") + `</div>`;
+
+    return `
+      <div class="dock-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div>
+            <span style="font-size:17px; font-weight:800;">Dock ${door}</span>
+            <span style="font-size:12px; color:var(--text-muted); margin-left:6px;">(${items.length} pallet${items.length === 1 ? "" : "s"})</span>
+          </div>
+          ${items.length > 0 ? `<button class="btn-success btn-xs" onclick="shipDockDoor('${door}')">✅ Ship Door</button>` : ""}
+        </div>
+        ${listHtml}
+      </div>
+    `;
+  }).join("");
+}
+
+function renderEod(totalStaged, overdueCount, shippedToday) {
+  document.getElementById("eodDateLabel").textContent = "Generated: " + new Date().toLocaleString();
+  document.getElementById("eodRemaining").textContent = totalStaged;
+  document.getElementById("eodShipped").textContent = shippedToday.length;
+  document.getElementById("eodOverdue").textContent = overdueCount;
+
+  const shippedBody = document.getElementById("eodShippedTable");
+  shippedBody.innerHTML = shippedToday.length === 0
+    ? `<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No pallets marked shipped yet today.</td></tr>`
+    : shippedToday.map(s => `
+        <tr>
+          <td><strong>${escapeHtml(s.slp)}</strong></td>
+          <td>${escapeHtml(s.orderNo || "-")}</td>
+          <td>${escapeHtml(s.carrier || "-")}</td>
+          <td>${escapeHtml((s.fromLane || "-").toUpperCase())}</td>
+          <td>Dock ${escapeHtml(s.dockDoor || "-")}</td>
+          <td>${new Date(s.shippedAt).toLocaleTimeString()}</td>
+        </tr>
+      `).join("");
+
+  const stagedRows = [];
+  state.lanes.forEach(l => {
+    l.pallets.forEach(p => {
+      stagedRows.push(`
+        <tr>
+          <td><strong>${l.id.toUpperCase()}</strong></td>
+          <td>${escapeHtml(p.slp)}</td>
+          <td>${escapeHtml(p.orderNo || "-")}</td>
+          <td>${escapeHtml(p.carrier || l.carrier || "-")}</td>
+          <td>${p.stacked ? "Yes (2-High)" : "No"}</td>
+          <td>${new Date(p.stagedAt).toLocaleDateString()}</td>
+          <td style="color:${isPalletOverdue(p) ? "var(--danger)" : "inherit"}; font-weight:700;">${formatAgeLabel(p.stagedAt)}</td>
+        </tr>
+      `);
+    });
+  });
+
+  document.getElementById("eodStagedTable").innerHTML = stagedRows.length === 0
+    ? `<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">All staging lanes are currently clear.</td></tr>`
+    : stagedRows.join("");
+}
+
+// =========================================================================
+// BOOTSTRAP
+// =========================================================================
+loadLocalState();
+document.getElementById("settingWarehouse").value = state.warehouse;
+document.getElementById("settingOverdueDays").value = state.overdueDays;
+document.getElementById("settingDockDoors").value = state.dockDoors.join(", ");
+renderAll();
+syncFromCloud();
+</script>
+</body>
+</html>
