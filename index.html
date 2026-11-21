@@ -362,4 +362,824 @@
         <button type="button" onclick="closeModal('backup-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
       </div>
       <div class="p-4 space-y-4 text-xs">
-        <div class="bg-sky-5
+        <div class="bg-sky-50 border border-sky-200 rounded-xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sky-900">Google Apps Script Web App URL (/exec)</span>
+            <span id="modal-cloud-status" class="text-[11px] font-semibold text-sky-700">Not configured</span>
+          </div>
+          <input id="cloud-api-url-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-sky-300 rounded-lg" />
+          <div class="flex items-center justify-between gap-2 pt-1">
+            <button type="button" onclick="saveCloudApiUrl()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-1.5 rounded-lg cursor-pointer">Save &amp; Connect Cloud</button>
+            <button type="button" onclick="forceCloudPull()" class="bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 font-semibold px-3 py-1.5 rounded-lg cursor-pointer">Pull Latest Now</button>
+          </div>
+        </div>
+        <div class="border border-slate-200 rounded-xl p-3 space-y-2.5">
+          <div class="font-bold text-slate-800">Local JSON Snapshot Backup / Restore</div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" onclick="exportJsonBackup()" class="bg-slate-800 hover:bg-slate-700 text-white font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer">
+              <i class="fa-solid fa-download"></i><span>Download JSON Backup</span>
+            </button>
+            <label class="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-semibold px-3 py-2 rounded-lg cursor-pointer flex items-center gap-1.5">
+              <i class="fa-solid fa-upload"></i><span>Restore from JSON File</span>
+              <input type="file" accept=".json" onchange="importJsonBackup(event)" style="display:none;" />
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
+        <button type="button" onclick="closeModal('backup-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded-lg cursor-pointer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 7: PALLET MOVE / DETAILS -->
+  <div id="pallet-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('pallet-modal')">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+        <h2 class="font-bold text-sm">Pallet Details &amp; Relocation</h2>
+        <button type="button" onclick="closeModal('pallet-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
+      </div>
+      <div class="p-4 space-y-3 text-xs">
+        <input type="hidden" id="detail-pallet-id" />
+        <input type="hidden" id="detail-source-lane-id" />
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
+          <div class="flex justify-between"><span class="text-slate-500">SLP / LPN:</span><span id="detail-slp" class="font-mono font-bold text-slate-900 text-sm"></span></div>
+          <div class="flex justify-between"><span class="text-slate-500">Order #:</span><span id="detail-order" class="font-bold text-blue-700"></span></div>
+          <div class="flex justify-between"><span class="text-slate-500">Carrier:</span><span id="detail-carrier" class="font-semibold text-slate-800"></span></div>
+          <div class="flex justify-between"><span class="text-slate-500">Staged Time:</span><span id="detail-staged-at" class="text-slate-700"></span></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2.5 items-end">
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Move to Lane</label>
+            <select id="detail-target-lane" class="w-full px-2.5 py-2 text-xs font-bold border border-slate-300 rounded-lg"></select>
+          </div>
+          <button type="button" onclick="movePalletFromModal()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-3 rounded-lg cursor-pointer">Move Pallet</button>
+        </div>
+        <div class="pt-2 border-t border-slate-200 flex items-center justify-between">
+          <button type="button" onclick="toggleDoubleStackFromModal()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold px-3 py-1.5 rounded-lg cursor-pointer">Toggle 2x Double-Stack</button>
+          <button type="button" onclick="shipOutPalletFromModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg cursor-pointer">Ship / Clear</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const APP_VERSION = 'v2';
+    const FACILITY_ID = 'ONUS-ONT';
+    const STORAGE_KEY = 'onus_ont_pallet_staging_v2';
+    const LEGACY_STORAGE_KEYS = ['onus_ont_pallet_staging_v1', 'pallet_staging_manager_v1'];
+    const CLOUD_URL_STORAGE_KEY = 'onus_ont_cloud_api_url_v2';
+    const DEFAULT_CLOUD_API_URL = '';
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+    function safeGetStorage(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+    function safeSetStorage(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+    function safeRemoveStorage(k) { try { localStorage.removeItem(k); } catch (e) {} }
+
+    let CLOUD_API_URL = safeGetStorage(CLOUD_URL_STORAGE_KEY) || DEFAULT_CLOUD_API_URL;
+    let state = { version: APP_VERSION, facility: FACILITY_ID, updatedAt: new Date().toISOString(), lanes: [], history: [] };
+    let scannerQueue = [];
+    let draggedPalletInfo = null;
+    let saveDebounceTimer = null;
+    let isCloudSaving = false;
+    let pendingCloudSave = false;
+
+    function openModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'flex';
+    }
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    }
+
+    function createDefaultLanes() {
+      const lanes = [];
+      for (let i = 51; i <= 62; i++) {
+        lanes.push({ id: `lane-s${i}`, name: `S${i}`, capacity: 10, dock: '', carrier: '', notes: '', pallets: [] });
+      }
+      return lanes;
+    }
+
+    function normalizeStateShape(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      const lanes = Array.isArray(raw.lanes) && raw.lanes.length > 0 ? raw.lanes : createDefaultLanes();
+      lanes.forEach(lane => {
+        if (!Array.isArray(lane.pallets)) lane.pallets = [];
+        if (typeof lane.capacity !== 'number' || lane.capacity < 1) lane.capacity = 10;
+        lane.pallets.forEach(p => {
+          if (typeof p.doubleStacked !== 'boolean') p.doubleStacked = false;
+          if (!p.stagedAt) p.stagedAt = new Date().toISOString();
+        });
+      });
+      return {
+        version: APP_VERSION,
+        facility: FACILITY_ID,
+        updatedAt: raw.updatedAt || new Date().toISOString(),
+        lanes,
+        history: Array.isArray(raw.history) ? raw.history.slice(0, 200) : []
+      };
+    }
+
+    function setCloudStatus(mode, detailText) {
+      const dot = document.getElementById('cloud-sync-dot');
+      const label = document.getElementById('cloud-sync-label');
+      const modalStatus = document.getElementById('modal-cloud-status');
+      if (!dot || !label) return;
+      dot.className = 'w-2 h-2 rounded-full';
+      if (mode === 'synced') {
+        dot.classList.add('bg-emerald-400');
+        label.textContent = detailText || 'Cloud Synced';
+        if (modalStatus) modalStatus.textContent = `Connected (${detailText || 'Synced'})`;
+      } else if (mode === 'syncing') {
+        dot.classList.add('bg-sky-400', 'animate-pulse');
+        label.textContent = detailText || 'Syncing...';
+        if (modalStatus) modalStatus.textContent = 'Syncing with Google Sheets...';
+      } else if (mode === 'error') {
+        dot.classList.add('bg-rose-500');
+        label.textContent = detailText || 'Sync Error';
+        if (modalStatus) modalStatus.textContent = detailText || 'Connection Error';
+      } else {
+        dot.classList.add('bg-amber-400');
+        label.textContent = 'Local Only';
+        if (modalStatus) modalStatus.textContent = 'Not connected (Local Storage)';
+      }
+    }
+
+    async function loadState() {
+      let localLoaded = null;
+      const rawLocal = safeGetStorage(STORAGE_KEY);
+      if (rawLocal) { try { localLoaded = normalizeStateShape(JSON.parse(rawLocal)); } catch (e) {} }
+      if (!localLoaded) {
+        for (const k of LEGACY_STORAGE_KEYS) {
+          const r = safeGetStorage(k);
+          if (r) { try { localLoaded = normalizeStateShape(JSON.parse(r)); if (localLoaded) break; } catch (e) {} }
+        }
+      }
+      state = localLoaded || { version: APP_VERSION, facility: FACILITY_ID, updatedAt: new Date().toISOString(), lanes: createDefaultLanes(), history: [] };
+      refreshAllSelectors();
+      renderBoard();
+      if (!CLOUD_API_URL) { setCloudStatus('local'); return; }
+      await pullFromCloud(true);
+    }
+
+    async function pullFromCloud(isInitial = false) {
+      if (!CLOUD_API_URL) return;
+      if (isInitial) setCloudStatus('syncing', 'Loading...');
+      try {
+        const res = await fetch(`${CLOUD_API_URL}?t=${Date.now()}`, { method: 'GET', cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data && data.ok && data.stateJson) {
+          const remoteState = normalizeStateShape(JSON.parse(data.stateJson));
+          if (remoteState) {
+            state = remoteState;
+            safeSetStorage(STORAGE_KEY, JSON.stringify(state));
+            refreshAllSelectors();
+            renderBoard();
+          }
+        } else if (data && data.ok && !data.stateJson) {
+          await pushToCloudNow();
+        }
+        const shortTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setCloudStatus('synced', `Synced ${shortTime}`);
+      } catch (err) {
+        console.error('Cloud pull failed:', err);
+        setCloudStatus('error', 'Sync Error');
+      }
+    }
+
+    function saveState(immediate = false) {
+      state.version = APP_VERSION;
+      state.facility = FACILITY_ID;
+      state.updatedAt = new Date().toISOString();
+      safeSetStorage(STORAGE_KEY, JSON.stringify(state));
+      if (!CLOUD_API_URL) { setCloudStatus('local'); return; }
+      if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+      if (immediate) { pushToCloudNow(); }
+      else {
+        setCloudStatus('syncing', 'Saving...');
+        saveDebounceTimer = setTimeout(() => pushToCloudNow(), 350);
+      }
+    }
+
+    async function pushToCloudNow() {
+      if (!CLOUD_API_URL) return;
+      if (isCloudSaving) { pendingCloudSave = true; return; }
+      isCloudSaving = true;
+      setCloudStatus('syncing', 'Saving...');
+      try {
+        const payload = JSON.stringify({ action: 'save', facility: FACILITY_ID, version: APP_VERSION, stateJson: JSON.stringify(state) });
+        const res = await fetch(CLOUD_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: payload });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await res.json();
+        const shortTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setCloudStatus('synced', `Synced ${shortTime}`);
+      } catch (err) {
+        console.error('Cloud save failed:', err);
+        setCloudStatus('error', 'Save Failed');
+      } finally {
+        isCloudSaving = false;
+        if (pendingCloudSave) { pendingCloudSave = false; pushToCloudNow(); }
+      }
+    }
+
+    setInterval(() => {
+      if (!CLOUD_API_URL || isCloudSaving || draggedPalletInfo) return;
+      const anyModalOpen = Array.from(document.querySelectorAll('.modal-backdrop')).some(el => el.style.display === 'flex');
+      if (anyModalOpen) return;
+      pullFromCloud(false);
+    }, 8000);
+
+    function openCloudConfigModal() {
+      openBackupModal();
+      setTimeout(() => document.getElementById('cloud-api-url-input')?.focus(), 60);
+    }
+
+    function saveCloudApiUrl() {
+      const val = (document.getElementById('cloud-api-url-input')?.value || '').trim();
+      CLOUD_API_URL = val;
+      if (val) {
+        safeSetStorage(CLOUD_URL_STORAGE_KEY, val);
+        showToast('Cloud API URL saved. Syncing...');
+        pullFromCloud(true);
+      } else {
+        safeRemoveStorage(CLOUD_URL_STORAGE_KEY);
+        setCloudStatus('local');
+        showToast('Switched to Local Only mode.');
+      }
+    }
+
+    function forceCloudPull() {
+      if (!CLOUD_API_URL) { showToast('Enter your Apps Script /exec URL first.', true); return; }
+      pullFromCloud(true);
+      showToast('Pulled latest board state from Google Sheets.');
+    }
+
+    function computeFloorSpotsUsed(pallets) {
+      if (!Array.isArray(pallets) || pallets.length === 0) return 0;
+      let s = 0, d = 0;
+      for (const p of pallets) { if (p.doubleStacked) d++; else s++; }
+      return s + Math.ceil(d / 2);
+    }
+
+    function computeDoubleStackPairMap(pallets) {
+      const map = {};
+      const stacked = pallets.filter(p => p.doubleStacked);
+      for (let i = 0; i < stacked.length; i += 2) {
+        const pairNum = Math.floor(i / 2) + 1;
+        map[stacked[i].id] = { pairNum };
+        if (stacked[i + 1]) map[stacked[i + 1].id] = { pairNum };
+      }
+      return map;
+    }
+
+    function normalizeOrderNumber(order) { return String(order || '').trim().toUpperCase(); }
+
+    function getBestAvailableLocationForOrder(orderNum, count = 1, isDouble = false) {
+      const normOrder = normalizeOrderNumber(orderNum);
+      const needed = isDouble ? Math.ceil(count / 2) : count;
+      if (normOrder) {
+        const match = state.lanes.find(l => l.pallets.some(p => normalizeOrderNumber(p.order) === normOrder) && (l.capacity - computeFloorSpotsUsed(l.pallets) >= needed));
+        if (match) return match;
+      }
+      const empty = state.lanes.find(l => l.pallets.length === 0 && l.capacity >= needed);
+      if (empty) return empty;
+      const partial = state.lanes.find(l => l.capacity - computeFloorSpotsUsed(l.pallets) >= needed);
+      return partial || state.lanes[0] || null;
+    }
+
+    function updateQuickAutoSuggestBadge() {
+      const orderVal = document.getElementById('quick-order-input')?.value || '';
+      const isDouble = document.getElementById('quick-double-checkbox')?.checked || false;
+      const badge = document.getElementById('quick-auto-suggest-badge');
+      if (!badge) return;
+      const best = getBestAvailableLocationForOrder(orderVal, 1, isDouble);
+      badge.innerHTML = best ? `Suggest: <strong class="text-blue-700">${escapeHtml(best.name)}</strong>` : `Suggest: <strong class="text-rose-600">Full</strong>`;
+    }
+
+    function updateScannerAutoSuggestPill() {
+      const orderVal = document.getElementById('scanner-order-input')?.value || '';
+      const laneSel = document.getElementById('scanner-lane-select')?.value || 'AUTO';
+      const isDouble = document.getElementById('scanner-double-checkbox')?.checked || false;
+      const pill = document.getElementById('scanner-auto-suggest-pill');
+      if (!pill) return;
+      if (laneSel !== 'AUTO') {
+        const chosen = state.lanes.find(l => l.id === laneSel);
+        pill.textContent = chosen ? `-> ${chosen.name}` : '';
+        return;
+      }
+      const best = getBestAvailableLocationForOrder(orderVal, Math.max(1, scannerQueue.length), isDouble);
+      pill.textContent = best ? `-> ${best.name}` : '-> Full';
+    }
+
+    function renderBoard() {
+      const board = document.getElementById('staging-board');
+      if (!board) return;
+      const searchQ = (document.getElementById('board-search-input')?.value || '').trim().toUpperCase();
+      const carrierFilter = document.getElementById('carrier-filter-select')?.value || 'ALL';
+      const statusFilter = document.getElementById('status-filter-select')?.value || 'ALL';
+
+      let totalPallets = 0, totalFloorUsed = 0, totalFloorCap = 0, totalDoubleStacked = 0, totalAgingOver7d = 0;
+      const now = Date.now();
+
+      const cardsHtml = state.lanes.map(lane => {
+        const floorUsed = computeFloorSpotsUsed(lane.pallets);
+        const freeSpots = Math.max(0, lane.capacity - floorUsed);
+        const doubleCount = lane.pallets.filter(p => p.doubleStacked).length;
+        const agingCount = lane.pallets.filter(p => now - new Date(p.stagedAt).getTime() > SEVEN_DAYS_MS).length;
+
+        totalPallets += lane.pallets.length;
+        totalFloorUsed += floorUsed;
+        totalFloorCap += lane.capacity;
+        totalDoubleStacked += doubleCount;
+        totalAgingOver7d += agingCount;
+
+        if (statusFilter === 'ACTIVE' && lane.pallets.length === 0) return '';
+        if (statusFilter === 'EMPTY' && lane.pallets.length > 0) return '';
+        if (statusFilter === 'NEAR_FULL' && freeSpots > 2) return '';
+        if (statusFilter === 'AGING' && agingCount === 0) return '';
+
+        if (carrierFilter !== 'ALL') {
+          const m1 = (lane.carrier || '').toUpperCase() === carrierFilter;
+          const m2 = lane.pallets.some(p => (p.carrier || '').toUpperCase() === carrierFilter);
+          if (!m1 && !m2) return '';
+        }
+
+        if (searchQ) {
+          const m1 = lane.name.toUpperCase().includes(searchQ) || (lane.dock || '').toUpperCase().includes(searchQ) || (lane.carrier || '').toUpperCase().includes(searchQ);
+          const m2 = lane.pallets.some(p => p.slp.toUpperCase().includes(searchQ) || (p.order || '').toUpperCase().includes(searchQ) || (p.carrier || '').toUpperCase().includes(searchQ));
+          if (!m1 && !m2) return '';
+        }
+
+        const isNearFull = freeSpots <= 2;
+        const headerBgClass = isNearFull ? 'bg-emerald-200 text-emerald-950 border-b border-emerald-300' : 'bg-slate-800 text-white';
+        const subTextClass = isNearFull ? 'text-emerald-800' : 'text-slate-300';
+        const pairMap = computeDoubleStackPairMap(lane.pallets);
+
+        const palletsHtml = lane.pallets.length === 0
+          ? `<div class="py-7 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">Empty Staging Lane</div>`
+          : lane.pallets.map(p => {
+              const ageMs = now - new Date(p.stagedAt).getTime();
+              const isOver7d = ageMs > SEVEN_DAYS_MS;
+              const isOver24h = ageMs > ONE_DAY_MS;
+              const pairInfo = pairMap[p.id];
+              return `
+                <div draggable="true" ondragstart="handlePalletDragStart(event, '${lane.id}', '${p.id}')" ondragend="handlePalletDragEnd()" onclick="openPalletDetailModal('${lane.id}', '${p.id}')"
+                  class="pallet-card cursor-pointer rounded-lg border px-2.5 py-2 flex items-center justify-between gap-2 ${isOver7d ? 'bg-rose-50 border-rose-300' : p.doubleStacked ? 'bg-indigo-50/70 border-indigo-200' : 'bg-white border-slate-200 hover:border-blue-300'}">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="font-mono font-bold text-xs text-slate-900 truncate">${escapeHtml(p.slp)}</span>
+                      ${p.doubleStacked ? `<span class="px-1.5 py-0.5 text-[10px] font-bold rounded bg-indigo-600 text-white">2x #${pairInfo?.pairNum || 1}</span>` : ''}
+                      ${isOver7d ? `<span class="px-1.5 py-0.5 text-[10px] font-bold rounded bg-rose-600 text-white">&gt;7d</span>` : isOver24h ? `<span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-800">${formatRelativeAge(p.stagedAt)}</span>` : ''}
+                    </div>
+                    <div class="text-[11px] text-slate-600 flex items-center gap-2 mt-0.5 truncate">
+                      <span class="font-bold text-blue-700">${escapeHtml(p.order || 'NO-ORDER')}</span>
+                      ${p.carrier ? `<span class="text-slate-500">&bull; ${escapeHtml(p.carrier)}</span>` : ''}
+                      <span class="text-slate-400 ml-auto">${formatRelativeAge(p.stagedAt)}</span>
+                    </div>
+                  </div>
+                  <button type="button" onclick="event.stopPropagation(); quickToggleDoubleStack('${lane.id}', '${p.id}')" class="px-2 py-1 text-[10px] font-bold rounded border transition shrink-0 cursor-pointer ${p.doubleStacked ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-indigo-50'}">2x</button>
+                </div>`;
+            }).join('');
+
+        return `
+          <div id="card-${lane.id}" ondragover="handleLaneDragOver(event, '${lane.id}')" ondragleave="handleLaneDragLeave('${lane.id}')" ondrop="handleLaneDrop(event, '${lane.id}')" class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+            <div class="${headerBgClass} px-3 py-2 flex items-center justify-between gap-2">
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-black text-sm tracking-tight">${escapeHtml(lane.name)}</span>
+                  ${lane.dock ? `<span class="px-1.5 py-0.5 text-[10px] font-bold rounded ${isNearFull ? 'bg-emerald-800 text-white' : 'bg-blue-600 text-white'}">${escapeHtml(lane.dock)}</span>` : ''}
+                  ${lane.carrier ? `<span class="px-1.5 py-0.5 text-[10px] font-semibold rounded ${isNearFull ? 'bg-emerald-300/80 text-emerald-950' : 'bg-slate-700 text-slate-200'}">${escapeHtml(lane.carrier)}</span>` : ''}
+                </div>
+                <div class="text-[11px] ${subTextClass} mt-0.5">
+                  Floor: <strong>${floorUsed}/${lane.capacity}</strong> spots (${freeSpots} free) &bull; ${lane.pallets.length} plts
+                </div>
+              </div>
+              <button type="button" onclick="openEditLaneModal('${lane.id}')" class="p-1.5 rounded-lg cursor-pointer ${isNearFull ? 'hover:bg-emerald-300/70 text-emerald-900' : 'hover:bg-slate-700 text-slate-300'}" title="Configure Lane">
+                <i class="fa-solid fa-sliders text-xs"></i>
+              </button>
+            </div>
+            <div class="p-2.5 space-y-1.5 flex-1 bg-slate-50/40">${palletsHtml}</div>
+          </div>`;
+      }).join('');
+
+      board.innerHTML = cardsHtml || `<div class="col-span-full bg-white border border-slate-200 rounded-xl p-8 text-center text-sm text-slate-500">No staging lanes match your active filter.</div>`;
+      document.getElementById('stat-total-pallets').textContent = totalPallets;
+      document.getElementById('stat-floor-spots').textContent = `${totalFloorUsed} / ${totalFloorCap}`;
+      document.getElementById('stat-double-stacked').textContent = totalDoubleStacked;
+      const agingEl = document.getElementById('stat-aging-count');
+      agingEl.textContent = totalAgingOver7d;
+      agingEl.className = totalAgingOver7d > 0 ? 'font-bold text-rose-400 text-sm leading-tight' : 'font-bold text-slate-300 text-sm leading-tight';
+      updateQuickAutoSuggestBadge();
+    }
+
+    function refreshAllSelectors() {
+      const quickSel = document.getElementById('quick-lane-select');
+      const scannerSel = document.getElementById('scanner-lane-select');
+      const carrierSel = document.getElementById('carrier-filter-select');
+      const opts = state.lanes.map(l => `<option value="${l.id}">${escapeHtml(l.name)} (${computeFloorSpotsUsed(l.pallets)}/${l.capacity})</option>`).join('');
+      if (quickSel) { const p = quickSel.value; quickSel.innerHTML = `<option value="AUTO">Auto-Suggest Lane</option>${opts}`; if (p) quickSel.value = p; }
+      if (scannerSel) { const p = scannerSel.value; scannerSel.innerHTML = `<option value="AUTO">Auto-Suggest (Same Order / Empty First)</option>${opts}`; if (p) scannerSel.value = p; }
+      if (carrierSel) {
+        const p = carrierSel.value;
+        const set = new Set();
+        state.lanes.forEach(l => { if (l.carrier) set.add(l.carrier.toUpperCase()); l.pallets.forEach(x => { if (x.carrier) set.add(x.carrier.toUpperCase()); }); });
+        const sorted = Array.from(set).sort();
+        carrierSel.innerHTML = `<option value="ALL">All Carriers</option>` + sorted.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        if (p && (p === 'ALL' || set.has(p))) carrierSel.value = p;
+      }
+    }
+
+    function isDuplicateSlp(slp) {
+      const n = slp.trim().toUpperCase();
+      return state.lanes.some(l => l.pallets.some(p => p.slp.toUpperCase() === n));
+    }
+
+    function handleQuickScanSubmit(e) {
+      e.preventDefault();
+      const slpInput = document.getElementById('quick-slp-input');
+      const slp = (slpInput.value || '').trim().toUpperCase();
+      const order = (document.getElementById('quick-order-input').value || '').trim().toUpperCase();
+      const carrier = (document.getElementById('quick-carrier-input').value || '').trim().toUpperCase();
+      const laneSel = document.getElementById('quick-lane-select').value;
+      const isDouble = document.getElementById('quick-double-checkbox').checked;
+      if (!slp) { slpInput.focus(); return; }
+      if (isDuplicateSlp(slp)) { playBeep(false); showToast(`Duplicate SLP ${slp} already staged!`, true); slpInput.select(); return; }
+      const target = laneSel === 'AUTO' ? getBestAvailableLocationForOrder(order, 1, isDouble) : state.lanes.find(l => l.id === laneSel);
+      if (!target) { playBeep(false); showToast('No available lane.', true); return; }
+      target.pallets.push({ id: `plt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, slp, order, carrier: carrier || target.carrier || '', doubleStacked: isDouble, stagedAt: new Date().toISOString() });
+      recordHistory('STAGE', `${slp} (${order || 'No Order'}) -> ${target.name}`);
+      playBeep(true);
+      slpInput.value = '';
+      slpInput.focus();
+      refreshAllSelectors();
+      renderBoard();
+      saveState();
+      showToast(`Staged ${slp} in ${target.name}`);
+    }
+
+    function openScannerModal() {
+      scannerQueue = [];
+      renderScannerQueue();
+      openModal('scanner-modal');
+      updateScannerAutoSuggestPill();
+      setTimeout(() => { const el = document.getElementById('scanner-order-input'); if (el) { el.focus(); el.select(); } }, 40);
+    }
+
+    function addSlpToBatchQueue() {
+      const input = document.getElementById('scanner-slp-input');
+      const slp = (input.value || '').trim().toUpperCase();
+      if (!slp) return;
+      if (scannerQueue.includes(slp) || isDuplicateSlp(slp)) { playBeep(false); showToast(`SLP ${slp} already scanned or staged.`, true); input.select(); return; }
+      scannerQueue.push(slp);
+      playBeep(true);
+      input.value = '';
+      input.focus();
+      renderScannerQueue();
+      updateScannerAutoSuggestPill();
+    }
+
+    function removeSlpFromBatchQueue(idx) { scannerQueue.splice(idx, 1); renderScannerQueue(); updateScannerAutoSuggestPill(); }
+    function clearScannerQueue() { scannerQueue = []; renderScannerQueue(); updateScannerAutoSuggestPill(); }
+
+    function renderScannerQueue() {
+      document.getElementById('scanner-queue-count').textContent = scannerQueue.length;
+      const listEl = document.getElementById('scanner-queue-list');
+      listEl.innerHTML = scannerQueue.length === 0
+        ? `<div class="text-slate-400 italic py-3 text-center">No SLPs scanned yet. Scan barcode above.</div>`
+        : scannerQueue.map((slp, idx) => `<div class="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 flex items-center justify-between"><span class="font-mono font-bold text-slate-800">${idx + 1}. ${escapeHtml(slp)}</span><button type="button" onclick="removeSlpFromBatchQueue(${idx})" class="text-rose-500 font-bold cursor-pointer">&times;</button></div>`).join('');
+    }
+
+    function commitScannerBatch() {
+      const order = (document.getElementById('scanner-order-input').value || '').trim().toUpperCase();
+      const carrier = (document.getElementById('scanner-carrier-input').value || '').trim().toUpperCase();
+      const laneSel = document.getElementById('scanner-lane-select').value;
+      const isDouble = document.getElementById('scanner-double-checkbox').checked;
+      const pending = (document.getElementById('scanner-slp-input').value || '').trim().toUpperCase();
+      if (pending && !scannerQueue.includes(pending) && !isDuplicateSlp(pending)) scannerQueue.push(pending);
+      if (scannerQueue.length === 0) { showToast('Scan at least one SLP first.', true); return; }
+      const target = laneSel === 'AUTO' ? getBestAvailableLocationForOrder(order, scannerQueue.length, isDouble) : state.lanes.find(l => l.id === laneSel);
+      if (!target) { showToast('No available lane.', true); return; }
+      const nowIso = new Date().toISOString();
+      scannerQueue.forEach(slp => target.pallets.push({ id: `plt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, slp, order, carrier: carrier || target.carrier || '', doubleStacked: isDouble, stagedAt: nowIso }));
+      recordHistory('BATCH_STAGE', `Staged ${scannerQueue.length} pallets -> ${target.name}`);
+      playBeep(true);
+      closeModal('scanner-modal');
+      refreshAllSelectors();
+      renderBoard();
+      saveState();
+      showToast(`Staged ${scannerQueue.length} pallets into ${target.name}`);
+    }
+
+    function quickToggleDoubleStack(laneId, palletId) {
+      const lane = state.lanes.find(l => l.id === laneId);
+      const p = lane?.pallets.find(x => x.id === palletId);
+      if (!p) return;
+      p.doubleStacked = !p.doubleStacked;
+      renderBoard();
+      saveState();
+    }
+
+    function handlePalletDragStart(e, laneId, palletId) { draggedPalletInfo = { laneId, palletId }; e.dataTransfer.effectAllowed = 'move'; }
+    function handlePalletDragEnd() { draggedPalletInfo = null; document.querySelectorAll('.lane-drop-active').forEach(el => el.classList.remove('lane-drop-active')); }
+    function handleLaneDragOver(e, laneId) { e.preventDefault(); document.getElementById(`card-${laneId}`)?.classList.add('lane-drop-active'); }
+    function handleLaneDragLeave(laneId) { document.getElementById(`card-${laneId}`)?.classList.remove('lane-drop-active'); }
+    function handleLaneDrop(e, targetLaneId) {
+      e.preventDefault();
+      handleLaneDragLeave(targetLaneId);
+      if (!draggedPalletInfo) return;
+      const { laneId, palletId } = draggedPalletInfo;
+      draggedPalletInfo = null;
+      if (laneId !== targetLaneId) movePalletBetweenLanes(laneId, targetLaneId, palletId);
+    }
+
+    function movePalletBetweenLanes(srcId, dstId, palletId) {
+      const src = state.lanes.find(l => l.id === srcId);
+      const dst = state.lanes.find(l => l.id === dstId);
+      if (!src || !dst) return;
+      const idx = src.pallets.findIndex(p => p.id === palletId);
+      if (idx === -1) return;
+      const [p] = src.pallets.splice(idx, 1);
+      dst.pallets.push(p);
+      refreshAllSelectors();
+      renderBoard();
+      saveState();
+      showToast(`Moved ${p.slp} to ${dst.name}`);
+    }
+
+    function openPalletDetailModal(laneId, palletId) {
+      const lane = state.lanes.find(l => l.id === laneId);
+      const p = lane?.pallets.find(x => x.id === palletId);
+      if (!lane || !p) return;
+      document.getElementById('detail-pallet-id').value = p.id;
+      document.getElementById('detail-source-lane-id').value = lane.id;
+      document.getElementById('detail-slp').textContent = p.slp;
+      document.getElementById('detail-order').textContent = p.order || 'N/A';
+      document.getElementById('detail-carrier').textContent = p.carrier || 'N/A';
+      document.getElementById('detail-staged-at').textContent = new Date(p.stagedAt).toLocaleString();
+      document.getElementById('detail-target-lane').innerHTML = state.lanes.map(l => `<option value="${l.id}" ${l.id === lane.id ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('');
+      openModal('pallet-modal');
+    }
+
+    function movePalletFromModal() {
+      const pid = document.getElementById('detail-pallet-id').value;
+      const src = document.getElementById('detail-source-lane-id').value;
+      const dst = document.getElementById('detail-target-lane').value;
+      closeModal('pallet-modal');
+      if (src !== dst) movePalletBetweenLanes(src, dst, pid);
+    }
+
+    function toggleDoubleStackFromModal() {
+      quickToggleDoubleStack(document.getElementById('detail-source-lane-id').value, document.getElementById('detail-pallet-id').value);
+      closeModal('pallet-modal');
+    }
+
+    function shipOutPalletFromModal() {
+      const pid = document.getElementById('detail-pallet-id').value;
+      const lane = state.lanes.find(l => l.id === document.getElementById('detail-source-lane-id').value);
+      if (!lane) return;
+      const idx = lane.pallets.findIndex(p => p.id === pid);
+      if (idx === -1) return;
+      const [rem] = lane.pallets.splice(idx, 1);
+      closeModal('pallet-modal');
+      refreshAllSelectors();
+      renderBoard();
+      saveState();
+      showToast(`Cleared ${rem.slp} from ${lane.name}`);
+    }
+
+    function openEditLaneModal(laneId) {
+      const lane = state.lanes.find(l => l.id === laneId);
+      if (!lane) return;
+      document.getElementById('lane-modal-title').textContent = `Configure Lane ${lane.name}`;
+      document.getElementById('edit-lane-id').value = lane.id;
+      document.getElementById('edit-lane-name').value = lane.name;
+      document.getElementById('edit-lane-capacity').value = lane.capacity;
+      document.getElementById('edit-lane-dock').value = lane.dock || '';
+      document.getElementById('edit-lane-carrier').value = lane.carrier || '';
+      document.getElementById('edit-lane-notes').value = lane.notes || '';
+      openModal('lane-modal');
+    }
+
+    function saveLaneSettings(e) {
+      e.preventDefault();
+      const lane = state.lanes.find(l => l.id === document.getElementById('edit-lane-id').value);
+      if (!lane) return;
+      lane.name = document.getElementById('edit-lane-name').value.trim().toUpperCase() || lane.name;
+      lane.capacity = Math.max(1, parseInt(document.getElementById('edit-lane-capacity').value, 10) || 10);
+      lane.dock = document.getElementById('edit-lane-dock').value.trim().toUpperCase();
+      lane.carrier = document.getElementById('edit-lane-carrier').value.trim().toUpperCase();
+      lane.notes = document.getElementById('edit-lane-notes').value.trim();
+      closeModal('lane-modal');
+      refreshAllSelectors();
+      renderBoard();
+      saveState();
+      showToast(`Updated lane ${lane.name}`);
+    }
+
+    function deleteCurrentLane() {
+      const idx = state.lanes.findIndex(l => l.id === document.getElementById('edit-lane-id').value);
+      if (idx === -1) return;
+      if (state.lanes[idx].pallets.length > 0) { showToast('Clear pallets before deleting lane.', true); return; }
+      const [rem] = state.lanes.splice(idx, 1);
+      closeModal('lane-modal');
+      refreshAllSelectors();
+      renderBoard();
+      saveState();
+      showToast(`Deleted lane ${rem.name}`);
+    }
+
+    function openBatchAddModal() { openModal('batch-add-modal'); }
+    function handleBatchAddLanes(e) {
+      e.preventDefault();
+      const prefix = (document.getElementById('batch-prefix').value || 'S').trim().toUpperCase();
+      const start = parseInt(document.getElementById('batch-start').value, 10);
+      const end = parseInt(document.getElementById('batch-end').value, 10);
+      const cap = Math.max(1, parseInt(document.getElementById('batch-capacity').value, 10) || 10);
+      if (isNaN(start) || isNaN(end) || end < start || end - start > 50) { showToast('Invalid range.', true); return; }
+      let added = 0;
+      for (let i = start; i <= end; i++) {
+        const name = `${prefix}${i}`;
+        if (!state.lanes.some(l => l.name === name)) {
+          state.lanes.push({ id: `lane-${name.toLowerCase()}-${Date.now()}-${i}`, name, capacity: cap, dock: '', carrier: '', notes: '', pallets: [] });
+          added++;
+        }
+      }
+      closeModal('batch-add-modal');
+      refreshAllSelectors();
+      renderBoard();
+      saveState();
+      showToast(`Added ${added} new lanes.`);
+    }
+
+    function computeConsolidationMoves() {
+      const moves = [];
+      const orderMap = {};
+      state.lanes.forEach(l => l.pallets.forEach(p => {
+        const ord = normalizeOrderNumber(p.order);
+        if (!ord) return;
+        if (!orderMap[ord]) orderMap[ord] = {};
+        if (!orderMap[ord][l.id]) orderMap[ord][l.id] = [];
+        orderMap[ord][l.id].push(p);
+      }));
+      Object.entries(orderMap).forEach(([ord, lMap]) => {
+        const ids = Object.keys(lMap);
+        if (ids.length <= 1) return;
+        ids.sort((a, b) => lMap[b].length - lMap[a].length);
+        const primary = state.lanes.find(l => l.id === ids[0]);
+        let used = computeFloorSpotsUsed(primary.pallets);
+        for (let i = 1; i < ids.length; i++) {
+          const donor = state.lanes.find(l => l.id === ids[i]);
+          const pts = lMap[ids[i]];
+          const need = computeFloorSpotsUsed(pts);
+          if (primary.capacity - used >= need) {
+            moves.push({ order: ord, fromLaneId: donor.id, fromLaneName: donor.name, toLaneId: primary.id, toLaneName: primary.name, palletIds: pts.map(p => p.id), palletCount: pts.length });
+            used += need;
+          }
+        }
+      });
+      return moves;
+    }
+
+    function openConsolidateModal() {
+      const moves = computeConsolidationMoves();
+      const container = document.getElementById('consolidate-suggestions-list');
+      const btn = document.getElementById('apply-all-consolidate-btn');
+      if (moves.length === 0) {
+        container.innerHTML = `<div class="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl p-4 text-xs text-center font-medium">All multi-pallet orders are already consolidated!</div>`;
+        btn.style.display = 'none';
+      } else {
+        btn.style.display = 'inline-block';
+        container.innerHTML = moves.map((m, idx) => `<div class="border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2 bg-slate-50"><div class="text-xs font-bold">Order <span class="text-blue-700">${escapeHtml(m.order)}</span>: Move ${m.palletCount} pallet(s) ${escapeHtml(m.fromLaneName)} &rarr; ${escapeHtml(m.toLaneName)}</div><button type="button" onclick="applySingleConsolidation(${idx})" class="bg-indigo-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer">Execute</button></div>`).join('');
+      }
+      openModal('consolidate-modal');
+    }
+
+    function applySingleConsolidation(idx) {
+      const m = computeConsolidationMoves()[idx];
+      if (!m) return;
+      m.palletIds.forEach(pid => movePalletBetweenLanes(m.fromLaneId, m.toLaneId, pid));
+      openConsolidateModal();
+    }
+
+    function applyAllConsolidations() {
+      const moves = computeConsolidationMoves();
+      moves.forEach(m => m.palletIds.forEach(pid => movePalletBetweenLanes(m.fromLaneId, m.toLaneId, pid)));
+      closeModal('consolidate-modal');
+      showToast(`Consolidated ${moves.length} order group(s).`);
+    }
+
+    function openAgingModal() {
+      const now = Date.now();
+      const items = [];
+      state.lanes.forEach(l => l.pallets.forEach(p => { if (now - new Date(p.stagedAt).getTime() > SEVEN_DAYS_MS) items.push({ lane: l, pallet: p }); }));
+      const container = document.getElementById('aging-list-container');
+      container.innerHTML = items.length === 0
+        ? `<div class="text-center text-slate-500 py-6">No pallets staged over 7 days.</div>`
+        : items.map(it => `<div class="border border-rose-200 bg-rose-50 rounded-xl p-2.5 flex items-center justify-between"><div><div class="font-mono font-bold">${escapeHtml(it.pallet.slp)} &bull; ${escapeHtml(it.pallet.order || 'NO-ORDER')}</div><div class="text-[11px] text-rose-700">Lane <strong>${escapeHtml(it.lane.name)}</strong> &bull; ${formatRelativeAge(it.pallet.stagedAt)}</div></div><button type="button" onclick="locateLaneOnBoard('${it.lane.id}')" class="bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer">Locate</button></div>`).join('');
+      openModal('aging-modal');
+    }
+
+    function locateLaneOnBoard(laneId) {
+      closeModal('aging-modal');
+      const card = document.getElementById(`card-${laneId}`);
+      if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.classList.add('lane-highlight-pulse'); }
+    }
+
+    function openBackupModal() {
+      const input = document.getElementById('cloud-api-url-input');
+      if (input) input.value = CLOUD_API_URL || '';
+      openModal('backup-modal');
+    }
+
+    function exportJsonBackup() {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `ONUS-ONT_Staging_${APP_VERSION}_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+    }
+
+    function importJsonBackup(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const parsed = normalizeStateShape(JSON.parse(e.target.result));
+          if (!parsed) throw new Error('Invalid');
+          state = parsed;
+          refreshAllSelectors();
+          renderBoard();
+          saveState(true);
+          closeModal('backup-modal');
+          showToast('Restored from JSON.');
+        } catch (err) { showToast('Invalid JSON file.', true); }
+      };
+      reader.readAsText(file);
+    }
+
+    function exportEodCsv() {
+      const rows = [['Facility', 'Version', 'Lane', 'Dock', 'Carrier', 'SLP', 'Order', 'DoubleStacked_2x', 'StagedAt']];
+      state.lanes.forEach(l => {
+        if (l.pallets.length === 0) rows.push([FACILITY_ID, APP_VERSION, l.name, l.dock || '', l.carrier || '', '', '', '', '']);
+        else l.pallets.forEach(p => rows.push([FACILITY_ID, APP_VERSION, l.name, l.dock || '', p.carrier || l.carrier || '', p.slp, p.order || '', p.doubleStacked ? 'YES' : 'NO', p.stagedAt]));
+      });
+      const blob = new Blob([rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `ONUS-ONT_EOD_${APP_VERSION}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+    }
+
+    function recordHistory(action, detail) {
+      state.history.unshift({ at: new Date().toISOString(), action, detail });
+      if (state.history.length > 200) state.history.length = 200;
+    }
+
+    let toastTimer = null;
+    function showToast(msg, isError = false) {
+      const banner = document.getElementById('toast-banner');
+      if (!banner) return;
+      document.getElementById('toast-message').textContent = msg;
+      document.getElementById('toast-icon').className = isError ? 'fa-solid fa-triangle-exclamation text-rose-400' : 'fa-solid fa-circle-check text-emerald-400';
+      banner.style.display = 'flex';
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { banner.style.display = 'none'; }, 3000);
+    }
+
+    function formatRelativeAge(isoStr) {
+      const diffMs = Math.max(0, Date.now() - new Date(isoStr).getTime());
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 60) return `${mins}m`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h`;
+      return `${Math.floor(hrs / 24)}d ${hrs % 24}h`;
+    }
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function playBeep(success = true) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = success ? 'sine' : 'sawtooth';
+        osc.frequency.value = success ? 880 : 220;
+        gain.gain.value = 0.08;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + (success ? 0.09 : 0.25));
+      } catch (e) {}
+    }
+
+    // Immediate initialization
+    loadState();
+  </script>
+</body>
+</html>
