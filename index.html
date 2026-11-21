@@ -2090,8 +2090,80 @@
 
         window.activeDragState = null;
 
-        function isAppsScriptAvailable() {
+        /**
+         * Cloud link for copies of the app hosted outside Apps Script (e.g. GitHub Pages).
+         * Paste your Apps Script web-app URL (ends in /exec) here so every link shares one board.
+         */
+        const CLOUD_API_URL = '';
+        const ACCESS_CODE_KEY = 'outbound_access_code_v2';
+
+        function hasGoogleScriptRun() {
             return typeof google !== 'undefined' && google && google.script && google.script.run;
+        }
+
+        // True when this page can reach the Google Sheet: opened from the Apps Script
+        // link, or hosted elsewhere with CLOUD_API_URL set.
+        function isAppsScriptAvailable() {
+            return Boolean(hasGoogleScriptRun() || CLOUD_API_URL);
+        }
+
+        function getAccessCode({ interactive = false } = {}) {
+            let code = safeStorageGet(ACCESS_CODE_KEY) || '';
+            if (!code && interactive && typeof window.prompt === 'function') {
+                code = String(window.prompt('Enter the staging board access code:') || '').trim();
+                if (code) safeStorageSet(ACCESS_CODE_KEY, code);
+            }
+            return code;
+        }
+
+        function forgetAccessCode() {
+            safeStorageSet(ACCESS_CODE_KEY, '');
+        }
+
+        /**
+         * Calls the Apps Script api(request) from either link: google.script.run on the
+         * Apps Script page, or a POST to CLOUD_API_URL elsewhere. A wrong access code is
+         * cleared so the device asks again on the next manual sync.
+         */
+        function callCloud(fn, args, onSuccess, onFailure, { interactive = false } = {}) {
+            const request = { fn, args, key: getAccessCode({ interactive }) };
+            if (!request.key) {
+                // No code on this device yet: don't hit the server until someone enters it
+                setCloudSyncStatus('error', 'Access Code Needed');
+                onFailure(new Error('Access code needed'));
+                return;
+            }
+            const handleResult = (res) => {
+                onSuccess(res);
+                if (res && res.unauthorized) {
+                    forgetAccessCode();
+                    setCloudSyncStatus('error', 'Access Code Needed');
+                    if (typeof showToast === 'function') {
+                        showToast('Wrong or missing access code — tap the sync badge to enter it.', 'warning');
+                    }
+                }
+            };
+
+            if (hasGoogleScriptRun()) {
+                google.script.run
+                    .withSuccessHandler(handleResult)
+                    .withFailureHandler(onFailure)
+                    .api(request);
+                return;
+            }
+            if (!CLOUD_API_URL || typeof fetch !== 'function') {
+                onFailure(new Error('Cloud sync not configured'));
+                return;
+            }
+            // text/plain avoids a CORS preflight, which Apps Script can't answer
+            fetch(CLOUD_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(request)
+            })
+                .then(r => r.json())
+                .then(handleResult)
+                .catch(onFailure);
         }
 
         function setCloudSyncStatus(status, customLabel = '') {
@@ -2161,8 +2233,7 @@
             // `conflict: true` if another device saved since then ('' = never synced).
             const baseUpdatedAt = lastCloudUpdatedAt || '';
             try {
-                google.script.run
-                    .withSuccessHandler((res) => {
+                callCloud('saveBoardState', [serialized, baseUpdatedAt], (res) => {
                         isCloudSaveInFlight = false;
                         if (res && res.ok) {
                             cloudConflictRetries = 0;
@@ -2185,8 +2256,7 @@
                             pendingCloudSave = false;
                             executeCloudSaveNow();
                         }
-                    })
-                    .withFailureHandler((err) => {
+                    }, (err) => {
                         isCloudSaveInFlight = false;
                         console.error('[Cloud Save Error]', err);
                         setCloudSyncStatus('error', 'Sync Error (Retry)');
@@ -2198,8 +2268,7 @@
                             pendingCloudSave = false;
                             setTimeout(executeCloudSaveNow, 3000);
                         }
-                    })
-                    .saveBoardState(serialized, baseUpdatedAt);
+                    });
             } catch (err) {
                 isCloudSaveInFlight = false;
                 console.error('[Cloud Save Error]', err);
@@ -2333,8 +2402,7 @@
             }
 
             try {
-                google.script.run
-                    .withSuccessHandler((res) => {
+                callCloud('loadBoardState', [], (res) => {
                         isCloudLoadInFlight = false;
                         if (!res || !res.ok) {
                             if (!isBackgroundPoll) setCloudSyncStatus('error', 'Sync Error (Retry)');
@@ -2382,8 +2450,7 @@
                         }
 
                         setCloudSyncStatus('synced');
-                    })
-                    .withFailureHandler((err) => {
+                    }, (err) => {
                         isCloudLoadInFlight = false;
                         console.error('[Cloud Load Error]', err);
                         if (!isBackgroundPoll) {
@@ -2392,8 +2459,7 @@
                                 showToast('Could not reach Google Sheets — running on local cache.', 'warning');
                             }
                         }
-                    })
-                    .loadBoardState();
+                    }, { interactive: !isBackgroundPoll });
             } catch (err) {
                 isCloudLoadInFlight = false;
                 if (!isBackgroundPoll) setCloudSyncStatus('error', 'Sync Error (Retry)');
@@ -2403,10 +2469,11 @@
         function triggerManualCloudSync() {
             if (!isAppsScriptAvailable()) {
                 setCloudSyncStatus('local');
-                showToast('Running standalone in Local Mode (open via Google Sites / Apps Script for Cloud Sync).', 'info');
+                showToast('Running in Local Mode — set CLOUD_API_URL or open the Apps Script link for Cloud Sync.', 'info');
                 return;
             }
-            if (document.getElementById('cloud-sync-label')?.textContent?.includes('Error')) {
+            getAccessCode({ interactive: true }); // asks once if this device has no code yet
+            if (document.getElementById('cloud-sync-label')?.textContent?.match(/Error|Access Code/)) {
                 saveState(true);
                 showToast('Retrying Google Sheets cloud sync...', 'info');
             } else {
@@ -2480,8 +2547,7 @@
                 scanLogFlushTimer = setTimeout(flushScanLog, 15000);
             };
             try {
-                google.script.run
-                    .withSuccessHandler((res) => {
+                callCloud('logScanEvents', [batch], (res) => {
                         if (!res || !res.ok) {
                             console.error('[Scan Log Rejected]', res);
                             retryLater();
@@ -2492,12 +2558,10 @@
                         persistScanLogQueue();
                         isScanLogFlushInFlight = false;
                         if (scanLogQueue.length > 0 && done.size > 0) flushScanLog();
-                    })
-                    .withFailureHandler((err) => {
+                    }, (err) => {
                         console.error('[Scan Log Error]', err);
                         retryLater();
-                    })
-                    .logScanEvents(batch);
+                    });
             } catch (err) {
                 console.error('[Scan Log Error]', err);
                 retryLater();

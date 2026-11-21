@@ -1,8 +1,11 @@
 /**
  * ONUS-ONT Outbound Pallet Staging Manager — Apps Script backend
  *
- * Serves the board (Index.html) and provides the two functions the page calls
- * through google.script.run: loadBoardState() and saveBoardState(json).
+ * Serves the board (Index.html) and answers the page's cloud requests. Both links
+ * reach the same sheet through api(request):
+ *   - the Apps Script /exec link calls it with google.script.run.api(...)
+ *   - the GitHub Pages link POSTs the same request to the /exec URL (doPost)
+ * Every request must carry the access code saved in Script Properties as ACCESS_CODE.
  *
  * The board JSON is split across many cells (a single cell holds max 50,000
  * characters), so the board can grow without saves failing.
@@ -29,6 +32,40 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // allows Google Sites embed
 }
 
+/** POST endpoint used by the GitHub Pages copy of the app. */
+function doPost(e) {
+  let request = {};
+  try {
+    request = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    request = {};
+  }
+  return ContentService.createTextOutput(JSON.stringify(api(request)))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Single entry point for both links: { fn, args, key }.
+ * Only the functions listed here can be called, and only with the right access code.
+ */
+function api(request) {
+  const req = request || {};
+  const expected = PropertiesService.getScriptProperties().getProperty('ACCESS_CODE');
+  if (!expected) {
+    return { ok: false, error: 'Set ACCESS_CODE in Apps Script → Project Settings → Script Properties' };
+  }
+  if (String(req.key || '') !== String(expected)) {
+    return { ok: false, unauthorized: true, error: 'Wrong or missing access code' };
+  }
+  const args = Array.isArray(req.args) ? req.args : [];
+  switch (req.fn) {
+    case 'loadBoardState': return loadBoardState_();
+    case 'saveBoardState': return saveBoardState_(args[0], args[1]);
+    case 'logScanEvents': return logScanEvents_(args[0]);
+    default: return { ok: false, error: 'Unknown request: ' + req.fn };
+  }
+}
+
 function getStateSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(STATE_SHEET);
@@ -50,7 +87,7 @@ function toIsoString_(value) {
   return String(value);
 }
 
-function loadBoardState() {
+function loadBoardState_() {
   try {
     const sheet = getStateSheet_();
     const updatedAt = toIsoString_(sheet.getRange('B2').getValue());
@@ -87,7 +124,7 @@ function loadBoardState() {
  * is returned with conflict: true so the device can merge and save again.
  * An empty baseUpdatedAt means "never synced" and conflicts with any existing board.
  */
-function saveBoardState(stateJson, baseUpdatedAt) {
+function saveBoardState_(stateJson, baseUpdatedAt) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { ok: false, error: 'Busy — try again' };
   try {
@@ -95,7 +132,7 @@ function saveBoardState(stateJson, baseUpdatedAt) {
     JSON.parse(json); // reject anything that isn't valid JSON
 
     if (typeof baseUpdatedAt === 'string') {
-      const current = loadBoardState();
+      const current = loadBoardState_();
       if (!current.ok) return current;
       if (current.stateJson && current.updatedAt !== baseUpdatedAt) {
         return { ok: false, conflict: true, stateJson: current.stateJson, updatedAt: current.updatedAt };
@@ -149,7 +186,7 @@ function getScanLogSheet_() {
  * Events already logged (same Event ID, e.g. a retry after a dropped connection)
  * are skipped. Returns the IDs the page can now forget.
  */
-function logScanEvents(events) {
+function logScanEvents_(events) {
   const list = Array.isArray(events) ? events.slice(0, SCAN_LOG_MAX_BATCH) : [];
   if (list.length === 0) return { ok: true, loggedIds: [] };
 
