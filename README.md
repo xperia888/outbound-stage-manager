@@ -17,25 +17,32 @@ Outbound pallet management app: ONUS-ONT Outbound Pallet Staging Manager (v2). A
 
 | File | Purpose |
 |---|---|
-| `Index.html` | The full app (HTML, Tailwind CSS, JavaScript) |
+| `index.html` | The full app (HTML, Tailwind CSS, JavaScript) |
 | `Code.gs` | Apps Script backend: serves the page and stores board state in the `StateChunks` sheet |
+| `tests/board-sync.test.mjs` | Tests for sync, merge and handler escaping (`node --test`) |
 
 ## Running modes
 
-- **Local Mode** (opening `Index.html` directly, or from GitHub Pages): the board is saved in that browser only. Each device keeps its own separate board.
+- **Local Mode** (opening `index.html` directly, or from GitHub Pages): the board is saved in that browser only. Each device keeps its own separate board.
 - **Cloud Sync** (served from Google Apps Script): all devices share one board stored in a Google Sheet.
 
 ## Deploying with Google Apps Script
 
 1. Create or open a Google Sheet, then go to **Extensions → Apps Script**.
 2. Replace `Code.gs` with this repo's `Code.gs`.
-3. Add an HTML file named **`Index`** and paste in `Index.html`.
+3. Add an HTML file named **`Index`** and paste in `index.html`.
 4. **Deploy → New deployment → Web app**. Choose who can access it, then open the web-app URL.
 
 Board state is saved to the `StateChunks` tab, split across rows to stay under the 50,000-character cell limit. Data from the old single-cell `State!A1` layout is read once if `StateChunks` is empty.
 
-## Known issues
+## Multi-device sync
 
-- Background sync stops pulling updates on a device after that device's first edit, because the save debounce timer is never reset.
-- Saves are last-write-wins for the whole board, so simultaneous scans on two devices can overwrite each other.
-- Carrier or order names containing an apostrophe break some inline buttons.
+Each save sends the cloud version the device last saw. If another device saved in the meantime, the server returns its board instead of overwriting it. The page then merges the two boards, keeping scans, moves and shipments from both devices, and saves again. A pallet shipped on one device stays shipped even if another device edited it.
+
+## Tests
+
+```bash
+node --test tests/board-sync.test.mjs
+```
+
+Requires Node 18 or newer. No install needed.

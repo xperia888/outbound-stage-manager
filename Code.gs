@@ -29,6 +29,7 @@ function getStateSheet_() {
   if (!sheet) {
     sheet = ss.insertSheet(STATE_SHEET);
     sheet.getRange('A:A').setNumberFormat('@');
+    sheet.getRange('B2').setNumberFormat('@');
     sheet.getRange('A1').setValue('updatedAt');
     sheet.getRange('B1').setValue('chunks');
   }
@@ -36,10 +37,17 @@ function getStateSheet_() {
 }
 
 /** Layout: B2 = updatedAt (ISO), C2 = chunk count, A3:A = chunks. */
+/** Sheets may turn an ISO timestamp into a Date; always hand back the same ISO string. */
+function toIsoString_(value) {
+  if (!value) return '';
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
 function loadBoardState() {
   try {
     const sheet = getStateSheet_();
-    const updatedAt = String(sheet.getRange('B2').getValue() || '');
+    const updatedAt = toIsoString_(sheet.getRange('B2').getValue());
     const count = Number(sheet.getRange('C2').getValue()) || 0;
 
     if (count > 0) {
@@ -57,7 +65,7 @@ function loadBoardState() {
         return {
           ok: true,
           stateJson: String(raw),
-          updatedAt: legacyAt ? new Date(legacyAt).toISOString() : null
+          updatedAt: toIsoString_(legacyAt) || null
         };
       }
     }
@@ -67,12 +75,26 @@ function loadBoardState() {
   }
 }
 
-function saveBoardState(stateJson) {
+/**
+ * Saves the board. If baseUpdatedAt is passed (the cloud version the device last saw)
+ * and another device has saved since then, nothing is written: the current cloud board
+ * is returned with conflict: true so the device can merge and save again.
+ * An empty baseUpdatedAt means "never synced" and conflicts with any existing board.
+ */
+function saveBoardState(stateJson, baseUpdatedAt) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { ok: false, error: 'Busy — try again' };
   try {
     const json = String(stateJson || '');
     JSON.parse(json); // reject anything that isn't valid JSON
+
+    if (typeof baseUpdatedAt === 'string') {
+      const current = loadBoardState();
+      if (!current.ok) return current;
+      if (current.stateJson && current.updatedAt !== baseUpdatedAt) {
+        return { ok: false, conflict: true, stateJson: current.stateJson, updatedAt: current.updatedAt };
+      }
+    }
 
     const chunks = [];
     for (let i = 0; i < json.length; i += CHUNK_SIZE) {
@@ -92,6 +114,7 @@ function saveBoardState(stateJson) {
     }
 
     const now = new Date().toISOString();
+    sheet.getRange('B2').setNumberFormat('@');
     sheet.getRange('B2:C2').setValues([[now, chunks.length]]);
     SpreadsheetApp.flush();
     return { ok: true, updatedAt: now };
