@@ -26,6 +26,20 @@
         gap: 0.65rem;
       }
     }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background-color: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(2px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem;
+    }
+    .modal-backdrop.is-open {
+      display: flex;
+    }
     .pallet-card {
       transition: transform 0.12s ease, box-shadow 0.12s ease;
     }
@@ -44,7 +58,6 @@
       0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
       50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.35); }
     }
-    /* Custom thin scrollbars */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
@@ -71,9 +84,10 @@
             </span>
             <button
               id="cloud-sync-pill"
+              type="button"
               onclick="openCloudConfigModal()"
               title="Click to configure Google Apps Script Cloud Sync URL"
-              class="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 flex items-center gap-1.5 transition"
+              class="px-2.5 py-0.5 text-[11px] font-semibold rounded-full bg-slate-800 text-slate-200 border border-slate-600 hover:bg-slate-700 flex items-center gap-1.5 transition cursor-pointer"
             >
               <span id="cloud-sync-dot" class="w-2 h-2 rounded-full bg-amber-400"></span>
               <span id="cloud-sync-label">Local Only</span>
@@ -93,7 +107,7 @@
         </div>
         <div class="bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1 text-center">
           <div class="text-[10px] uppercase tracking-wider text-slate-400">Floor Spots</div>
-          <div id="stat-floor-spots" class="font-bold text-emerald-400 text-sm leading-tight">0 / 0</div>
+          <div id="stat-floor-spots" class="font-bold text-emerald-400 text-sm leading-tight">0 / 120</div>
         </div>
         <div class="bg-slate-800/90 border border-slate-700/80 rounded-lg px-2.5 py-1 text-center">
           <div class="text-[10px] uppercase tracking-wider text-slate-400">2x Stacked</div>
@@ -101,9 +115,10 @@
         </div>
         <button
           id="aging-alert-btn"
+          type="button"
           onclick="openAgingModal()"
-          class="bg-slate-800/90 border border-slate-700/80 hover:border-amber-500/60 rounded-lg px-2.5 py-1 text-center transition"
-          title="View pallets staged over 24h / 7d"
+          class="bg-slate-800/90 border border-slate-700/80 hover:border-amber-500/60 rounded-lg px-2.5 py-1 text-center transition cursor-pointer"
+          title="View pallets staged over 7 days"
         >
           <div class="text-[10px] uppercase tracking-wider text-slate-400">Aging &gt;7d</div>
           <div id="stat-aging-count" class="font-bold text-slate-300 text-sm leading-tight">0</div>
@@ -113,16 +128,18 @@
       <!-- Primary Action Toolbar -->
       <div class="flex items-center gap-1.5 flex-wrap">
         <button
+          type="button"
           onclick="openScannerModal()"
-          class="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm flex items-center gap-1.5 transition"
+          class="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm flex items-center gap-1.5 transition cursor-pointer"
         >
           <i class="fa-solid fa-barcode"></i>
           <span>Multi-SLP Scan</span>
         </button>
 
         <button
+          type="button"
           onclick="openConsolidateModal()"
-          class="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-semibold px-2.5 py-2 rounded-lg shadow-sm flex items-center gap-1.5 transition"
+          class="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-semibold px-2.5 py-2 rounded-lg shadow-sm flex items-center gap-1.5 transition cursor-pointer"
           title="Find tight-fit lane consolidation moves"
         >
           <i class="fa-solid fa-compress-arrows-alt"></i>
@@ -130,8 +147,9 @@
         </button>
 
         <button
+          type="button"
           onclick="openBatchAddModal()"
-          class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 transition"
+          class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
           title="Batch add staging lanes"
         >
           <i class="fa-solid fa-layer-group"></i>
@@ -139,8 +157,9 @@
         </button>
 
         <button
+          type="button"
           onclick="exportEodCsv()"
-          class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 transition"
+          class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
           title="Download End-of-Day CSV report"
         >
           <i class="fa-solid fa-file-csv text-emerald-400"></i>
@@ -148,8 +167,9 @@
         </button>
 
         <button
+          type="button"
           onclick="openBackupModal()"
-          class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 transition"
+          class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
           title="JSON Backup, Restore & Cloud Endpoint"
         >
           <i class="fa-solid fa-cloud-arrow-up text-sky-400"></i>
@@ -160,7 +180,7 @@
   </header>
 
   <!-- QUICK SCAN & FILTER BAR -->
-  <section class="bg-white border-b border-slate-200 shadow-xs sticky top-[56px] z-20">
+  <section class="bg-white border-b border-slate-200 shadow-sm sticky top-[56px] z-20">
     <div class="max-w-[1600px] mx-auto px-3 py-2 flex flex-wrap items-center gap-2">
       <!-- Quick Single-Line Scan Form -->
       <form onsubmit="handleQuickScanSubmit(event)" class="flex flex-wrap items-center gap-1.5 flex-1 min-w-[280px]">
@@ -200,13 +220,13 @@
         </select>
 
         <label class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-lg cursor-pointer select-none">
-          <input id="quick-double-checkbox" type="checkbox" class="rounded text-indigo-600 focus:ring-indigo-500" />
+          <input id="quick-double-checkbox" type="checkbox" onchange="updateQuickAutoSuggestBadge()" class="rounded text-indigo-600 focus:ring-indigo-500" />
           <span>2x Stack</span>
         </label>
 
         <button
           type="submit"
-          class="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition"
+          class="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition cursor-pointer"
         >
           + Stage
         </button>
@@ -231,6 +251,7 @@
             class="w-full pl-7 pr-6 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
+            type="button"
             onclick="document.getElementById('board-search-input').value=''; renderBoard();"
             class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
             title="Clear search"
@@ -270,21 +291,22 @@
   <!-- TOAST NOTIFICATION -->
   <div
     id="toast-banner"
-    class="fixed bottom-4 right-4 z-50 hidden max-w-sm bg-slate-900 text-white text-xs font-medium px-3.5 py-2.5 rounded-xl shadow-lg border border-slate-700 flex items-center gap-2"
+    style="display:none;"
+    class="fixed bottom-4 right-4 z-50 max-w-sm bg-slate-900 text-white text-xs font-medium px-3.5 py-2.5 rounded-xl shadow-lg border border-slate-700 items-center gap-2"
   >
     <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
     <span id="toast-message">Saved</span>
   </div>
 
   <!-- MODAL 1: MULTI-SLP SCANNER MODAL -->
-  <div id="scanner-modal" class="fixed inset-0 z-40 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
+  <div id="scanner-modal" class="modal-backdrop" onclick="if(event.target===this) closeModal('scanner-modal')">
     <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
       <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-2">
           <i class="fa-solid fa-barcode text-blue-400"></i>
           <h2 class="font-bold text-sm">Multi-SLP Order Batch Scanner</h2>
         </div>
-        <button onclick="closeModal('scanner-modal')" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+        <button type="button" onclick="closeModal('scanner-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
       </div>
 
       <div class="p-4 space-y-3">
@@ -325,917 +347,7 @@
           </div>
           <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
             <label class="inline-flex items-center gap-2 text-xs font-bold text-indigo-800 cursor-pointer">
-              <input id="scanner-double-checkbox" type="checkbox" class="rounded text-indigo-600" />
+              <input id="scanner-double-checkbox" type="checkbox" onchange="updateScannerAutoSuggestPill()" class="rounded text-indigo-600" />
               <span>Double-Stack (2x High)</span>
             </label>
-            <span id="scanner-auto-suggest-pill" class="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-              &rarr; S51
-            </span>
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-            2. Scan SLP Barcodes (Press Enter after each scan)
-          </label>
-          <div class="flex gap-2">
-            <input
-              id="scanner-slp-input"
-              type="text"
-              placeholder="Scan SLP QR / Barcode..."
-              autocomplete="off"
-              onkeydown="if(event.key==='Enter'){ event.preventDefault(); addSlpToBatchQueue(); }"
-              class="flex-1 px-3 py-2 text-sm font-mono font-bold bg-blue-50/40 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-            />
-            <button
-              type="button"
-              onclick="addSlpToBatchQueue()"
-              class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-
-        <!-- Scanned Queue List -->
-        <div class="border border-slate-200 rounded-xl bg-slate-50 p-2.5">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-xs font-bold text-slate-700">
-              Scanned Pallets in Batch: <span id="scanner-queue-count" class="text-blue-600">0</span>
-            </span>
-            <button
-              type="button"
-              onclick="clearScannerQueue()"
-              class="text-[11px] text-rose-600 hover:underline font-medium"
-            >
-              Clear List
-            </button>
-          </div>
-          <div id="scanner-queue-list" class="max-h-40 overflow-y-auto space-y-1 text-xs">
-            <div class="text-slate-400 italic py-3 text-center">No SLPs scanned yet. Scan barcode above.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onclick="closeModal('scanner-modal')"
-          class="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onclick="commitScannerBatch()"
-          class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-xs flex items-center gap-1.5"
-        >
-          <i class="fa-solid fa-check"></i>
-          <span>Stage All Pallets</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 2: EDIT LANE SETTINGS MODAL -->
-  <div id="lane-modal" class="fixed inset-0 z-40 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <h2 id="lane-modal-title" class="font-bold text-sm">Configure Staging Lane</h2>
-        <button onclick="closeModal('lane-modal')" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
-      </div>
-      <form onsubmit="saveLaneSettings(event)" class="p-4 space-y-3">
-        <input type="hidden" id="edit-lane-id" />
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Lane Code</label>
-            <input
-              id="edit-lane-name"
-              type="text"
-              required
-              class="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg"
-            />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Max Floor Spots</label>
-            <input
-              id="edit-lane-capacity"
-              type="number"
-              min="1"
-              max="30"
-              required
-              class="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg"
-            />
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Assigned Dock Door</label>
-            <input
-              id="edit-lane-dock"
-              type="text"
-              placeholder="e.g., Door 14"
-              class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
-            />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Dedicated Carrier</label>
-            <input
-              id="edit-lane-carrier"
-              type="text"
-              placeholder="e.g., FEDEX LTL"
-              class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
-            />
-          </div>
-        </div>
-        <div>
-          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Lane Notes</label>
-          <input
-            id="edit-lane-notes"
-            type="text"
-            placeholder="Optional floor instructions..."
-            class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
-          />
-        </div>
-        <div class="pt-2 flex items-center justify-between border-t border-slate-200">
-          <button
-            type="button"
-            onclick="deleteCurrentLane()"
-            class="text-xs font-semibold text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg"
-          >
-            Delete Empty Lane
-          </button>
-          <div class="flex gap-2">
-            <button type="button" onclick="closeModal('lane-modal')" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">
-              Cancel
-            </button>
-            <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg">
-              Save Lane
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- MODAL 3: BATCH ADD LANES MODAL -->
-  <div id="batch-add-modal" class="fixed inset-0 z-40 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <h2 class="font-bold text-sm">Batch Add Staging Lanes</h2>
-        <button onclick="closeModal('batch-add-modal')" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
-      </div>
-      <form onsubmit="handleBatchAddLanes(event)" class="p-4 space-y-3">
-        <div class="grid grid-cols-3 gap-2">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Prefix</label>
-            <input id="batch-prefix" type="text" value="S" required class="w-full px-2.5 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Start #</label>
-            <input id="batch-start" type="number" value="63" min="1" required class="w-full px-2.5 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">End #</label>
-            <input id="batch-end" type="number" value="66" min="1" required class="w-full px-2.5 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-        </div>
-        <div>
-          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Floor Spot Capacity per Lane</label>
-          <input id="batch-capacity" type="number" value="10" min="1" max="30" required class="w-full px-3 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
-        </div>
-        <div class="pt-2 flex justify-end gap-2 border-t border-slate-200">
-          <button type="button" onclick="closeModal('batch-add-modal')" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-          <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg">Create Lanes</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- MODAL 4: CONSOLIDATE LANES MODAL -->
-  <div id="consolidate-modal" class="fixed inset-0 z-40 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden">
-      <div class="bg-indigo-900 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-compress-arrows-alt text-indigo-300"></i>
-          <h2 class="font-bold text-sm">Consolidate Staging Lanes (Zero-Blocking Tight Fit)</h2>
-        </div>
-        <button onclick="closeModal('consolidate-modal')" class="text-indigo-200 hover:text-white text-lg leading-none">&times;</button>
-      </div>
-      <div class="p-4">
-        <p class="text-xs text-slate-600 mb-3">
-          Recommends minimum-movement pallet transfers to merge split orders or clear partial lanes without exceeding floor footprint capacity.
-        </p>
-        <div id="consolidate-suggestions-list" class="max-h-72 overflow-y-auto space-y-2"></div>
-      </div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 flex justify-between items-center">
-        <button onclick="closeModal('consolidate-modal')" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg">Close</button>
-        <button
-          id="apply-all-consolidate-btn"
-          onclick="applyAllConsolidations()"
-          class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-xs hidden"
-        >
-          Apply All Moves
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 5: AGING ALERTS MODAL -->
-  <div id="aging-modal" class="fixed inset-0 z-40 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
-      <div class="bg-amber-700 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-clock"></i>
-          <h2 class="font-bold text-sm">Staged Pallet Dwell-Time Alerts (&gt;7 Days)</h2>
-        </div>
-        <button onclick="closeModal('aging-modal')" class="text-amber-100 hover:text-white text-lg leading-none">&times;</button>
-      </div>
-      <div id="aging-list-container" class="p-4 max-h-80 overflow-y-auto space-y-2 text-xs"></div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
-        <button onclick="closeModal('aging-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded-lg">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 6: BACKUP, RESTORE & CLOUD API CONFIG MODAL -->
-  <div id="backup-modal" class="fixed inset-0 z-40 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-cloud text-sky-400"></i>
-          <h2 class="font-bold text-sm">Google Sheets Cloud Sync &amp; JSON Backup (v2)</h2>
-        </div>
-        <button onclick="closeModal('backup-modal')" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
-      </div>
-      <div class="p-4 space-y-4 text-xs">
-        <!-- Cloud API Endpoint Config -->
-        <div class="bg-sky-50 border border-sky-200 rounded-xl p-3 space-y-2">
-          <div class="flex items-center justify-between">
-            <span class="font-bold text-sky-900">Google Apps Script Web App URL (/exec)</span>
-            <span id="modal-cloud-status" class="text-[11px] font-semibold text-sky-700">Not configured</span>
-          </div>
-          <input
-            id="cloud-api-url-input"
-            type="url"
-            placeholder="https://script.google.com/macros/s/.../exec"
-            class="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-sky-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-          />
-          <div class="flex items-center justify-between gap-2 pt-1">
-            <button
-              type="button"
-              onclick="saveCloudApiUrl()"
-              class="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-1.5 rounded-lg"
-            >
-              Save &amp; Connect Cloud
-            </button>
-            <button
-              type="button"
-              onclick="forceCloudPull()"
-              class="bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 font-semibold px-3 py-1.5 rounded-lg"
-            >
-              Pull Latest Now
-            </button>
-          </div>
-        </div>
-
-        <!-- Local JSON Export / Import -->
-        <div class="border border-slate-200 rounded-xl p-3 space-y-2.5">
-          <div class="font-bold text-slate-800">Local JSON Snapshot Backup / Restore</div>
-          <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onclick="exportJsonBackup()"
-              class="bg-slate-800 hover:bg-slate-700 text-white font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5"
-            >
-              <i class="fa-solid fa-download"></i>
-              <span>Download JSON Backup</span>
-            </button>
-            <label class="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-semibold px-3 py-2 rounded-lg cursor-pointer flex items-center gap-1.5">
-              <i class="fa-solid fa-upload"></i>
-              <span>Restore from JSON File</span>
-              <input type="file" accept=".json" onchange="importJsonBackup(event)" class="hidden" />
-            </label>
-          </div>
-        </div>
-      </div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
-        <button onclick="closeModal('backup-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded-lg">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 7: PALLET MOVE / DETAILS MODAL -->
-  <div id="pallet-modal" class="fixed inset-0 z-40 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <h2 class="font-bold text-sm">Pallet Details &amp; Relocation</h2>
-        <button onclick="closeModal('pallet-modal')" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
-      </div>
-      <div class="p-4 space-y-3 text-xs">
-        <input type="hidden" id="detail-pallet-id" />
-        <input type="hidden" id="detail-source-lane-id" />
-
-        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
-          <div class="flex justify-between">
-            <span class="text-slate-500">SLP / LPN:</span>
-            <span id="detail-slp" class="font-mono font-bold text-slate-900 text-sm"></span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-slate-500">Order #:</span>
-            <span id="detail-order" class="font-bold text-blue-700"></span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-slate-500">Carrier:</span>
-            <span id="detail-carrier" class="font-semibold text-slate-800"></span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-slate-500">Staged Time:</span>
-            <span id="detail-staged-at" class="text-slate-700"></span>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2.5 items-end">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Move to Lane</label>
-            <select id="detail-target-lane" class="w-full px-2.5 py-2 text-xs font-bold border border-slate-300 rounded-lg"></select>
-          </div>
-          <button
-            type="button"
-            onclick="movePalletFromModal()"
-            class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-3 rounded-lg"
-          >
-            Move Pallet
-          </button>
-        </div>
-
-        <div class="pt-2 border-t border-slate-200 flex items-center justify-between">
-          <button
-            type="button"
-            onclick="toggleDoubleStackFromModal()"
-            class="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold px-3 py-1.5 rounded-lg"
-          >
-            Toggle 2x Double-Stack
-          </button>
-          <button
-            type="button"
-            onclick="shipOutPalletFromModal()"
-            class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg"
-          >
-            <i class="fa-solid fa-truck-loading mr-1"></i> Ship / Clear
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    // =========================================================================
-    // CONFIGURATION & CONSTANTS (ONUS-ONT v2)
-    // =========================================================================
-    const APP_VERSION = 'v2';
-    const FACILITY_ID = 'ONUS-ONT';
-    const STORAGE_KEY = 'onus_ont_pallet_staging_v2';
-    const LEGACY_STORAGE_KEYS = ['onus_ont_pallet_staging_v1', 'pallet_staging_manager_v1'];
-    const CLOUD_URL_STORAGE_KEY = 'onus_ont_cloud_api_url_v2';
-
-    // Optional hardcoded default Google Apps Script /exec URL (can also be set in UI)
-    const DEFAULT_CLOUD_API_URL = '';
-
-    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-
-    let CLOUD_API_URL = localStorage.getItem(CLOUD_URL_STORAGE_KEY) || DEFAULT_CLOUD_API_URL;
-    let state = {
-      version: APP_VERSION,
-      facility: FACILITY_ID,
-      updatedAt: new Date().toISOString(),
-      lanes: [],
-      history: []
-    };
-
-    let scannerQueue = [];
-    let draggedPalletInfo = null;
-    let saveDebounceTimer = null;
-    let isCloudSaving = false;
-    let pendingCloudSave = false;
-    let lastKnownCloudTimestamp = null;
-
-    // =========================================================================
-    // INITIALIZATION & SEED DATA (S51 - S62)
-    // =========================================================================
-    function createDefaultLanes() {
-      const lanes = [];
-      for (let i = 51; i <= 62; i++) {
-        lanes.push({
-          id: `lane-s${i}`,
-          name: `S${i}`,
-          capacity: 10,
-          dock: '',
-          carrier: '',
-          notes: '',
-          pallets: []
-        });
-      }
-      return lanes;
-    }
-
-    function normalizeStateShape(raw) {
-      if (!raw || typeof raw !== 'object') return null;
-      const lanes = Array.isArray(raw.lanes) && raw.lanes.length > 0 ? raw.lanes : createDefaultLanes();
-      lanes.forEach(lane => {
-        if (!Array.isArray(lane.pallets)) lane.pallets = [];
-        if (typeof lane.capacity !== 'number' || lane.capacity < 1) lane.capacity = 10;
-        lane.pallets.forEach(p => {
-          if (typeof p.doubleStacked !== 'boolean') p.doubleStacked = false;
-          if (!p.stagedAt) p.stagedAt = new Date().toISOString();
-        });
-      });
-      return {
-        version: APP_VERSION,
-        facility: FACILITY_ID,
-        updatedAt: raw.updatedAt || new Date().toISOString(),
-        lanes,
-        history: Array.isArray(raw.history) ? raw.history.slice(0, 200) : []
-      };
-    }
-
-    // =========================================================================
-    // CLOUD SYNC (GITHUB PAGES FETCH <-> GOOGLE APPS SCRIPT WEB APP)
-    // =========================================================================
-    function setCloudStatus(mode, detailText) {
-      const dot = document.getElementById('cloud-sync-dot');
-      const label = document.getElementById('cloud-sync-label');
-      const modalStatus = document.getElementById('modal-cloud-status');
-      if (!dot || !label) return;
-
-      dot.className = 'w-2 h-2 rounded-full';
-      if (mode === 'synced') {
-        dot.classList.add('bg-emerald-400');
-        label.textContent = detailText || 'Cloud Synced';
-        if (modalStatus) modalStatus.textContent = `Connected (${detailText || 'Synced'})`;
-      } else if (mode === 'syncing') {
-        dot.classList.add('bg-sky-400', 'animate-pulse');
-        label.textContent = detailText || 'Syncing...';
-        if (modalStatus) modalStatus.textContent = 'Syncing with Google Sheets...';
-      } else if (mode === 'error') {
-        dot.classList.add('bg-rose-500');
-        label.textContent = detailText || 'Sync Error';
-        if (modalStatus) modalStatus.textContent = detailText || 'Connection Error';
-      } else {
-        dot.classList.add('bg-amber-400');
-        label.textContent = 'Local Mode';
-        if (modalStatus) modalStatus.textContent = 'No /exec URL configured';
-      }
-    }
-
-    async function loadState() {
-      // 1. Immediate load from localStorage for zero-latency boot
-      let localLoaded = null;
-      const rawLocal = localStorage.getItem(STORAGE_KEY);
-      if (rawLocal) {
-        try { localLoaded = normalizeStateShape(JSON.parse(rawLocal)); } catch (e) {}
-      }
-      if (!localLoaded) {
-        for (const legacyKey of LEGACY_STORAGE_KEYS) {
-          const legacyRaw = localStorage.getItem(legacyKey);
-          if (legacyRaw) {
-            try {
-              localLoaded = normalizeStateShape(JSON.parse(legacyRaw));
-              if (localLoaded) break;
-            } catch (e) {}
-          }
-        }
-      }
-
-      state = localLoaded || {
-        version: APP_VERSION,
-        facility: FACILITY_ID,
-        updatedAt: new Date().toISOString(),
-        lanes: createDefaultLanes(),
-        history: []
-      };
-
-      refreshAllSelectors();
-      renderBoard();
-
-      // 2. Pull latest snapshot from Google Apps Script if CLOUD_API_URL is set
-      if (!CLOUD_API_URL) {
-        setCloudStatus('local');
-        return;
-      }
-
-      await pullFromCloud(true);
-    }
-
-    async function pullFromCloud(isInitial = false) {
-      if (!CLOUD_API_URL) return;
-      if (isInitial) setCloudStatus('syncing', 'Loading...');
-
-      try {
-        const res = await fetch(`${CLOUD_API_URL}?t=${Date.now()}`, {
-          method: 'GET',
-          cache: 'no-store'
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-
-        if (data && data.ok && data.stateJson) {
-          const remoteState = normalizeStateShape(JSON.parse(data.stateJson));
-          if (remoteState) {
-            lastKnownCloudTimestamp = data.updatedAt || remoteState.updatedAt;
-            state = remoteState;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-            refreshAllSelectors();
-            renderBoard();
-          }
-        } else if (data && data.ok && !data.stateJson) {
-          // Sheet is empty -> seed initial state to cloud
-          await pushToCloudNow();
-        }
-        const shortTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setCloudStatus('synced', `Synced ${shortTime}`);
-      } catch (err) {
-        console.error('Cloud pull failed:', err);
-        setCloudStatus('error', 'Sync Error');
-      }
-    }
-
-    function saveState(immediate = false) {
-      state.version = APP_VERSION;
-      state.facility = FACILITY_ID;
-      state.updatedAt = new Date().toISOString();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-
-      if (!CLOUD_API_URL) {
-        setCloudStatus('local');
-        return;
-      }
-
-      if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
-      if (immediate) {
-        pushToCloudNow();
-      } else {
-        setCloudStatus('syncing', 'Saving...');
-        saveDebounceTimer = setTimeout(() => {
-          pushToCloudNow();
-        }, 350);
-      }
-    }
-
-    async function pushToCloudNow() {
-      if (!CLOUD_API_URL) return;
-      if (isCloudSaving) {
-        pendingCloudSave = true;
-        return;
-      }
-
-      isCloudSaving = true;
-      setCloudStatus('syncing', 'Saving...');
-
-      try {
-        const payload = JSON.stringify({
-          action: 'save',
-          facility: FACILITY_ID,
-          version: APP_VERSION,
-          stateJson: JSON.stringify(state)
-        });
-
-        // text/plain avoids CORS OPTIONS preflight on Google Apps Script
-        const res = await fetch(CLOUD_API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: payload
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const result = await res.json();
-        if (result && result.updatedAt) {
-          lastKnownCloudTimestamp = result.updatedAt;
-        }
-        const shortTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setCloudStatus('synced', `Synced ${shortTime}`);
-      } catch (err) {
-        console.error('Cloud save failed:', err);
-        setCloudStatus('error', 'Save Failed');
-      } finally {
-        isCloudSaving = false;
-        if (pendingCloudSave) {
-          pendingCloudSave = false;
-          pushToCloudNow();
-        }
-      }
-    }
-
-    // Background multi-device sync polling (every 8s when idle)
-    setInterval(() => {
-      if (!CLOUD_API_URL || isCloudSaving || draggedPalletInfo) return;
-      const anyModalOpen = Array.from(document.querySelectorAll('[id$="-modal"]')).some(
-        el => !el.classList.contains('hidden')
-      );
-      if (anyModalOpen) return;
-      pullFromCloud(false);
-    }, 8000);
-
-    function openCloudConfigModal() {
-      openBackupModal();
-      setTimeout(() => document.getElementById('cloud-api-url-input')?.focus(), 50);
-    }
-
-    function saveCloudApiUrl() {
-      const input = document.getElementById('cloud-api-url-input');
-      const val = (input?.value || '').trim();
-      CLOUD_API_URL = val;
-      if (val) {
-        localStorage.setItem(CLOUD_URL_STORAGE_KEY, val);
-        showToast('Cloud API URL saved. Syncing...');
-        pullFromCloud(true);
-      } else {
-        localStorage.removeItem(CLOUD_URL_STORAGE_KEY);
-        setCloudStatus('local');
-        showToast('Switched to Local Storage mode.');
-      }
-    }
-
-    function forceCloudPull() {
-      if (!CLOUD_API_URL) {
-        showToast('Enter your Apps Script /exec URL first.', true);
-        return;
-      }
-      pullFromCloud(true);
-      showToast('Pulled latest board state from Google Sheets.');
-    }
-
-    // =========================================================================
-    // FOOTPRINT & DOUBLE-STACK CALCULATIONS
-    // =========================================================================
-    function computeFloorSpotsUsed(pallets) {
-      if (!Array.isArray(pallets) || pallets.length === 0) return 0;
-      let singleCount = 0;
-      let doubleCount = 0;
-      for (const p of pallets) {
-        if (p.doubleStacked) doubleCount++;
-        else singleCount++;
-      }
-      return singleCount + Math.ceil(doubleCount / 2);
-    }
-
-    function computeDoubleStackPairMap(pallets) {
-      const map = {};
-      const stacked = pallets.filter(p => p.doubleStacked);
-      for (let i = 0; i < stacked.length; i += 2) {
-        const pairNum = Math.floor(i / 2) + 1;
-        map[stacked[i].id] = { pairNum, tier: 'Bottom', paired: Boolean(stacked[i + 1]) };
-        if (stacked[i + 1]) {
-          map[stacked[i + 1].id] = { pairNum, tier: 'Top', paired: true };
-        }
-      }
-      return map;
-    }
-
-    function normalizeOrderNumber(order) {
-      return String(order || '').trim().toUpperCase();
-    }
-
-    // =========================================================================
-    // AUTO-SUGGEST LOCATION (SAME ORDER FIRST -> EMPTY LANE FIRST)
-    // =========================================================================
-    function getBestAvailableLocationForOrder(orderNum, incomingPalletsCount = 1, incomingDoubleStacked = false) {
-      const normOrder = normalizeOrderNumber(orderNum);
-      const neededSpots = incomingDoubleStacked
-        ? Math.ceil(incomingPalletsCount / 2)
-        : incomingPalletsCount;
-
-      // Priority 1: Co-locate with existing lane containing the exact same Order #
-      if (normOrder) {
-        const matchingLane = state.lanes.find(lane => {
-          const hasOrder = lane.pallets.some(p => normalizeOrderNumber(p.order) === normOrder);
-          if (!hasOrder) return false;
-          const used = computeFloorSpotsUsed(lane.pallets);
-          return lane.capacity - used >= neededSpots;
-        });
-        if (matchingLane) return matchingLane;
-      }
-
-      // Priority 2: Completely empty lane first
-      const emptyLane = state.lanes.find(
-        lane => lane.pallets.length === 0 && lane.capacity >= neededSpots
-      );
-      if (emptyLane) return emptyLane;
-
-      // Priority 3: Partially occupied lane with enough free floor spots
-      const partialLane = state.lanes.find(lane => {
-        const used = computeFloorSpotsUsed(lane.pallets);
-        return lane.capacity - used >= neededSpots;
-      });
-      return partialLane || state.lanes[0] || null;
-    }
-
-    function updateQuickAutoSuggestBadge() {
-      const orderVal = document.getElementById('quick-order-input')?.value || '';
-      const isDouble = document.getElementById('quick-double-checkbox')?.checked || false;
-      const badge = document.getElementById('quick-auto-suggest-badge');
-      if (!badge) return;
-      const best = getBestAvailableLocationForOrder(orderVal, 1, isDouble);
-      badge.innerHTML = best
-        ? `Suggest: <strong class="text-blue-700">${escapeHtml(best.name)}</strong>`
-        : `Suggest: <strong class="text-rose-600">Full</strong>`;
-    }
-
-    function updateScannerAutoSuggestPill() {
-      const orderVal = document.getElementById('scanner-order-input')?.value || '';
-      const laneSel = document.getElementById('scanner-lane-select')?.value || 'AUTO';
-      const isDouble = document.getElementById('scanner-double-checkbox')?.checked || false;
-      const pill = document.getElementById('scanner-auto-suggest-pill');
-      if (!pill) return;
-
-      if (laneSel !== 'AUTO') {
-        const chosen = state.lanes.find(l => l.id === laneSel);
-        pill.textContent = chosen ? `-> ${chosen.name}` : '';
-        return;
-      }
-      const count = Math.max(1, scannerQueue.length);
-      const best = getBestAvailableLocationForOrder(orderVal, count, isDouble);
-      pill.textContent = best ? `-> ${best.name}` : '-> Full';
-    }
-
-    // =========================================================================
-    // RENDERING BOARD & STATS
-    // =========================================================================
-    function renderBoard() {
-      const board = document.getElementById('staging-board');
-      if (!board) return;
-
-      const searchQ = (document.getElementById('board-search-input')?.value || '').trim().toUpperCase();
-      const carrierFilter = document.getElementById('carrier-filter-select')?.value || 'ALL';
-      const statusFilter = document.getElementById('status-filter-select')?.value || 'ALL';
-
-      let totalPallets = 0;
-      let totalFloorUsed = 0;
-      let totalFloorCap = 0;
-      let totalDoubleStacked = 0;
-      let totalAgingOver7d = 0;
-      const now = Date.now();
-
-      const cardsHtml = state.lanes.map(lane => {
-        const floorUsed = computeFloorSpotsUsed(lane.pallets);
-        const freeSpots = Math.max(0, lane.capacity - floorUsed);
-        const doubleCount = lane.pallets.filter(p => p.doubleStacked).length;
-        const agingCount = lane.pallets.filter(p => now - new Date(p.stagedAt).getTime() > SEVEN_DAYS_MS).length;
-
-        totalPallets += lane.pallets.length;
-        totalFloorUsed += floorUsed;
-        totalFloorCap += lane.capacity;
-        totalDoubleStacked += doubleCount;
-        totalAgingOver7d += agingCount;
-
-        // Filter visibility
-        if (statusFilter === 'ACTIVE' && lane.pallets.length === 0) return '';
-        if (statusFilter === 'EMPTY' && lane.pallets.length > 0) return '';
-        if (statusFilter === 'NEAR_FULL' && freeSpots > 2) return '';
-        if (statusFilter === 'AGING' && agingCount === 0) return '';
-
-        if (carrierFilter !== 'ALL') {
-          const laneCarrierMatch = (lane.carrier || '').toUpperCase() === carrierFilter;
-          const palletCarrierMatch = lane.pallets.some(p => (p.carrier || '').toUpperCase() === carrierFilter);
-          if (!laneCarrierMatch && !palletCarrierMatch) return '';
-        }
-
-        if (searchQ) {
-          const laneMatch =
-            lane.name.toUpperCase().includes(searchQ) ||
-            (lane.dock || '').toUpperCase().includes(searchQ) ||
-            (lane.carrier || '').toUpperCase().includes(searchQ);
-          const palletMatch = lane.pallets.some(
-            p =>
-              p.slp.toUpperCase().includes(searchQ) ||
-              (p.order || '').toUpperCase().includes(searchQ) ||
-              (p.carrier || '').toUpperCase().includes(searchQ)
-          );
-          if (!laneMatch && !palletMatch) return '';
-        }
-
-        // Light-green top bar when <= 2 floor spots available
-        const isNearFull = freeSpots <= 2;
-        const headerBgClass = isNearFull
-          ? 'bg-emerald-200 text-emerald-950 border-b border-emerald-300'
-          : 'bg-slate-800 text-white';
-        const subTextClass = isNearFull ? 'text-emerald-800' : 'text-slate-300';
-
-        const pairMap = computeDoubleStackPairMap(lane.pallets);
-
-        const palletsHtml =
-          lane.pallets.length === 0
-            ? `<div class="py-7 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                 Empty Staging Lane
-               </div>`
-            : lane.pallets
-                .map(p => {
-                  const ageMs = now - new Date(p.stagedAt).getTime();
-                  const isOver7d = ageMs > SEVEN_DAYS_MS;
-                  const isOver24h = ageMs > ONE_DAY_MS;
-                  const pairInfo = pairMap[p.id];
-
-                  return `
-                    <div
-                      draggable="true"
-                      ondragstart="handlePalletDragStart(event, '${lane.id}', '${p.id}')"
-                      ondragend="handlePalletDragEnd()"
-                      onclick="openPalletDetailModal('${lane.id}', '${p.id}')"
-                      class="pallet-card cursor-pointer rounded-lg border px-2.5 py-2 flex items-center justify-between gap-2 ${
-                        isOver7d
-                          ? 'bg-rose-50 border-rose-300'
-                          : p.doubleStacked
-                          ? 'bg-indigo-50/70 border-indigo-200'
-                          : 'bg-white border-slate-200 hover:border-blue-300'
-                      }"
-                    >
-                      <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-1.5 flex-wrap">
-                          <span class="font-mono font-bold text-xs text-slate-900 truncate">${escapeHtml(p.slp)}</span>${
-                            p.doubleStacked
-                              ? `<span class="px-1.5 py-0.2 text-[10px] font-bold rounded bg-indigo-600 text-white">
-                                   2x #${pairInfo?.pairNum || 1}
-                                 </span>`
-                              : ''
-                          }
-                          ${
-                            isOver7d
-                              ? `<span class="px-1.5 py-0.2 text-[10px] font-bold rounded bg-rose-600 text-white">
-                                   &gt;7d
-                                 </span>`
-                              : isOver24h
-                              ? `<span class="px-1.5 py-0.2 text-[10px] font-semibold rounded bg-amber-100 text-amber-800">
-                                   ${formatRelativeAge(p.stagedAt)}
-                                 </span>`
-                              : ''
-                          }
-                        </div>
-                        <div class="text-[11px] text-slate-600 flex items-center gap-2 mt-0.5 truncate">
-                          <span class="font-bold text-blue-700">${escapeHtml(p.order || 'NO-ORDER')}</span>${p.carrier ? `<span class="text-slate-500">&bull; ${escapeHtml(p.carrier)}</span>` : ''}
-                          <span class="text-slate-400 ml-auto">${formatRelativeAge(p.stagedAt)}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onclick="event.stopPropagation(); quickToggleDoubleStack('${lane.id}', '${p.id}')"
-                        title="Toggle 2x Double-Stack"
-                        class="px-2 py-1 text-[10px] font-bold rounded border transition shrink-0 ${
-                          p.doubleStacked
-                            ? 'bg-indigo-600 text-white border-indigo-700'
-                            : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-indigo-50'
-                        }"
-                      >
-                        2x
-                      </button>
-                    </div>
-                  `;
-                })
-                .join('');
-
-        return `
-          <div
-            id="card-${lane.id}"
-            ondragover="handleLaneDragOver(event, '${lane.id}')"
-            ondragleave="handleLaneDragLeave('${lane.id}')"
-            ondrop="handleLaneDrop(event, '${lane.id}')"
-            class="bg-white rounded-xl shadow-xs border border-slate-200 flex flex-col overflow-hidden"
-          >
-            <!-- Lane Header -->
-            <div class="${headerBgClass} px-3 py-2 flex items-center justify-between gap-2">
-              <div class="min-w-0">
-                <div class="flex items-center gap-1.5">
-                  <span class="font-black text-sm tracking-tight">${escapeHtml(lane.name)}</span>${
-                    lane.dock
-                      ? `<span class="px-1.5 py-0.5 text-[10px] font-bold rounded ${
-                          isNearFull ? 'bg-emerald-800 text-white' : 'bg-blue-600 text-white'
-                        }">${escapeHtml(lane.dock)}</span>`
-                      : ''
-                  }
-                  ${
-                    lane.carrier
-                      ? `<span class="px-1.5 py-0.5 text-[10px] font-semibold rounded ${
-                          isNearFull ? 'bg-emerald-300/80 text-emerald-950' : 'bg-slate-700 text-slate-200'
-                        }">${escapeHtml(lane.carrier)}</span>`
-                      : ''
-                  }
-                </div>
-                <div class="text-[11px] ${subTextClass} mt-0.5">
-                  Floor: <strong>${floorUsed}/${lane.capacity}</strong> spots (${freeSpots} free) &bull; ${lane.pallets.length} plts
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onclick="openEditLaneModal('${lane.id}')"
-                class="p-1.5 rounded-lg ${
-                  isNearFull ? 'hover:bg-emerald-300/70 text-emerald-900' : 'hover:bg-slate-700 text-slate-300'
-                } transition"
-                title="Configure Lane"
-              >
-                <i class="fa-solid fa-sliders text-xs"></i>
-              </button>
-            </div>
-
-            <!-- P
+            <span id="scanner-auto-suggest-pill" class="text-[11px] font-bold text-blue-700 bg-blue-50 px-2
