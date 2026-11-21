@@ -1,1895 +1,553 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>ONUS-ONT Outbound Pallet Staging v2</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-  <style>
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background-color: #f8fafc;
-      color: #0f172a;
-      margin: 0;
-      padding: 0;
-    }
-    .lane-grid {
-      display: grid;
-      gap: 0.75rem;
-    }
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 50;
-      background-color: rgba(15, 23, 42, 0.65);
-      align-items: center;
-      justify-content: center;
-      padding: 0.75rem;
-    }
-    .pallet-card {
-      position: relative;
-      z-index: 2;
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
-    }
-    .pallet-card:active { transform: scale(0.99); }
-    .lane-watermark {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 5.25rem;
-      font-weight: 900;
-      color: rgba(148, 163, 184, 0.24);
-      pointer-events: none;
-      user-select: none;
-      z-index: 1;
-    }
-    .lane-drop-active {
-      outline: 2px dashed #2563eb;
-      outline-offset: 2px;
-      background-color: #eff6ff !important;
-    }
-    .lane-highlight-pulse {
-      animation: pulseRing 1.4s ease-in-out 2;
-    }
-    @keyframes pulseRing {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
-      50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.35); }
-    }
-  </style>
-</head>
-<body class="min-h-screen flex flex-col">
-
-  <!-- TOP HEADER BAR -->
-  <header class="bg-[#0b1324] text-white sticky top-0 z-30 shadow-md border-b border-slate-800">
-    <div class="max-w-[1750px] mx-auto px-3 py-2 flex flex-col gap-2">
-      <!-- Top Row: Brand, Facility, Version, Cloud Status & KPIs -->
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="flex items-center gap-2.5 flex-wrap">
-          <div class="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-black text-base shadow-inner">
-            <i class="fa-solid fa-boxes-stacked"></i>
-          </div>
-          <div>
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="px-2 py-0.5 text-xs font-bold rounded bg-sky-950 text-sky-300 border border-sky-700/70 flex items-center gap-1">
-                <i class="fa-solid fa-warehouse text-[10px]"></i> ONUS-ONT
-              </span>
-              <h1 class="text-base sm:text-lg font-extrabold tracking-tight leading-none text-white">
-                Outbound Pallet Staging
-              </h1>
-              <span class="px-1.5 py-0.5 text-[11px] font-bold rounded bg-emerald-950 text-emerald-300 border border-emerald-700/70">
-                v2
-              </span>
-              <button
-                id="cloud-sync-pill"
-                type="button"
-                onclick="openCloudConfigModal()"
-                title="Click to configure Google Apps Script Cloud Sync URL"
-                class="px-2.5 py-0.5 text-[11px] font-semibold rounded-full bg-slate-900 text-slate-200 border border-slate-700 hover:border-emerald-500 flex items-center gap-1.5 transition cursor-pointer"
-              >
-                <span id="cloud-sync-dot" class="w-2 h-2 rounded-full bg-amber-400"></span>
-                <span id="cloud-sync-label">Local Only</span>
-              </button>
-            </div>
-
-            <!-- Live Metrics Line -->
-            <div class="flex items-center gap-2.5 text-xs text-slate-300 mt-1 flex-wrap">
-              <span>Spots: <strong id="stat-floor-spots" class="text-amber-400">0/96</strong></span>
-              <span class="text-slate-600">&bull;</span>
-              <span>SLPs: <strong id="stat-total-pallets" class="text-white">0</strong></span>
-              <span class="text-slate-600">&bull;</span>
-              <span class="px-1.5 py-0.2 rounded bg-sky-950/90 border border-sky-700/60 text-sky-300 text-[11px] font-semibold">
-                <i class="fa-solid fa-layer-group text-[10px] mr-1"></i>2x Stack: <strong id="stat-double-stacked">0</strong>
-              </span>
-              <span class="text-slate-600">&bull;</span>
-              <span>Orders: <strong id="stat-total-orders" class="text-sky-400">0</strong></span>
-              <span class="text-slate-600">&bull;</span>
-              <span>Open: <strong id="stat-open-spots" class="text-emerald-400">96</strong></span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Second Row: Full 10-Button Action Toolbar -->
-      <div class="flex items-center gap-1.5 flex-wrap">
-        <button type="button" onclick="openScannerModal()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-qrcode"></i><span>Multi-SLP Scan</span>
-        </button>
-
-        <button type="button" onclick="openFindSpaceModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-compass"></i><span>Find Space</span>
-        </button>
-
-        <button type="button" onclick="openOrdersModal()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-layer-group"></i><span>Orders</span>
-          <span id="btn-orders-badge" class="bg-slate-950/70 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">0</span>
-        </button>
-
-        <button type="button" onclick="openAgingModal()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-bell"></i><span>Alerts</span>
-          <span id="btn-alerts-badge" class="bg-slate-950/80 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">0</span>
-        </button>
-
-        <button type="button" onclick="openEodModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-file-lines"></i><span>EOD Report</span>
-        </button>
-
-        <button type="button" onclick="openConsolidateModal()" class="bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-right-left"></i><span>Consolidate</span>
-        </button>
-
-        <button type="button" onclick="openCarriersModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-truck text-sky-400"></i><span>Carriers</span>
-        </button>
-
-        <button type="button" onclick="openDocksModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-door-open text-emerald-400"></i><span>Docks</span>
-        </button>
-
-        <button type="button" onclick="openBatchAddModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-table-cells-large text-amber-400"></i><span>Batch</span>
-        </button>
-
-        <button type="button" onclick="openBackupModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-database text-sky-400"></i><span>Backup</span>
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <!-- QUICK SCAN & VIEW CONTROLS BAR -->
-  <section class="bg-white border-b border-slate-200 shadow-xs">
-    <div class="max-w-[1750px] mx-auto px-3 py-2 space-y-2">
-      <!-- Row 1: Lane Selector + Auto Button + Order Input + Suggest Pill + Scan SLP + 2x Stack + Search + Carrier Filter + View Toggle + Grid Slider -->
-      <div class="flex flex-wrap items-center gap-1.5">
-        <select id="quick-lane-select" onchange="updateQuickAutoSuggestBadge()" class="px-2.5 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="AUTO">S51 (8 free)</option>
-        </select>
-
-        <button type="button" onclick="applyAutoSuggestToQuickSelect()" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer">
-          <i class="fa-solid fa-wand-magic-sparkles"></i><span>Auto</span>
-        </button>
-
-        <input
-          id="quick-order-input"
-          type="text"
-          placeholder="Order # (SO-..."
-          oninput="updateQuickAutoSuggestBadge()"
-          onkeydown="if(event.key==='Enter'){ event.preventDefault(); document.getElementById('quick-slp-input').focus(); }"
-          autocomplete="off"
-          class="w-32 sm:w-36 px-2.5 py-1.5 text-xs font-semibold bg-sky-50/40 border border-sky-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-        />
-
-        <span id="quick-auto-suggest-badge" class="px-2.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg flex items-center gap-1">
-          <i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i> Empty Lane &rarr; S51 (8 free)
-        </span>
-
-        <input
-          id="quick-slp-input"
-          type="text"
-          placeholder="Scan / Enter SLP..."
-          onkeydown="if(event.key==='Enter'){ event.preventDefault(); handleQuickScanSubmit(); }"
-          autocomplete="off"
-          class="w-36 sm:w-44 px-2.5 py-1.5 text-xs font-mono font-bold bg-amber-50/40 border border-amber-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-        />
-
-        <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold bg-sky-50 text-sky-900 border border-sky-300 rounded-lg cursor-pointer select-none">
-          <input id="quick-double-checkbox" type="checkbox" onchange="updateQuickAutoSuggestBadge()" class="rounded text-sky-600" />
-          <span>2x Stack</span>
-        </label>
-
-        <!-- Search Input -->
-        <div class="relative flex-1 min-w-[150px] max-w-[230px]">
-          <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-          <input
-            id="board-search-input"
-            type="text"
-            placeholder="Search SLP, Order, Lane..."
-            oninput="renderBoard()"
-            class="w-full pl-7 pr-6 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button type="button" onclick="document.getElementById('board-search-input').value=''; renderBoard();" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs">&times;</button>
-        </div>
-
-        <!-- Carrier Filter -->
-        <select id="carrier-filter-select" onchange="renderBoard()" class="px-2.5 py-1.5 text-xs font-semibold bg-white border border-slate-300 rounded-lg">
-          <option value="ALL">All Carriers (0)</option>
-        </select>
-
-        <!-- SLPs | Grouped View Switcher -->
-        <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden bg-slate-100 p-0.5">
-          <button id="view-mode-slps" type="button" onclick="setCardViewMode('SLPS')" class="px-2.5 py-1 text-xs font-bold rounded-md bg-slate-900 text-white cursor-pointer">
-            SLPs
-          </button>
-          <button id="view-mode-grouped" type="button" onclick="setCardViewMode('GROUPED')" class="px-2.5 py-1 text-xs font-bold rounded-md text-slate-600 hover:text-slate-900 cursor-pointer">
-            Grouped
-          </button>
-        </div>
-
-        <!-- Grid Density Control -->
-        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-300 rounded-lg text-xs">
-          <span class="text-slate-500 font-semibold">Grid</span>
-          <span id="grid-mode-label" class="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-bold text-[10px]">Auto (Laptop)</span>
-          <input id="grid-cols-slider" type="range" min="0" max="6" value="0" oninput="handleGridSliderChange(this.value)" class="w-14 accent-slate-900 cursor-pointer" title="0 = Auto, 2..6 = Fixed Columns" />
-        </div>
-      </div>
-
-      <!-- Row 2: Log SLP Button + Optional Carrier/Dock Quick Tags -->
-      <div class="flex items-center gap-2 flex-wrap">
-        <button type="button" onclick="handleQuickScanSubmit()" class="bg-[#0b1324] hover:bg-slate-800 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-expand"></i><span>Log SLP</span>
-        </button>
-
-        <select id="quick-carrier-select" class="px-2.5 py-1 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-700">
-          <option value="">Carrier (Optional)</option>
-        </select>
-
-        <select id="quick-dock-select" class="px-2.5 py-1 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-700">
-          <option value="">Dock Door (Optional)</option>
-        </select>
-      </div>
-    </div>
-  </section>
-
-  <!-- MAIN STAGING LANES BOARD -->
-  <main class="flex-1 max-w-[1750px] w-full mx-auto px-3 py-3">
-    <div id="staging-board" class="lane-grid"></div>
-  </main>
-
-  <!-- TOAST BANNER -->
-  <div id="toast-banner" style="display:none;" class="fixed bottom-4 right-4 z-50 max-w-sm bg-slate-900 text-white text-xs font-medium px-3.5 py-2.5 rounded-xl shadow-lg border border-slate-700 items-center gap-2">
-    <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
-    <span id="toast-message">Saved</span>
-  </div>
-
-  <!-- MODAL 1: MULTI-SLP SCANNER -->
-  <div id="scanner-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('scanner-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-qrcode text-amber-400"></i>
-          <h2 class="font-bold text-sm">Multi-SLP Order Batch Scanner</h2>
-        </div>
-        <button type="button" onclick="closeModal('scanner-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div class="p-4 space-y-3">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">1. Order / SO Number *</label>
-            <input id="scanner-order-input" type="text" placeholder="Scan or type Order #" oninput="updateScannerAutoSuggestPill()" onkeydown="if(event.key==='Enter'){ event.preventDefault(); document.getElementById('scanner-slp-input').focus(); }" class="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Carrier &amp; Dock</label>
-            <div class="grid grid-cols-2 gap-1.5">
-              <select id="scanner-carrier-select" class="px-2 py-2 text-xs font-semibold border border-slate-300 rounded-lg"></select>
-              <select id="scanner-dock-select" class="px-2 py-2 text-xs font-semibold border border-slate-300 rounded-lg"></select>
-            </div>
-          </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Target Staging Lane</label>
-            <select id="scanner-lane-select" onchange="updateScannerAutoSuggestPill()" class="w-full px-3 py-2 text-sm font-semibold border border-slate-300 rounded-lg">
-              <option value="AUTO">Auto-Suggest (Same Order / Empty First)</option>
-            </select>
-          </div>
-          <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-            <label class="inline-flex items-center gap-2 text-xs font-bold text-sky-900 cursor-pointer">
-              <input id="scanner-double-checkbox" type="checkbox" onchange="updateScannerAutoSuggestPill()" class="rounded text-sky-600" />
-              <span>2x Stack</span>
-            </label>
-            <span id="scanner-auto-suggest-pill" class="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">&rarr; S51</span>
-          </div>
-        </div>
-        <div>
-          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">2. Scan SLP Barcodes (Press Enter after each scan)</label>
-          <div class="flex gap-2">
-            <input id="scanner-slp-input" type="text" placeholder="Scan SLP QR / Barcode..." autocomplete="off" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addSlpToBatchQueue(); }" class="flex-1 px-3 py-2 text-sm font-mono font-bold bg-amber-50/40 border-2 border-amber-400 rounded-lg" />
-            <button type="button" onclick="addSlpToBatchQueue()" class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3.5 py-2 rounded-lg cursor-pointer">Add</button>
-          </div>
-        </div>
-        <div class="border border-slate-200 rounded-xl bg-slate-50 p-2.5">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-xs font-bold text-slate-700">Scanned SLPs in Batch: <span id="scanner-queue-count" class="text-blue-600">0</span></span>
-            <button type="button" onclick="clearScannerQueue()" class="text-[11px] text-rose-600 hover:underline font-medium cursor-pointer">Clear List</button>
-          </div>
-          <div id="scanner-queue-list" class="max-h-40 overflow-y-auto space-y-1 text-xs"></div>
-        </div>
-      </div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 flex items-center justify-between gap-2">
-        <button type="button" onclick="closeModal('scanner-modal')" class="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer">Cancel</button>
-        <button type="button" onclick="commitScannerBatch()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-sm cursor-pointer">Stage All SLPs</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 2: FIND SPACE -->
-  <div id="find-space-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('find-space-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
-      <div class="bg-emerald-800 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-compass"></i>
-          <h2 class="font-bold text-sm">Find Available Floor Space</h2>
-        </div>
-        <button type="button" onclick="closeModal('find-space-modal')" class="text-emerald-200 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div class="p-4 space-y-3 text-xs">
-        <div class="grid grid-cols-2 gap-2.5">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pallets Needed</label>
-            <input id="find-space-count" type="number" min="1" max="30" value="2" oninput="renderFindSpaceResults()" class="w-full px-3 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-          <div class="flex items-end">
-            <label class="inline-flex items-center gap-2 px-3 py-2 bg-sky-50 border border-sky-200 rounded-lg font-bold text-sky-900 cursor-pointer w-full">
-              <input id="find-space-double" type="checkbox" onchange="renderFindSpaceResults()" class="rounded text-sky-600" />
-              <span>Will 2x Double-Stack</span>
-            </label>
-          </div>
-        </div>
-        <div id="find-space-results" class="max-h-72 overflow-y-auto space-y-1.5"></div>
-      </div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
-        <button type="button" onclick="closeModal('find-space-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded-lg cursor-pointer">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 3: ORDERS OVERVIEW -->
-  <div id="orders-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('orders-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden">
-      <div class="bg-sky-900 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-layer-group text-sky-300"></i>
-          <h2 class="font-bold text-sm">Active Staged Orders Summary</h2>
-        </div>
-        <button type="button" onclick="closeModal('orders-modal')" class="text-sky-200 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div id="orders-list-container" class="p-4 max-h-96 overflow-y-auto space-y-2 text-xs"></div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
-        <button type="button" onclick="closeModal('orders-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded-lg cursor-pointer">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 4: AGING ALERTS -->
-  <div id="aging-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('aging-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
-      <div class="bg-amber-600 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-bell"></i>
-          <h2 class="font-bold text-sm">Staged Pallet Dwell-Time Alerts (&gt;24h &amp; &gt;7d)</h2>
-        </div>
-        <button type="button" onclick="closeModal('aging-modal')" class="text-amber-100 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div id="aging-list-container" class="p-4 max-h-80 overflow-y-auto space-y-2 text-xs"></div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
-        <button type="button" onclick="closeModal('aging-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded-lg cursor-pointer">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 5: EOD REPORT PREVIEW & EXPORT -->
-  <div id="eod-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('eod-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden">
-      <div class="bg-indigo-900 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-file-lines text-indigo-300"></i>
-          <h2 class="font-bold text-sm">ONUS-ONT End-of-Day (EOD) Staging Report v2</h2>
-        </div>
-        <button type="button" onclick="closeModal('eod-modal')" class="text-indigo-200 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div id="eod-report-preview" class="p-4 max-h-96 overflow-y-auto text-xs space-y-3"></div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 flex items-center justify-between">
-        <button type="button" onclick="closeModal('eod-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded-lg cursor-pointer">Close</button>
-        <button type="button" onclick="exportEodCsv()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-download"></i><span>Download CSV Report</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 6: CONSOLIDATE LANES -->
-  <div id="consolidate-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('consolidate-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden">
-      <div class="bg-teal-900 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-right-left text-teal-300"></i>
-          <h2 class="font-bold text-sm">Consolidate Staging Lanes (Tight Fit &amp; Zero-Blocking)</h2>
-        </div>
-        <button type="button" onclick="closeModal('consolidate-modal')" class="text-teal-200 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div class="p-4">
-        <p class="text-xs text-slate-600 mb-3">Merges split orders and compacts partial lanes with minimum pallet moves and zero floor over-capacity.</p>
-        <div id="consolidate-suggestions-list" class="max-h-72 overflow-y-auto space-y-2"></div>
-      </div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 flex justify-between items-center">
-        <button type="button" onclick="closeModal('consolidate-modal')" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer">Close</button>
-        <button id="apply-all-consolidate-btn" type="button" onclick="applyAllConsolidations()" style="display:none;" class="bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold px-4 py-2 rounded-lg cursor-pointer">Apply All Moves</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 7: CARRIERS MANAGER -->
-  <div id="carriers-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('carriers-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <h2 class="font-bold text-sm">Manage Carriers</h2>
-        <button type="button" onclick="closeModal('carriers-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div class="p-4 space-y-3 text-xs">
-        <form onsubmit="addCarrierItem(event)" class="flex gap-2">
-          <input id="new-carrier-name" type="text" placeholder="Add Carrier (e.g., FedEx Freight)" required class="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg font-semibold" />
-          <button type="submit" class="bg-sky-600 text-white font-bold px-3.5 py-1.5 rounded-lg cursor-pointer">Add</button>
-        </form>
-        <div id="carriers-list-container" class="max-h-60 overflow-y-auto space-y-1.5"></div>
-      </div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
-        <button type="button" onclick="closeModal('carriers-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 rounded-lg cursor-pointer">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 8: DOCKS MANAGER -->
-  <div id="docks-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('docks-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <h2 class="font-bold text-sm">Manage Dock Doors</h2>
-        <button type="button" onclick="closeModal('docks-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div class="p-4 space-y-3 text-xs">
-        <form onsubmit="addDockItem(event)" class="flex gap-2">
-          <input id="new-dock-name" type="text" placeholder="Add Dock (e.g., DOCK-04)" required class="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg font-semibold" />
-          <button type="submit" class="bg-emerald-600 text-white font-bold px-3.5 py-1.5 rounded-lg cursor-pointer">Add</button>
-        </form>
-        <div id="docks-list-container" class="max-h-60 overflow-y-auto space-y-1.5"></div>
-      </div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
-        <button type="button" onclick="closeModal('docks-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 rounded-lg cursor-pointer">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 9: EDIT LANE -->
-  <div id="lane-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('lane-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <h2 id="lane-modal-title" class="font-bold text-sm">Configure Staging Lane</h2>
-        <button type="button" onclick="closeModal('lane-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <form onsubmit="saveLaneSettings(event)" class="p-4 space-y-3">
-        <input type="hidden" id="edit-lane-id" />
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Lane Code</label>
-            <input id="edit-lane-name" type="text" required class="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Max Floor Spots</label>
-            <input id="edit-lane-capacity" type="number" min="1" max="30" required class="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Assigned Dock Door</label>
-            <input id="edit-lane-dock" type="text" placeholder="e.g., DOCK-03" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg" />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Dedicated Carrier</label>
-            <input id="edit-lane-carrier" type="text" placeholder="e.g., FedEx Freight" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg" />
-          </div>
-        </div>
-        <div class="pt-2 flex items-center justify-between border-t border-slate-200">
-          <button type="button" onclick="deleteCurrentLane()" class="text-xs font-semibold text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg cursor-pointer">Delete Empty Lane</button>
-          <div class="flex gap-2">
-            <button type="button" onclick="closeModal('lane-modal')" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer">Cancel</button>
-            <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg cursor-pointer">Save Lane</button>
-          </div>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- MODAL 10: BATCH ADD LANES -->
-  <div id="batch-add-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('batch-add-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <h2 class="font-bold text-sm">Batch Add Staging Lanes</h2>
-        <button type="button" onclick="closeModal('batch-add-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <form onsubmit="handleBatchAddLanes(event)" class="p-4 space-y-3">
-        <div class="grid grid-cols-3 gap-2">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Prefix</label>
-            <input id="batch-prefix" type="text" value="S" required class="w-full px-2.5 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Start #</label>
-            <input id="batch-start" type="number" value="63" min="1" required class="w-full px-2.5 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">End #</label>
-            <input id="batch-end" type="number" value="66" min="1" required class="w-full px-2.5 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
-          </div>
-        </div>
-        <div>
-          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Floor Spot Capacity per Lane</label>
-          <input id="batch-capacity" type="number" value="8" min="1" max="30" required class="w-full px-3 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
-        </div>
-        <div class="pt-2 flex justify-end gap-2 border-t border-slate-200">
-          <button type="button" onclick="closeModal('batch-add-modal')" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer">Cancel</button>
-          <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg cursor-pointer">Create Lanes</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- MODAL 11: BACKUP & CLOUD CONFIG -->
-  <div id="backup-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('backup-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-database text-sky-400"></i>
-          <h2 class="font-bold text-sm">Google Sheets Cloud Sync &amp; JSON Backup (v2)</h2>
-        </div>
-        <button type="button" onclick="closeModal('backup-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div class="p-4 space-y-4 text-xs">
-        <div class="bg-sky-50 border border-sky-200 rounded-xl p-3 space-y-2">
-          <div class="flex items-center justify-between">
-            <span class="font-bold text-sky-900">Google Apps Script Web App URL (/exec)</span>
-            <span id="modal-cloud-status" class="text-[11px] font-semibold text-sky-700">Not configured</span>
-          </div>
-          <input id="cloud-api-url-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-sky-300 rounded-lg" />
-          <div class="flex items-center justify-between gap-2 pt-1">
-            <button type="button" onclick="saveCloudApiUrl()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-1.5 rounded-lg cursor-pointer">Save &amp; Connect Cloud</button>
-            <button type="button" onclick="forceCloudPull()" class="bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 font-semibold px-3 py-1.5 rounded-lg cursor-pointer">Pull Latest Now</button>
-          </div>
-        </div>
-        <div class="border border-slate-200 rounded-xl p-3 space-y-2.5">
-          <div class="font-bold text-slate-800">Local JSON Snapshot Backup / Restore</div>
-          <div class="flex flex-wrap gap-2">
-            <button type="button" onclick="exportJsonBackup()" class="bg-slate-800 hover:bg-slate-700 text-white font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer">
-              <i class="fa-solid fa-download"></i><span>Download JSON Backup</span>
-            </button>
-            <label class="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-semibold px-3 py-2 rounded-lg cursor-pointer flex items-center gap-1.5">
-              <i class="fa-solid fa-upload"></i><span>Restore from JSON File</span>
-              <input type="file" accept=".json" onchange="importJsonBackup(event)" style="display:none;" />
-            </label>
-          </div>
-        </div>
-      </div>
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
-        <button type="button" onclick="closeModal('backup-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded-lg cursor-pointer">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 12: PALLET DETAILS / DOCK / MOVE -->
-  <div id="pallet-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('pallet-modal')">
-    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
-      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
-        <h2 class="font-bold text-sm">Pallet Details, Dock &amp; Relocation</h2>
-        <button type="button" onclick="closeModal('pallet-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
-      </div>
-      <div class="p-4 space-y-3 text-xs">
-        <input type="hidden" id="detail-pallet-id" />
-        <input type="hidden" id="detail-source-lane-id" />
-        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
-          <div class="flex justify-between"><span class="text-slate-500">SLP / LPN:</span><span id="detail-slp" class="font-mono font-bold text-slate-900 text-sm"></span></div>
-          <div class="flex justify-between"><span class="text-slate-500">Order #:</span><span id="detail-order" class="font-bold text-blue-700"></span></div>
-          <div class="flex justify-between"><span class="text-slate-500">Staged Time:</span><span id="detail-staged-at" class="text-slate-700"></span></div>
-        </div>
-        <div class="grid grid-cols-2 gap-2.5">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Carrier</label>
-            <input id="detail-carrier-input" type="text" placeholder="Carrier name" class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-semibold" />
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Dock Door</label>
-            <input id="detail-dock-input" type="text" placeholder="e.g., DOCK-03" class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-semibold" />
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2.5 items-end">
-          <div>
-            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Staging Lane</label>
-            <select id="detail-target-lane" class="w-full px-2.5 py-1.5 text-xs font-bold border border-slate-300 rounded-lg"></select>
-          </div>
-          <button type="button" onclick="savePalletModalChanges()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-1.5 px-3 rounded-lg cursor-pointer">Save &amp; Apply</button>
-        </div>
-        <div class="pt-2 border-t border-slate-200 flex items-center justify-between">
-          <button type="button" onclick="toggleDoubleStackFromModal()" class="bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200 font-bold px-3 py-1.5 rounded-lg cursor-pointer">Toggle 2x Stack</button>
-          <button type="button" onclick="shipOutPalletFromModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg cursor-pointer">Ship Pallet</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const APP_VERSION = 'v2';
-    const FACILITY_ID = 'ONUS-ONT';
-    const STORAGE_KEY = 'onus_ont_pallet_staging_v2';
-    const LEGACY_STORAGE_KEYS = ['onus_ont_pallet_staging_v1', 'pallet_staging_manager_v1'];
-    const CLOUD_URL_STORAGE_KEY = 'onus_ont_cloud_api_url_v2';
-    const DEFAULT_CLOUD_API_URL = '';
-    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-
-    const ORDER_PALETTE = [
-      { bg: 'bg-cyan-50/70', border: 'border-cyan-400', badge: 'bg-indigo-600 text-white' },
-      { bg: 'bg-amber-50/70', border: 'border-amber-400', badge: 'bg-orange-700 text-white' },
-      { bg: 'bg-rose-50/70', border: 'border-rose-400', badge: 'bg-rose-600 text-white' },
-      { bg: 'bg-emerald-50/70', border: 'border-emerald-400', badge: 'bg-emerald-700 text-white' },
-      { bg: 'bg-purple-50/70', border: 'border-purple-400', badge: 'bg-purple-700 text-white' }
-    ];
-
-    function safeGetStorage(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
-    function safeSetStorage(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-    function safeRemoveStorage(k) { try { localStorage.removeItem(k); } catch (e) {} }
-
-    let CLOUD_API_URL = safeGetStorage(CLOUD_URL_STORAGE_KEY) || DEFAULT_CLOUD_API_URL;
-    let state = {
-      version: APP_VERSION,
-      facility: FACILITY_ID,
-      updatedAt: new Date().toISOString(),
-      lanes: [],
-      carriers: ['FedEx Freight', 'Old Dominion Freight Line', 'UPS Freight', 'XPO Logistics', 'ESTES', 'SAIA'],
-      docks: ['DOCK-01', 'DOCK-02', 'DOCK-03', 'DOCK-04', 'DOCK-05', 'DOCK-06'],
-      history: []
-    };
-
-    let cardViewMode = 'SLPS'; // 'SLPS' | 'GROUPED'
-    let gridFixedCols = 0; // 0 = Auto responsive
-    let scannerQueue = [];
-    let draggedPalletInfo = null;
-    let saveDebounceTimer = null;
-    let isCloudSaving = false;
-    let pendingCloudSave = false;
-
-    function openModal(id) { const el = document.getElementById(id); if (el) el.style.display = 'flex'; }
-    function closeModal(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
-
-    function createDefaultLanes() {
-      const lanes = [];
-      for (let i = 51; i <= 62; i++) {
-        lanes.push({ id: `lane-s${i}`, name: `S${i}`, capacity: 8, dock: '', carrier: '', notes: '', pallets: [] });
-      }
-      return lanes;
-    }
-
-    function normalizeStateShape(raw) {
-      if (!raw || typeof raw !== 'object') return null;
-      const lanes = Array.isArray(raw.lanes) && raw.lanes.length > 0 ? raw.lanes : createDefaultLanes();
-      lanes.forEach(lane => {
-        if (!Array.isArray(lane.pallets)) lane.pallets = [];
-        if (typeof lane.capacity !== 'number' || lane.capacity < 1) lane.capacity = 8;
-        lane.pallets.forEach(p => {
-          if (typeof p.doubleStacked !== 'boolean') p.doubleStacked = false;
-          if (!p.stagedAt) p.stagedAt = new Date().toISOString();
-          if (typeof p.dock !== 'string') p.dock = lane.dock || '';
-        });
-      });
-      return {
-        version: APP_VERSION,
-        facility: FACILITY_ID,
-        updatedAt: raw.updatedAt || new Date().toISOString(),
-        lanes,
-        carriers: Array.isArray(raw.carriers) && raw.carriers.length ? raw.carriers : ['FedEx Freight', 'Old Dominion Freight Line', 'UPS Freight', 'XPO Logistics', 'ESTES', 'SAIA'],
-        docks: Array.isArray(raw.docks) && raw.docks.length ? raw.docks : ['DOCK-01', 'DOCK-02', 'DOCK-03', 'DOCK-04', 'DOCK-05', 'DOCK-06'],
-        history: Array.isArray(raw.history) ? raw.history.slice(0, 200) : []
-      };
-    }
-
-    // =========================================================================
-    // CLOUD SYNC (GITHUB PAGES FETCH <-> GOOGLE APPS SCRIPT WEB APP)
-    // =========================================================================
-    function setCloudStatus(mode, detailText) {
-      const dot = document.getElementById('cloud-sync-dot');
-      const label = document.getElementById('cloud-sync-label');
-      const modalStatus = document.getElementById('modal-cloud-status');
-      if (!dot || !label) return;
-      dot.className = 'w-2 h-2 rounded-full';
-      if (mode === 'synced') {
-        dot.classList.add('bg-emerald-400');
-        label.textContent = detailText || 'Cloud Synced';
-        if (modalStatus) modalStatus.textContent = `Connected (${detailText || 'Synced'})`;
-      } else if (mode === 'syncing') {
-        dot.classList.add('bg-sky-400', 'animate-pulse');
-        label.textContent = detailText || 'Syncing...';
-        if (modalStatus) modalStatus.textContent = 'Syncing with Google Sheets...';
-      } else if (mode === 'error') {
-        dot.classList.add('bg-rose-500');
-        label.textContent = detailText || 'Sync Error';
-        if (modalStatus) modalStatus.textContent = detailText || 'Connection Error';
-      } else {
-        dot.classList.add('bg-amber-400');
-        label.textContent = 'Local Only';
-        if (modalStatus) modalStatus.textContent = 'Not connected (Local Storage)';
-      }
-    }
-
-    async function loadState() {
-      let localLoaded = null;
-      const rawLocal = safeGetStorage(STORAGE_KEY);
-      if (rawLocal) { try { localLoaded = normalizeStateShape(JSON.parse(rawLocal)); } catch (e) {} }
-      if (!localLoaded) {
-        for (const k of LEGACY_STORAGE_KEYS) {
-          const r = safeGetStorage(k);
-          if (r) { try { localLoaded = normalizeStateShape(JSON.parse(r)); if (localLoaded) break; } catch (e) {} }
-        }
-      }
-      state = localLoaded || {
-        version: APP_VERSION,
-        facility: FACILITY_ID,
-        updatedAt: new Date().toISOString(),
-        lanes: createDefaultLanes(),
-        carriers: ['FedEx Freight', 'Old Dominion Freight Line', 'UPS Freight', 'XPO Logistics', 'ESTES', 'SAIA'],
-        docks: ['DOCK-01', 'DOCK-02', 'DOCK-03', 'DOCK-04', 'DOCK-05', 'DOCK-06'],
-        history: []
-      };
-      applyGridLayout();
-      refreshAllSelectors();
-      renderBoard();
-      if (!CLOUD_API_URL) { setCloudStatus('local'); return; }
-      await pullFromCloud(true);
-    }
-
-    async function pullFromCloud(isInitial = false) {
-      if (!CLOUD_API_URL) return;
-      if (isInitial) setCloudStatus('syncing', 'Loading...');
-      try {
-        const res = await fetch(`${CLOUD_API_URL}?t=${Date.now()}`, { method: 'GET', cache: 'no-store' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (data && data.ok && data.stateJson) {
-          const remoteState = normalizeStateShape(JSON.parse(data.stateJson));
-          if (remoteState) {
-            state = remoteState;
-            safeSetStorage(STORAGE_KEY, JSON.stringify(state));
-            refreshAllSelectors();
-            renderBoard();
-          }
-        } else if (data && data.ok && !data.stateJson) {
-          await pushToCloudNow();
-        }
-        const shortTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        setCloudStatus('synced', `Cloud Synced \u2022 ${shortTime}`);
-      } catch (err) {
-        console.error('Cloud pull failed:', err);
-        setCloudStatus('error', 'Sync Error');
-      }
-    }
-
-    function saveState(immediate = false) {
-      state.version = APP_VERSION;
-      state.facility = FACILITY_ID;
-      state.updatedAt = new Date().toISOString();
-      safeSetStorage(STORAGE_KEY, JSON.stringify(state));
-      if (!CLOUD_API_URL) { setCloudStatus('local'); return; }
-      if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
-      if (immediate) pushToCloudNow();
-      else {
-        setCloudStatus('syncing', 'Saving...');
-        saveDebounceTimer = setTimeout(() => pushToCloudNow(), 350);
-      }
-    }
-
-    async function pushToCloudNow() {
-      if (!CLOUD_API_URL) return;
-      if (isCloudSaving) { pendingCloudSave = true; return; }
-      isCloudSaving = true;
-      setCloudStatus('syncing', 'Saving...');
-      try {
-        const payload = JSON.stringify({ action: 'save', facility: FACILITY_ID, version: APP_VERSION, stateJson: JSON.stringify(state) });
-        const res = await fetch(CLOUD_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: payload });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        await res.json();
-        const shortTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        setCloudStatus('synced', `Cloud Synced \u2022 ${shortTime}`);
-      } catch (err) {
-        console.error('Cloud save failed:', err);
-        setCloudStatus('error', 'Save Failed');
-      } finally {
-        isCloudSaving = false;
-        if (pendingCloudSave) { pendingCloudSave = false; pushToCloudNow(); }
-      }
-    }
-
-    setInterval(() => {
-      if (!CLOUD_API_URL || isCloudSaving || draggedPalletInfo) return;
-      const anyModalOpen = Array.from(document.querySelectorAll('.modal-backdrop')).some(el => el.style.display === 'flex');
-      if (anyModalOpen) return;
-      pullFromCloud(false);
-    }, 8000);
-
-    function openCloudConfigModal() {
-      openBackupModal();
-      setTimeout(() => document.getElementById('cloud-api-url-input')?.focus(), 60);
-    }
-
-    function saveCloudApiUrl() {
-      const val = (document.getElementById('cloud-api-url-input')?.value || '').trim();
-      CLOUD_API_URL = val;
-      if (val) {
-        safeSetStorage(CLOUD_URL_STORAGE_KEY, val);
-        showToast('Cloud API URL saved. Syncing...');
-        pullFromCloud(true);
-      } else {
-        safeRemoveStorage(CLOUD_URL_STORAGE_KEY);
-        setCloudStatus('local');
-        showToast('Switched to Local Only mode.');
-      }
-    }
-
-    function forceCloudPull() {
-      if (!CLOUD_API_URL) { showToast('Enter your Apps Script /exec URL first.', true); return; }
-      pullFromCloud(true);
-      showToast('Pulled latest board state from Google Sheets.');
-    }
-
-    // =========================================================================
-    // FOOTPRINT, ORDER GROUPING & AUTO-SUGGEST
-    // =========================================================================
-    function computeFloorSpotsUsed(pallets) {
-      if (!Array.isArray(pallets) || pallets.length === 0) return 0;
-      let s = 0, d = 0;
-      for (const p of pallets) { if (p.doubleStacked) d++; else s++; }
-      return s + Math.ceil(d / 2);
-    }
-
-    function computeDoubleStackPairMap(pallets) {
-      const map = {};
-      const stacked = pallets.filter(p => p.doubleStacked);
-      for (let i = 0; i < stacked.length; i += 2) {
-        const pairNum = Math.floor(i / 2) + 1;
-        map[stacked[i].id] = { pairNum, tier: 'BTM' };
-        if (stacked[i + 1]) map[stacked[i + 1].id] = { pairNum, tier: 'TOP' };
-      }
-      return map;
-    }
-
-    function buildGlobalOrderStats() {
-      const orderTotals = {};
-      const orderThemes = {};
-      let colorIdx = 0;
-      state.lanes.forEach(l => {
-        l.pallets.forEach(p => {
-          const ord = normalizeOrderNumber(p.order);
-          if (!ord) return;
-          orderTotals[ord] = (orderTotals[ord] || 0) + 1;
-          if (!orderThemes[ord]) {
-            orderThemes[ord] = ORDER_PALETTE[colorIdx % ORDER_PALETTE.length];
-            colorIdx++;
-          }
-        });
-      });
-      return { orderTotals, orderThemes };
-    }
-
-    function normalizeOrderNumber(order) { return String(order || '').trim().toUpperCase(); }
-
-    function getBestAvailableLocationForOrder(orderNum, count = 1, isDouble = false) {
-      const normOrder = normalizeOrderNumber(orderNum);
-      const needed = isDouble ? Math.ceil(count / 2) : count;
-
-      // 1. Co-locate with existing lane containing the same Order #
-      if (normOrder) {
-        const match = state.lanes.find(
-          l => l.pallets.some(p => normalizeOrderNumber(p.order) === normOrder) && (l.capacity - computeFloorSpotsUsed(l.pallets) >= needed)
-        );
-        if (match) return { lane: match, reason: 'Same Order' };
-      }
-      // 2. Empty lane first
-      const empty = state.lanes.find(l => l.pallets.length === 0 && l.capacity >= needed);
-      if (empty) return { lane: empty, reason: 'Empty Lane' };
-
-      // 3. Any partial lane with enough capacity
-      const partial = state.lanes.find(l => l.capacity - computeFloorSpotsUsed(l.pallets) >= needed);
-      if (partial) return { lane: partial, reason: 'Open Space' };
-
-      return state.lanes[0] ? { lane: state.lanes[0], reason: 'Full' } : null;
-    }
-
-    function updateQuickAutoSuggestBadge() {
-      const orderVal = document.getElementById('quick-order-input')?.value || '';
-      const isDouble = document.getElementById('quick-double-checkbox')?.checked || false;
-      const badge = document.getElementById('quick-auto-suggest-badge');
-      if (!badge) return;
-      const res = getBestAvailableLocationForOrder(orderVal, 1, isDouble);
-      if (!res || !res.lane) {
-        badge.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-rose-600"></i> Floor Full`;
-        return;
-      }
-      const free = Math.max(0, res.lane.capacity - computeFloorSpotsUsed(res.lane.pallets));
-      badge.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i> ${escapeHtml(res.reason)} &rarr; ${escapeHtml(res.lane.name)} (${free} free)`;
-    }
-
-    function applyAutoSuggestToQuickSelect() {
-      const orderVal = document.getElementById('quick-order-input')?.value || '';
-      const isDouble = document.getElementById('quick-double-checkbox')?.checked || false;
-      const res = getBestAvailableLocationForOrder(orderVal, 1, isDouble);
-      const sel = document.getElementById('quick-lane-select');
-      if (res && res.lane && sel) {
-        sel.value = res.lane.id;
-        showToast(`Selected ${res.lane.name} (${res.reason})`);
-      }
-    }
-
-    function updateScannerAutoSuggestPill() {
-      const orderVal = document.getElementById('scanner-order-input')?.value || '';
-      const laneSel = document.getElementById('scanner-lane-select')?.value || 'AUTO';
-      const isDouble = document.getElementById('scanner-double-checkbox')?.checked || false;
-      const pill = document.getElementById('scanner-auto-suggest-pill');
-      if (!pill) return;
-      if (laneSel !== 'AUTO') {
-        const chosen = state.lanes.find(l => l.id === laneSel);
-        pill.textContent = chosen ? `-> ${chosen.name}` : '';
-        return;
-      }
-      const res = getBestAvailableLocationForOrder(orderVal, Math.max(1, scannerQueue.length), isDouble);
-      pill.textContent = res && res.lane ? `-> ${res.lane.name}` : '-> Full';
-    }
-
-    // =========================================================================
-    // GRID DENSITY & VIEW MODE CONTROLS
-    // =========================================================================
-    function setCardViewMode(mode) {
-      cardViewMode = mode;
-      const btnSlps = document.getElementById('view-mode-slps');
-      const btnGrouped = document.getElementById('view-mode-grouped');
-      if (mode === 'SLPS') {
-        btnSlps.className = 'px-2.5 py-1 text-xs font-bold rounded-md bg-slate-900 text-white cursor-pointer';
-        btnGrouped.className = 'px-2.5 py-1 text-xs font-bold rounded-md text-slate-600 hover:text-slate-900 cursor-pointer';
-      } else {
-        btnGrouped.className = 'px-2.5 py-1 text-xs font-bold rounded-md bg-slate-900 text-white cursor-pointer';
-        btnSlps.className = 'px-2.5 py-1 text-xs font-bold rounded-md text-slate-600 hover:text-slate-900 cursor-pointer';
-      }
-      renderBoard();
-    }
-
-    function handleGridSliderChange(val) {
-      gridFixedCols = parseInt(val, 10) || 0;
-      applyGridLayout();
-    }
-
-    function applyGridLayout() {
-      const board = document.getElementById('staging-board');
-      const lbl = document.getElementById('grid-mode-label');
-      if (!board) return;
-      if (gridFixedCols >= 2) {
-        board.style.gridTemplateColumns = `repeat(${gridFixedCols}, minmax(0, 1fr))`;
-        if (lbl) lbl.textContent = `${gridFixedCols} Cols`;
-      } else {
-        const isSmallScreen = window.innerWidth <= 640;
-        board.style.gridTemplateColumns = isSmallScreen ? '1fr' : 'repeat(auto-fill, minmax(265px, 1fr))';
-        if (lbl) lbl.textContent = isSmallScreen ? 'Auto (TC56 PDA)' : 'Auto (Laptop)';
-      }
-    }
-
-    window.addEventListener('resize', () => {
-      if (gridFixedCols === 0) applyGridLayout();
-    });
-
-    // =========================================================================
-    // RENDER MAIN STAGING BOARD
-    // =========================================================================
-    function renderBoard() {
-      const board = document.getElementById('staging-board');
-      if (!board) return;
-
-      const searchQ = (document.getElementById('board-search-input')?.value || '').trim().toUpperCase();
-      const carrierFilter = document.getElementById('carrier-filter-select')?.value || 'ALL';
-      const { orderTotals, orderThemes } = buildGlobalOrderStats();
-      const orderRunningIndex = {};
-
-      let totalPallets = 0, totalFloorUsed = 0, totalFloorCap = 0, totalDoubleStacked = 0, totalAgingAlerts = 0;
-      const now = Date.now();
-
-      const cardsHtml = state.lanes.map(lane => {
-        const floorUsed = computeFloorSpotsUsed(lane.pallets);
-        const freeSpots = Math.max(0, lane.capacity - floorUsed);
-        const doubleCount = lane.pallets.filter(p => p.doubleStacked).length;
-        const agingCount = lane.pallets.filter(p => now - new Date(p.stagedAt).getTime() > ONE_DAY_MS).length;
-
-        totalPallets += lane.pallets.length;
-        totalFloorUsed += floorUsed;
-        totalFloorCap += lane.capacity;
-        totalDoubleStacked += doubleCount;
-        totalAgingAlerts += agingCount;
-
-        if (carrierFilter !== 'ALL') {
-          const m1 = (lane.carrier || '').toUpperCase() === carrierFilter;
-          const m2 = lane.pallets.some(p => (p.carrier || '').toUpperCase() === carrierFilter);
-          if (!m1 && !m2) return '';
-        }
-
-        if (searchQ) {
-          const m1 = lane.name.toUpperCase().includes(searchQ) || (lane.dock || '').toUpperCase().includes(searchQ) || (lane.carrier || '').toUpperCase().includes(searchQ);
-          const m2 = lane.pallets.some(p => p.slp.toUpperCase().includes(searchQ) || (p.order || '').toUpperCase().includes(searchQ) || (p.carrier || '').toUpperCase().includes(searchQ) || (p.dock || '').toUpperCase().includes(searchQ));
-          if (!m1 && !m2) return '';
-        }
-
-        // Light-green top bar when <= 2 floor spots remain
-        const isNearFull = freeSpots <= 2;
-        const headerBgClass = isNearFull
-          ? 'bg-emerald-200 text-emerald-950 border-b border-emerald-300'
-          : 'bg-[#0b1324] text-white';
-        const dotColorClass = lane.pallets.length === 0 ? 'bg-emerald-400' : isNearFull ? 'bg-emerald-700' : 'bg-emerald-400';
-
-        const pairMap = computeDoubleStackPairMap(lane.pallets);
-
-        let bodyHtml = '';
-        if (lane.pallets.length > 0) {
-          if (cardViewMode === 'GROUPED') {
-            const groups = {};
-            lane.pallets.forEach(p => {
-              const key = normalizeOrderNumber(p.order) || 'NO-ORDER';
-              if (!groups[key]) groups[key] = [];
-              groups[key].push(p);
-            });
-            bodyHtml = Object.entries(groups).map(([ordKey, pts]) => {
-              const theme = orderThemes[ordKey] || ORDER_PALETTE[0];
-              return `
-                <div class="pallet-card rounded-xl border-2 ${theme.border} ${theme.bg} p-2.5 space-y-1.5">
-                  <div class="flex items-center justify-between">
-                    <span class="px-2 py-0.5 text-[11px] font-extrabold rounded ${theme.badge}">${escapeHtml(ordKey)} (${pts.length} plts)</span>
-                    <button type="button" onclick="shipOrderInLane('${lane.id}', '${escapeHtml(ordKey)}')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-2.5 py-0.5 rounded cursor-pointer">Ship All</button>
-                  </div>
-                  <div class="text-[11px] font-mono font-bold text-slate-800 space-y-0.5">
-                    ${pts.map(p => `<div class="flex justify-between cursor-pointer hover:underline" onclick="openPalletDetailModal('${lane.id}', '${p.id}')"><span>${escapeHtml(p.slp)} ${p.doubleStacked ? '[2x]' : ''}</span><span class="text-slate-500">${escapeHtml(p.dock || '')}</span></div>`).join('')}
-                  </div>
-                </div>`;
-            }).join('');
-          } else {
-            bodyHtml = lane.pallets.map(p => {
-              const normOrd = normalizeOrderNumber(p.order);
-              if (normOrd) orderRunningIndex[normOrd] = (orderRunningIndex[normOrd] || 0) + 1;
-              const seqLabel = normOrd ? `${normOrd} (${orderRunningIndex[normOrd]}/${orderTotals[normOrd]})` : 'NO-ORDER';
-              const theme = normOrd ? (orderThemes[normOrd] || ORDER_PALETTE[0]) : { bg: 'bg-white', border: 'border-slate-300', badge: 'bg-slate-700 text-white' };
-              const pairInfo = pairMap[p.id];
-              const dockText = p.dock || lane.dock || '';
-
-              return `
-                <div
-                  draggable="true"
-                  ondragstart="handlePalletDragStart(event, '${lane.id}', '${p.id}')"
-                  ondragend="handlePalletDragEnd()"
-                  onclick="openPalletDetailModal('${lane.id}', '${p.id}')"
-                  class="pallet-card cursor-pointer rounded-xl border-2 ${theme.border} ${theme.bg} p-2.5 space-y-1.5 shadow-2xs"
-                >
-                  <!-- Top Row: Order Badge + Stack Tier Badge + Age -->
-                  <div class="flex items-center justify-between gap-1">
-                    <span class="px-2 py-0.5 text-[11px] font-extrabold rounded-md ${theme.badge} tracking-tight">
-                      ${escapeHtml(seqLabel)}
-                    </span>
-                    <div class="flex items-center gap-1.5">
-                      ${
-                        p.doubleStacked && pairInfo
-                          ? `<span class="px-1.5 py-0.5 text-[10px] font-extrabold rounded bg-sky-100 text-sky-800 border border-sky-300">
-                               ${pairInfo.tier} #${pairInfo.pairNum}
-                             </span>`
-                          : ''
-                      }
-                      <span class="text-[11px] font-semibold text-slate-400">${formatRelativeAge(p.stagedAt)}</span>
-                    </div>
-                  </div>
-
-                  <!-- Middle Row: SLP Barcode + 2x Toggle Button -->
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="min-w-0">
-                      <div class="font-mono font-black text-sm text-slate-900 truncate">${escapeHtml(p.slp)}</div>
-                      <div class="text-xs text-slate-600 truncate">${escapeHtml(p.carrier || lane.carrier || '')}</div>
-                    </div>
-                    <button
-                      type="button"
-                      onclick="event.stopPropagation(); quickToggleDoubleStack('${lane.id}', '${p.id}')"
-                      title="Toggle 2x Double-Stack"
-                      class="px-2 py-1 text-[11px] font-extrabold rounded-md border transition shrink-0 cursor-pointer ${
-                        p.doubleStacked
-                          ? 'bg-teal-600 text-white border-teal-700'
-                          : 'bg-white text-slate-500 border-slate-300 hover:bg-sky-50'
-                      }"
-                    >
-                      2x
-                    </button>
-                  </div>
-
-                  <!-- Bottom Row: +Dock / DOCK-XX Badge + Ship Button -->
-                  <div class="flex items-center justify-between pt-1">
-                    ${
-                      dockText
-                        ? `<button type="button" onclick="event.stopPropagation(); openPalletDetailModal('${lane.id}', '${p.id}')" class="px-2 py-0.5 text-[11px] font-extrabold rounded bg-emerald-50 text-emerald-800 border border-emerald-300 cursor-pointer">
-                             ${escapeHtml(dockText)}
-                           </button>`
-                        : `<button type="button" onclick="event.stopPropagation(); openPalletDetailModal('${lane.id}', '${p.id}')" class="text-[11px] font-bold text-slate-500 hover:text-blue-700 underline cursor-pointer">
-                             +Dock
-                           </button>`
-                    }
-                    <button
-                      type="button"
-                      onclick="event.stopPropagation(); shipPalletDirect('${lane.id}', '${p.id}')"
-                      class="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-extrabold px-2.5 py-1 rounded-md shadow-2xs cursor-pointer"
-                    >
-                      Ship
-                    </button>
-                  </div>
-                </div>`;
-            }).join('');
-          }
-        }
-
-        return `
-          <div
-            id="card-${lane.id}"
-            ondragover="handleLaneDragOver(event, '${lane.id}')"
-            ondragleave="handleLaneDragLeave('${lane.id}')"
-            ondrop="handleLaneDrop(event, '${lane.id}')"
-            class="bg-white rounded-xl shadow-xs border border-slate-300/90 flex flex-col overflow-hidden min-h-[255px]"
-          >
-            <!-- Lane Header -->
-            <div class="${headerBgClass} px-3 py-2 flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-2.5 h-2.5 rounded-full ${dotColorClass} shrink-0"></span>
-                <span class="font-black text-sm tracking-tight">${escapeHtml(lane.name)}</span>
-                ${
-                  doubleCount > 0
-                    ? `<span class="px-1.5 py-0.2 text-[10px] font-extrabold rounded bg-sky-900 text-sky-200 border border-sky-700">
-                         2x:${doubleCount}
-                       </span>`
-                    : ''
-                }
-              </div>
-
-              <div class="flex items-center gap-2 shrink-0">
-                <span class="font-mono font-bold text-xs ${isNearFull ? 'text-emerald-950' : 'text-slate-200'}">
-                  ${floorUsed}/${lane.capacity}
-                </span>
-                <button
-                  type="button"
-                  onclick="quickSelectLaneForScan('${lane.id}')"
-                  title="Stage into ${escapeHtml(lane.name)}"
-                  class="w-5 h-5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 flex items-center justify-center text-[11px] font-black cursor-pointer"
-                >
-                  <i class="fa-solid fa-plus"></i>
-                </button>
-                <button
-                  type="button"
-                  onclick="openEditLaneModal('${lane.id}')"
-                  title="Configure ${escapeHtml(lane.name)}"
-                  class="${isNearFull ? 'text-emerald-900 hover:text-emerald-950' : 'text-slate-400 hover:text-white'} cursor-pointer"
-                >
-                  <i class="fa-solid fa-sliders text-xs"></i>
-                </button>
-              </div>
-            </div>
-
-            <!-- Lane Body with Giant Free-Spot Watermark -->
-            <div class="relative flex-1 p-2.5 space-y-2 bg-white">
-              <div class="lane-watermark">${freeSpots}</div>
-              ${bodyHtml}
-            </div>
-          </div>`;
-      }).join('');
-
-      board.innerHTML = cardsHtml || `<div class="col-span-full bg-white border border-slate-200 rounded-xl p-8 text-center text-sm text-slate-500">No staging lanes match your active filter.</div>`;
-
-      // Update Header KPIs & Badges
-      const uniqueOrdersCount = Object.keys(orderTotals).length;
-      document.getElementById('stat-floor-spots').textContent = `${totalFloorUsed}/${totalFloorCap}`;
-      document.getElementById('stat-total-pallets').textContent = totalPallets;
-      document.getElementById('stat-double-stacked').textContent = totalDoubleStacked;
-      document.getElementById('stat-total-orders').textContent = uniqueOrdersCount;
-      document.getElementById('stat-open-spots').textContent = Math.max(0, totalFloorCap - totalFloorUsed);
-      document.getElementById('btn-orders-badge').textContent = uniqueOrdersCount;
-      document.getElementById('btn-alerts-badge').textContent = totalAgingAlerts;
-
-      updateQuickAutoSuggestBadge();
-    }
-
-    function refreshAllSelectors() {
-      const quickSel = document.getElementById('quick-lane-select');
-      const scannerSel = document.getElementById('scanner-lane-select');
-      const carrierFilterSel = document.getElementById('carrier-filter-select');
-      const quickCarrierSel = document.getElementById('quick-carrier-select');
-      const quickDockSel = document.getElementById('quick-dock-select');
-      const scannerCarrierSel = document.getElementById('scanner-carrier-select');
-      const scannerDockSel = document.getElementById('scanner-dock-select');
-
-      const laneOpts = state.lanes.map(l => {
-        const free = Math.max(0, l.capacity - computeFloorSpotsUsed(l.pallets));
-        return `<option value="${l.id}">${escapeHtml(l.name)} (${free} free)</option>`;
-      }).join('');
-
-      if (quickSel) {
-        const prev = quickSel.value;
-        quickSel.innerHTML = `<option value="AUTO">Auto-Suggest Lane</option>${laneOpts}`;
-        if (prev) quickSel.value = prev;
-      }
-      if (scannerSel) {
-        const prev = scannerSel.value;
-        scannerSel.innerHTML = `<option value="AUTO">Auto-Suggest (Same Order / Empty First)</option>${laneOpts}`;
-        if (prev) scannerSel.value = prev;
-      }
-
-      // Carriers list
-      const allCarriers = new Set(state.carriers || []);
-      state.lanes.forEach(l => {
-        if (l.carrier) allCarriers.add(l.carrier);
-        l.pallets.forEach(p => { if (p.carrier) allCarriers.add(p.carrier); });
-      });
-      const sortedCarriers = Array.from(allCarriers).sort();
-
-      if (carrierFilterSel) {
-        const prev = carrierFilterSel.value;
-        carrierFilterSel.innerHTML = `<option value="ALL">All Carriers (${sortedCarriers.length})</option>` +
-          sortedCarriers.map(c => `<option value="${escapeHtml(c.toUpperCase())}">${escapeHtml(c)}</option>`).join('');
-        if (prev) carrierFilterSel.value = prev;
-      }
-      const carrierOptHtml = `<option value="">Carrier (Optional)</option>` + sortedCarriers.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-      if (quickCarrierSel) quickCarrierSel.innerHTML = carrierOptHtml;
-      if (scannerCarrierSel) scannerCarrierSel.innerHTML = `<option value="">Carrier...</option>` + sortedCarriers.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-
-      // Docks list
-      const allDocks = new Set(state.docks || []);
-      state.lanes.forEach(l => {
-        if (l.dock) allDocks.add(l.dock);
-        l.pallets.forEach(p => { if (p.dock) allDocks.add(p.dock); });
-      });
-      const sortedDocks = Array.from(allDocks).sort();
-      const dockOptHtml = `<option value="">Dock Door (Optional)</option>` + sortedDocks.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
-      if (quickDockSel) quickDockSel.innerHTML = dockOptHtml;
-      if (scannerDockSel) scannerDockSel.innerHTML = `<option value="">Dock...</option>` + sortedDocks.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
-    }
-
-    // =========================================================================
-    // SCANNING, LOGGING & DIRECT LANE ACTIONS
-    // =========================================================================
-    function isDuplicateSlp(slp) {
-      const n = slp.trim().toUpperCase();
-      return state.lanes.some(l => l.pallets.some(p => p.slp.toUpperCase() === n));
-    }
-
-    function quickSelectLaneForScan(laneId) {
-      const sel = document.getElementById('quick-lane-select');
-      if (sel) sel.value = laneId;
-      const slpInput = document.getElementById('quick-slp-input');
-      if (slpInput) slpInput.focus();
-      const lane = state.lanes.find(l => l.id === laneId);
-      if (lane) showToast(`Ready to log SLP into ${lane.name}`);
-    }
-
-    function handleQuickScanSubmit() {
-      const slpInput = document.getElementById('quick-slp-input');
-      const slp = (slpInput.value || '').trim().toUpperCase();
-      const order = (document.getElementById('quick-order-input').value || '').trim().toUpperCase();
-      const carrier = (document.getElementById('quick-carrier-select')?.value || '').trim();
-      const dock = (document.getElementById('quick-dock-select')?.value || '').trim();
-      const laneSel = document.getElementById('quick-lane-select').value;
-      const isDouble = document.getElementById('quick-double-checkbox').checked;
-
-      if (!slp) { slpInput.focus(); return; }
-      if (isDuplicateSlp(slp)) {
-        playBeep(false);
-        showToast(`Duplicate SLP ${slp} is already staged!`, true);
-        slpInput.select();
-        return;
-      }
-
-      const target = laneSel === 'AUTO'
-        ? getBestAvailableLocationForOrder(order, 1, isDouble)?.lane
-        : state.lanes.find(l => l.id === laneSel);
-
-      if (!target) { playBeep(false); showToast('No available staging lane.', true); return; }
-
-      target.pallets.push({
-        id: `plt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        slp,
-        order,
-        carrier: carrier || target.carrier || '',
-        dock: dock || target.dock || '',
-        doubleStacked: isDouble,
-        stagedAt: new Date().toISOString()
-      });
-
-      recordHistory('STAGE', `${slp} (${order || 'No Order'}) -> ${target.name}`);
-      playBeep(true);
-      slpInput.value = '';
-      slpInput.focus();
-      refreshAllSelectors();
-      renderBoard();
-      saveState();
-      showToast(`Logged ${slp} into ${target.name}`);
-    }
-
-    function openScannerModal() {
-      scannerQueue = [];
-      renderScannerQueue();
-      openModal('scanner-modal');
-      updateScannerAutoSuggestPill();
-      setTimeout(() => {
-        const el = document.getElementById('scanner-order-input');
-        if (el) { el.focus(); el.select(); }
-      }, 40);
-    }
-
-    function addSlpToBatchQueue() {
-      const input = document.getElementById('scanner-slp-input');
-      const slp = (input.value || '').trim().toUpperCase();
-      if (!slp) return;
-      if (scannerQueue.includes(slp) || isDuplicateSlp(slp)) {
-        playBeep(false);
-        showToast(`SLP ${slp} already scanned or staged.`, true);
-        input.select();
-        return;
-      }
-      scannerQueue.push(slp);
-      playBeep(true);
-      input.value = '';
-      input.focus();
-      renderScannerQueue();
-      updateScannerAutoSuggestPill();
-    }
-
-    function removeSlpFromBatchQueue(idx) { scannerQueue.splice(idx, 1); renderScannerQueue(); updateScannerAutoSuggestPill(); }
-    function clearScannerQueue() { scannerQueue = []; renderScannerQueue(); updateScannerAutoSuggestPill(); }
-
-    function renderScannerQueue() {
-      document.getElementById('scanner-queue-count').textContent = scannerQueue.length;
-      const listEl = document.getElementById('scanner-queue-list');
-      listEl.innerHTML = scannerQueue.length === 0
-        ? `<div class="text-slate-400 italic py-3 text-center">No SLPs scanned yet. Scan barcode above.</div>`
-        : scannerQueue.map((slp, idx) => `<div class="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 flex items-center justify-between"><span class="font-mono font-bold text-slate-800">${idx + 1}. ${escapeHtml(slp)}</span><button type="button" onclick="removeSlpFromBatchQueue(${idx})" class="text-rose-500 font-bold cursor-pointer">&times;</button></div>`).join('');
-    }
-
-    function commitScannerBatch() {
-      const order = (document.getElementById('scanner-order-input').value || '').trim().toUpperCase();
-      const carrier = (document.getElementById('scanner-carrier-select').value || '').trim();
-      const dock = (document.getElementById('scanner-dock-select').value || '').trim();
-      const laneSel = document.getElementById('scanner-lane-select').value;
-      const isDouble = document.getElementById('scanner-double-checkbox').checked;
-      const pending = (document.getElementById('scanner-slp-input').value || '').trim().toUpperCase();
-      if (pending && !scannerQueue.includes(pending) && !isDuplicateSlp(pending)) scannerQueue.push(pending);
-      if (scannerQueue.length === 0) { showToast('Scan at least one SLP first.', true); return; }
-
-      const target = laneSel === 'AUTO'
-        ? getBestAvailableLocationForOrder(order, scannerQueue.length, isDouble)?.lane
-        : state.lanes.find(l => l.id === laneSel);
-
-      if (!target) { showToast('No available lane.', true); return; }
-      const nowIso = new Date().toISOString();
-      scannerQueue.forEach(slp => {
-        target.pallets.push({
-          id: `plt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          slp,
-          order,
-          carrier: carrier || target.carrier || '',
-          dock: dock || target.dock || '',
-          doubleStacked: isDouble,
-          stagedAt: nowIso
-        });
-      });
-      recordHistory('BATCH_STAGE', `Staged ${scannerQueue.length} SLPs (${order || 'No Order'}) -> ${target.name}`);
-      playBeep(true);
-      closeModal('scanner-modal');
-      refreshAllSelectors();
-      renderBoard();
-      saveState();
-      showToast(`Staged ${scannerQueue.length} SLPs into ${target.name}`);
-    }
-
-    function shipPalletDirect(laneId, palletId) {
-      const lane = state.lanes.find(l => l.id === laneId);
-      if (!lane) return;
-      const idx = lane.pallets.findIndex(p => p.id === palletId);
-      if (idx === -1) return;
-      const [rem] = lane.pallets.splice(idx, 1);
-      recordHistory('SHIP', `Shipped ${rem.slp} from ${lane.name}`);
-      refreshAllSelectors();
-      renderBoard();
-      saveState();
-      showToast(`Shipped ${rem.slp} from ${lane.name}`);
-    }
-
-    function shipOrderInLane(laneId, orderNum) {
-      const lane = state.lanes.find(l => l.id === laneId);
-      if (!lane) return;
-      const before = lane.pallets.length;
-      lane.pallets = lane.pallets.filter(p => (normalizeOrderNumber(p.order) || 'NO-ORDER') !== orderNum);
-      const shippedCount = before - lane.pallets.length;
-      recordHistory('SHIP_ORDER', `Shipped ${shippedCount} pallets for ${orderNum} from ${lane.name}`);
-      refreshAllSelectors();
-      renderBoard();
-      saveState();
-      showToast(`Shipped ${shippedCount} pallet(s) for ${orderNum}`);
-    }
-
-    function quickToggleDoubleStack(laneId, palletId) {
-      const lane = state.lanes.find(l => l.id === laneId);
-      const p = lane?.pallets.find(x => x.id === palletId);
-      if (!p) return;
-      p.doubleStacked = !p.doubleStacked;
-      renderBoard();
-      saveState();
-    }
-
-    function handlePalletDragStart(e, laneId, palletId) { draggedPalletInfo = { laneId, palletId }; e.dataTransfer.effectAllowed = 'move'; }
-    function handlePalletDragEnd() { draggedPalletInfo = null; document.querySelectorAll('.lane-drop-active').forEach(el => el.classList.remove('lane-drop-active')); }
-    function handleLaneDragOver(e, laneId) { e.preventDefault(); document.getElementById(`card-${laneId}`)?.classList.add('lane-drop-active'); }
-    function handleLaneDragLeave(laneId) { document.getElementById(`card-${laneId}`)?.classList.remove('lane-drop-active'); }
-    function handleLaneDrop(e, targetLaneId) {
-      e.preventDefault();
-      handleLaneDragLeave(targetLaneId);
-      if (!draggedPalletInfo) return;
-      const { laneId, palletId } = draggedPalletInfo;
-      draggedPalletInfo = null;
-      if (laneId !== targetLaneId) movePalletBetweenLanes(laneId, targetLaneId, palletId);
-    }
-
-    function movePalletBetweenLanes(srcId, dstId, palletId) {
-      const src = state.lanes.find(l => l.id === srcId);
-      const dst = state.lanes.find(l => l.id === dstId);
-      if (!src || !dst) return;
-      const idx = src.pallets.findIndex(p => p.id === palletId);
-      if (idx === -1) return;
-      const [p] = src.pallets.splice(idx, 1);
-      dst.pallets.push(p);
-      refreshAllSelectors();
-      renderBoard();
-      saveState();
-      showToast(`Moved ${p.slp} to ${dst.name}`);
-    }
-
-    function openPalletDetailModal(laneId, palletId) {
-      const lane = state.lanes.find(l => l.id === laneId);
-      const p = lane?.pallets.find(x => x.id === palletId);
-      if (!lane || !p) return;
-      document.getElementById('detail-pallet-id').value = p.id;
-      document.getElementById('detail-source-lane-id').value = lane.id;
-      document.getElementById('detail-slp').textContent = p.slp;
-      document.getElementById('detail-order').textContent = p.order || 'N/A';
-      document.getElementById('detail-staged-at').textContent = new Date(p.stagedAt).toLocaleString();
-      document.getElementById('detail-carrier-input').value = p.carrier || lane.carrier || '';
-      document.getElementById('detail-dock-input').value = p.dock || lane.dock || '';
-      document.getElementById('detail-target-lane').innerHTML = state.lanes.map(l => `<option value="${l.id}" ${l.id === lane.id ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('');
-      openModal('pallet-modal');
-    }
-
-    function savePalletModalChanges() {
-      const pid = document.getElementById('detail-pallet-id').value;
-      const srcId = document.getElementById('detail-source-lane-id').value;
-      const dstId = document.getElementById('detail-target-lane').value;
-      const lane = state.lanes.find(l => l.id === srcId);
-      const p = lane?.pallets.find(x => x.id === pid);
-      if (p) {
-        p.carrier = document.getElementById('detail-carrier-input').value.trim();
-        p.dock = document.getElementById('detail-dock-input').value.trim().toUpperCase();
-      }
-      closeModal('pallet-modal');
-      if (srcId !== dstId) movePalletBetweenLanes(srcId, dstId, pid);
-      else { refreshAllSelectors(); renderBoard(); saveState(); showToast('Updated pallet details.'); }
-    }
-
-    function toggleDoubleStackFromModal() {
-      quickToggleDoubleStack(document.getElementById('detail-source-lane-id').value, document.getElementById('detail-pallet-id').value);
-      closeModal('pallet-modal');
-    }
-
-    function shipOutPalletFromModal() {
-      const pid = document.getElementById('detail-pallet-id').value;
-      const srcId = document.getElementById('detail-source-lane-id').value;
-      closeModal('pallet-modal');
-      shipPalletDirect(srcId, pid);
-    }
-
-    // =========================================================================
-    // FIND SPACE, ORDERS, ALERTS, EOD, CONSOLIDATE, CARRIERS & DOCKS
-    // =========================================================================
-    function openFindSpaceModal() {
-      openModal('find-space-modal');
-      renderFindSpaceResults();
-    }
-
-    function renderFindSpaceResults() {
-      const count = Math.max(1, parseInt(document.getElementById('find-space-count')?.value, 10) || 1);
-      const isDouble = document.getElementById('find-space-double')?.checked || false;
-      const neededSpots = isDouble ? Math.ceil(count / 2) : count;
-
-      const sortedLanes = [...state.lanes]
-        .map(l => ({ lane: l, free: Math.max(0, l.capacity - computeFloorSpotsUsed(l.pallets)), isEmpty: l.pallets.length === 0 }))
-        .filter(x => x.free >= neededSpots)
-        .sort((a, b) => (b.isEmpty - a.isEmpty) || (b.free - a.free));
-
-      const container = document.getElementById('find-space-results');
-      if (sortedLanes.length === 0) {
-        container.innerHTML = `<div class="p-4 text-center text-rose-600 font-bold bg-rose-50 rounded-xl border border-rose-200">No single lane has ${neededSpots} free floor spot(s). Try Consolidate first.</div>`;
-        return;
-      }
-
-      container.innerHTML = sortedLanes.map(item => `
-        <div class="border border-slate-200 rounded-xl p-2.5 flex items-center justify-between bg-slate-50">
-          <div>
-            <span class="font-black text-slate-900">${escapeHtml(item.lane.name)}</span>
-            ${item.isEmpty ? `<span class="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-800">Empty Lane</span>` : ''}
-            <div class="text-[11px] text-slate-600">${item.free} free spots (Capacity: ${item.lane.capacity})</div>
-          </div>
-          <button type="button" onclick="closeModal('find-space-modal'); quickSelectLaneForScan('${item.lane.id}');" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg cursor-pointer">
-            Use Lane
-          </button>
-        </div>
-      `).join('');
-    }
-
-    function openOrdersModal() {
-      const orderMap = {};
-      state.lanes.forEach(l => l.pallets.forEach(p => {
-        const ord = normalizeOrderNumber(p.order) || 'NO-ORDER';
-        if (!orderMap[ord]) orderMap[ord] = { pallets: 0, lanes: new Set(), carrier: p.carrier || l.carrier || '', dock: p.dock || l.dock || '' };
-        orderMap[ord].pallets++;
-        orderMap[ord].lanes.add(l.name);
-      }));
-
-      const entries = Object.entries(orderMap);
-      const container = document.getElementById('orders-list-container');
-      container.innerHTML = entries.length === 0
-        ? `<div class="text-center text-slate-500 py-6">No active orders staged on the floor.</div>`
-        : entries.map(([ord, info]) => `
-            <div class="border border-slate-200 rounded-xl p-3 flex items-center justify-between bg-slate-50">
-              <div>
-                <div class="font-extrabold text-sm text-sky-900">${escapeHtml(ord)} <span class="text-xs font-semibold text-slate-600">(${info.pallets} pallets)</span></div>
-                <div class="text-[11px] text-slate-600">Lanes: <strong>${Array.from(info.lanes).join(', ')}</strong> ${info.carrier ? '&bull; ' + escapeHtml(info.carrier) : ''} ${info.dock ? '&bull; ' + escapeHtml(info.dock) : ''}</div>
-              </div>
-              <button type="button" onclick="closeModal('orders-modal'); document.getElementById('board-search-input').value='${escapeHtml(ord)}'; renderBoard();" class="bg-sky-600 text-white font-bold px-3 py-1.5 rounded-lg cursor-pointer">Filter</button>
-            </div>
-          `).join('');
-      openModal('orders-modal');
-    }
-
-    function openAgingModal() {
-      const now = Date.now();
-      const items = [];
-      state.lanes.forEach(l => l.pallets.forEach(p => {
-        const ageMs = now - new Date(p.stagedAt).getTime();
-        if (ageMs > ONE_DAY_MS) items.push({ lane: l, pallet: p, over7d: ageMs > SEVEN_DAYS_MS });
-      }));
-      const container = document.getElementById('aging-list-container');
-      container.innerHTML = items.length === 0
-        ? `<div class="text-center text-slate-500 py-6">No aging alerts (&gt;24h) on the floor.</div>`
-        : items.map(it => `
-            <div class="border ${it.over7d ? 'border-rose-300 bg-rose-50' : 'border-amber-300 bg-amber-50'} rounded-xl p-2.5 flex items-center justify-between">
-              <div>
-                <div class="font-mono font-bold">${escapeHtml(it.pallet.slp)} &bull; ${escapeHtml(it.pallet.order || 'NO-ORDER')}</div>
-                <div class="text-[11px] ${it.over7d ? 'text-rose-700' : 'text-amber-800'}">Lane <strong>${escapeHtml(it.lane.name)}</strong> &bull; Dwell: ${formatRelativeAge(it.pallet.stagedAt)}</div>
-              </div>
-              <button type="button" onclick="locateLaneOnBoard('${it.lane.id}')" class="bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer">Locate</button>
-            </div>
-          `).join('');
-      openModal('aging-modal');
-    }
-
-    function locateLaneOnBoard(laneId) {
-      closeModal('aging-modal');
-      const card = document.getElementById(`card-${laneId}`);
-      if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.classList.add('lane-highlight-pulse'); }
-    }
-
-    function openEodModal() {
-      const preview = document.getElementById('eod-report-preview');
-      const occupied = state.lanes.filter(l => l.pallets.length > 0);
-      if (occupied.length === 0) {
-        preview.innerHTML = `<div class="text-center text-slate-500 py-6">Board is currently empty.</div>`;
-      } else {
-        preview.innerHTML = occupied.map(l => `
-          <div class="border border-slate-200 rounded-xl p-2.5 bg-slate-50">
-            <div class="font-bold text-slate-900 mb-1">${escapeHtml(l.name)} (${computeFloorSpotsUsed(l.pallets)}/${l.capacity} spots &bull; ${l.pallets.length} SLPs)</div>
-            <div class="space-y-0.5 text-[11px] font-mono">
-              ${l.pallets.map(p => `<div>${escapeHtml(p.slp)} | ${escapeHtml(p.order || '-')} | ${escapeHtml(p.carrier || '-')} | ${escapeHtml(p.dock || '-')} ${p.doubleStacked ? '| 2x' : ''}</div>`).join('')}
-            </div>
-          </div>
-        `).join('');
-      }
-      openModal('eod-modal');
-    }
-
-    function computeConsolidationMoves() {
-      const moves = [];
-      const orderMap = {};
-      state.lanes.forEach(l => l.pallets.forEach(p => {
-        const ord = normalizeOrderNumber(p.order);
-        if (!ord) return;
-        if (!orderMap[ord]) orderMap[ord] = {};
-        if (!orderMap[ord][l.id]) orderMap[ord][l.id] = [];
-        orderMap[ord][l.id].push(p);
-      }));
-      Object.entries(orderMap).forEach(([ord, lMap]) => {
-        const ids = Object.keys(lMap);
-        if (ids.length <= 1) return;
-        ids.sort((a, b) => lMap[b].length - lMap[a].length);
-        const primary = state.lanes.find(l => l.id === ids[0]);
-        let used = computeFloorSpotsUsed(primary.pallets);
-        for (let i = 1; i < ids.length; i++) {
-          const donor = state.lanes.find(l => l.id === ids[i]);
-          const pts = lMap[ids[i]];
-          const need = computeFloorSpotsUsed(pts);
-          if (primary.capacity - used >= need) {
-            moves.push({ order: ord, fromLaneId: donor.id, fromLaneName: donor.name, toLaneId: primary.id, toLaneName: primary.name, palletIds: pts.map(p => p.id), palletCount: pts.length });
-            used += need;
-          }
-        }
-      });
-      return moves;
-    }
-
-    function openConsolidateModal() {
-      const moves = computeConsolidationMoves();
-      const container = document.getElementById('consolidate-suggestions-list');
-      const btn = document.getElementById('apply-all-consolidate-btn');
-      if (moves.length === 0) {
-        container.innerHTML = `<div class="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl p-4 text-xs text-center font-medium">All multi-pallet orders are already consolidated!</div>`;
-        btn.style.display = 'none';
-      } else {
-        btn.style.display = 'inline-block';
-        container.innerHTML = moves.map((m, idx) => `<div class="border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2 bg-slate-50"><div class="text-xs font-bold">Order <span class="text-blue-700">${escapeHtml(m.order)}</span>: Move ${m.palletCount} pallet(s) ${escapeHtml(m.fromLaneName)} &rarr; ${escapeHtml(m.toLaneName)}</div><button type="button" onclick="applySingleConsolidation(${idx})" class="bg-teal-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer">Execute</button></div>`).join('');
-      }
-      openModal('consolidate-modal');
-    }
-
-    function applySingleConsolidation(idx) {
-      const m = computeConsolidationMoves()[idx];
-      if (!m) return;
-      m.palletIds.forEach(pid => movePalletBetweenLanes(m.fromLaneId, m.toLaneId, pid));
-      openConsolidateModal();
-    }
-
-    function applyAllConsolidations() {
-      const moves = computeConsolidationMoves();
-      moves.forEach(m => m.palletIds.forEach(pid => movePalletBetweenLanes(m.fromLaneId, m.toLaneId, pid)));
-      closeModal('consolidate-modal');
-      showToast(`Consolidated ${moves.length} order group(s).`);
-    }
-
-    // Carriers & Docks Managers
-    function openCarriersModal() {
-      renderCarriersList();
-      openModal('carriers-modal');
-    }
-    function renderCarriersList() {
-      const el = document.getElementById('carriers-list-container');
-      el.innerHTML = (state.carriers || []).map((c, idx) => `
-        <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
-          <span class="font-semibold">${escapeHtml(c)}</span>
-          <button type="button" onclick="removeCarrierItem(${idx})" class="text-rose-600 font-bold cursor-pointer">&times;</button>
-        </div>
-      `).join('');
-    }
-    function addCarrierItem(e) {
-      e.preventDefault();
-      const input = document.getElementById('new-carrier-name');
-      const val = input.value.trim();
-      if (val && !state.carriers.includes(val)) {
-        state.carriers.push(val);
-        input.value = '';
-        renderCarriersList();
-        refreshAllSelectors();
-        saveState();
-      }
-    }
-    function removeCarrierItem(idx) {
-      state.carriers.splice(idx, 1);
-      renderCarriersList();
-      refreshAllSelectors();
-      saveState();
-    }
-
-    function openDocksModal() {
-      renderDocksList();
-      openModal('docks-modal');
-    }
-    function renderDocksList() {
-      const el = document.getElementById('docks-list-container');
-      el.innerHTML = (state.docks || []).map((d, idx) => `
-        <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
-          <span class="font-semibold">${escapeHtml(d)}</span>
-          <button type="button" onclick="removeDockItem(${idx})" class="text-rose-600 font-bold cursor-pointer">&times;</button>
-        </div>
-      `).join('');
-    }
-    function addDockItem(e) {
-      e.preventDefault();
-      const input = document.getElementById('new-dock-name');
-      const val = input.value.trim().toUpperCase();
-      if (val && !state.docks.includes(val)) {
-        state.docks.push(val);
-        input.value = '';
-        renderDocksList();
-        refreshAllSelectors();
-        saveState();
-      }
-    }
-    function removeDockItem(idx) {
-      state.docks.splice(idx, 1);
-      renderDocksList();
-      refreshAllSelectors();
-      saveState();
-    }
-
-    // Lane Settings & Batch Add
-    function openEditLaneModal(laneId) {
-      const lane = state.lanes.find(l => l.id === laneId);
-      if (!lane) return;
-      document.getElementById('lane-modal-title').textContent = `Configure Lane ${lane.name}`;
-      document.getElementById('edit-lane-id').value = lane.id;
-      document.getElementById('edit-lane-name').value = lane.name;
-      document.getElementById('edit-lane-capacity').value = lane.capacity;
-      document.getElementById('edit-lane-dock').value = lane.dock || '';
-      document.getElementById('edit-lane-carrier').value = lane.carrier || '';
-      openModal('lane-modal');
-    }
-
-    function saveLaneSettings(e) {
-      e.preventDefault();
-      const lane = state.lanes.find(l => l.id === document.getElementById('edit-lane-id').value);
-      if (!lane) return;
-      lane.name = document.getElementById('edit-lane-name').value.trim().toUpperCase() || lane.name;
-      lane.capacity = Math.max(1, parseInt(document.getElementById('edit-lane-capacity').value, 10) || 8);
-      lane.dock = document.getElementById('edit-lane-dock').value.trim().toUpperCase();
-      lane.carrier = document.getElementById('edit-lane-carrier').value.trim();
-      closeModal('lane-modal');
-      refreshAllSelectors();
-      renderBoard();
-      saveState();
-      showToast(`Updated lane ${lane.name}`);
-    }
-
-    function deleteCurrentLane() {
-      const idx = state.lanes.findIndex(l => l.id === document.getElementById('edit-lane-id').value);
-      if (idx === -1) return;
-      if (state.lanes[idx].pallets.length > 0) { showToast('Ship/clear pallets before deleting lane.', true); return; }
-      const [rem] = state.lanes.splice(idx, 1);
-      closeModal('lane-modal');
-      refreshAllSelectors();
-      renderBoard();
-      saveState();
-      showToast(`Deleted lane ${rem.name}`);
-    }
-
-    function openBatchAddModal() { openModal('batch-add-modal'); }
-    function handleBatchAddLanes(e) {
-      e.preventDefault();
-      const prefix = (document.getElementById('batch-prefix').value || 'S').trim().toUpperCase();
-      const start = parseInt(document.getElementById('batch-start').value, 10);
-      const end = parseInt(document.getElementById('batch-end').value, 10);
-      const cap = Math.max(1, parseInt(document.getElementById('batch-capacity').value, 10) || 8);
-      if (isNaN(start) || isNaN(end) || end < start || end - start > 50) { showToast('Invalid range.', true); return; }
-      let added = 0;
-      for (let i = start; i <= end; i++) {
-        const name = `${prefix}${i}`;
-        if (!state.lanes.some(l => l.name === name)) {
-          state.lanes.push({ id: `lane-${name.toLowerCase()}-${Date.now()}-${i}`, name, capacity: cap, dock: '', carrier: '', notes: '', pallets: [] });
-          added++;
-        }
-      }
-      closeModal('batch-add-modal');
-      refreshAllSelectors();
-      renderBoard();
-      saveState();
-      showToast(`Added ${added} new lanes.`);
-    }
-
-    // Backup & CSV Export
-    function openBackupModal() {
-      const input = document.getElementById('cloud-api-url-input');
-      if (input) input.value = CLOUD_API_URL || '';
-      openModal('backup-modal');
-    }
-
-    function exportJsonBackup() {
-      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `ONUS-ONT_Staging_${APP_VERSION}_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-    }
-
-    function importJsonBackup(event) {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = e => {
-        try {
-          const parsed = normalizeStateShape(JSON.parse(e.target.result));
-          if (!parsed) throw new Error('Invalid');
-          state = parsed;
-          refreshAllSelectors();
-          renderBoard();
-          saveState(true);
-          closeModal('backup-modal');
-          showToast('Restored from JSON.');
-        } catch (err) { showToast('Invalid JSON file.', true); }
-      };
-      reader.readAsText(file);
-    }
-
-    function exportEodCsv() {
-      const rows = [['Facility', 'Version', 'Lane', 'Dock', 'Carrier', 'SLP', 'Order', 'DoubleStacked_2x', 'StagedAt']];
-      state.lanes.forEach(l => {
-        if (l.pallets.length === 0) rows.push([FACILITY_ID, APP_VERSION, l.name, l.dock || '', l.carrier || '', '', '', '', '']);
-        else l.pallets.forEach(p => rows.push([FACILITY_ID, APP_VERSION, l.name, p.dock || l.dock || '', p.carrier || l.carrier || '', p.slp, p.order || '', p.doubleStacked ? 'YES' : 'NO', p.stagedAt]));
-      });
-      const blob = new Blob([rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `ONUS-ONT_EOD_${APP_VERSION}_${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-    }
-
-    function recordHistory(action, detail) {
-      state.history.unshift({ at: new Date().toISOString(), action, detail });
-      if (state.history.length > 200) state.history.length = 200;
-    }
-
-    let toastTimer = null;
-    function showToast(msg, isError = false) {
-      const banner = document.getElementById('toast-banner');
-      if (!banner) return;
-      document.getElementById('toast-message').textContent = msg;
-      document.getElementById('toast-icon').className = isError ? 'fa-solid fa-triangle-exclamation text-rose-400' : 'fa-solid fa-circle-check text-emerald-400';
-      banner.style.display = 'flex';
-      if (toastTimer) clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => { banner.style.display = 'none'; }, 3000);
-    }
-
-    function formatRelativeAge(isoStr) {
-      const diffMs = Math.max(0, Date.now() - new Date(isoStr).getTime());
-      const mins = Math.floor(diffMs / 60000);
-      if (mins < 60) return `${mins}m`;
-      const hrs = Math.floor(mins / 60);
-      if (hrs < 24) return `${hrs}h`;
-      return `${Math.floor(hrs / 24)}d`;
-    }
-
-    function escapeHtml(str) {
-      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
-
-    function playBeep(success = true) {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = success ? 'sine' : 'sawtooth';
-        osc.frequency.value = success ? 880 : 220;
-        gain.gain.value = 0.08;
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + (success ? 0.09 : 0.25));
-      } catch (e) {}
-    }
-
-    // Boot immediately
-    loadState();
-  </script>
-</body>
-</html>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>ONUS-ONT Outbound Pallet Staging Manager v2</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-alt: #273549;
+    --border: #334155;
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --purple: #8b5cf6;
+    --cyan: #06b6d4;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+    padding-bottom: 50px;
+  }
+
+  /* Header */
+  .topbar {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-badge {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 800;
+    font-size: 13px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  .brand-title {
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .brand-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .topbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sync-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .sync-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--warning);
+  }
+  .sync-dot.online { background: var(--success); }
+  .sync-dot.error { background: var(--danger); }
+
+  /* Buttons */
+  button {
+    cursor: pointer;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 8px 14px;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  button:active { transform: scale(0.98); }
+
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-success:hover { filter: brightness(1.08); }
+  .btn-warning { background: var(--warning); color: #0f172a; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-purple { background: var(--purple); color: #fff; }
+  .btn-ghost {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { background: var(--panel-alt); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
+  .btn-xs { padding: 3px 7px; font-size: 11px; border-radius: 5px; }
+
+  /* Container */
+  .container {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 14px 16px;
+  }
+
+  /* Alert Banner */
+  .alert-banner {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid var(--danger);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .alert-banner.visible { display: flex; }
+  .alert-text {
+    color: #fca5a5;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  /* KPI Grid */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .kpi-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+  }
+
+  .kpi-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .kpi-val {
+    font-size: 22px;
+    font-weight: 800;
+  }
+
+  .kpi-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* Navigation Tabs */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 14px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .tab-btn {
+    background: var(--panel);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .tab-btn.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Quick Scan Bar */
+  .scan-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+
+  .scan-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+    gap: 10px;
+    align-items: end;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .field-group label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+
+  input, select, textarea {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 11px;
+    border-radius: 8px;
+    font-size: 14px;
+    width: 100%;
+    outline: none;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .checkbox-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--primary);
+  }
+
+  /* Filter & Search Bar */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .search-wrap {
+    flex: 1;
+    min-width: 220px;
+    max-width: 420px;
+  }
+
+  .filter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pill {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .pill.active {
+    background: var(--panel-alt);
+    color: #fff;
+    border-color: var(--primary);
+  }
+
+  /* Lane Grid */
+  .lane-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 12px;
+  }
+
+  .lane-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.2s;
+  }
+
+  .lane-card.has-overdue {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35);
+  }
+
+  .lane-card.is-full {
+    border-color: var(--warning);
+  }
+
+  .lane-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .lane-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .lane-code {
+    font-size: 18px;
+    font-weight: 800;
+    color: #fff;
+  }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 5px;
+    text-transform: uppercase;
+  }
+
+  .badge-carrier { background: rgba(6, 182, 212, 0.18); color: #67e8f9; border: 1px solid rgba(6, 182, 212, 0.4); }
+  .badge-dock { background: rgba(139, 92, 246, 0.2); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.4); }
+  .badge-overdue { background: var(--danger); color: #fff; }
+  .badge-stack { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); }
+  .badge-order { background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); }
+
+  .cap-bar-wrap {
+    background: var(--bg);
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .cap-bar-fill {
+    height: 100%;
+    background: var(--success);
+    transition: width 0.25s ease;
+  }
+  .cap-bar-fill.warn { background: var(--warning); }
+  .cap-bar-fill.full { background: var(--danger); }
+
+  .pallet-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .pallet-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pallet-item.overdue {
+    border-left: 4px solid var(--danger);
+    background: rgba(239, 68, 68, 0.08);
+  }
+
+  .pallet-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .pallet-id {
+    font-weight: 700;
+    font-size: 13px;
+    color: #fff;
+    word-break: break-all;
+  }
+
+  .pallet-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .pallet-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .empty-lane {
+    text-align: center;
+    padding: 18px 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+  }
+
+  /* Dock Cards */
+  .dock-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 12px;
+  }
+
+  .dock-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+  }
+
+  /* Tables */
+  .table-wrap {
+    overflow-x: auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th, td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    background: var(--panel-alt);
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+
+  /* Modals */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.78);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 999;
+  }
+  .modal-backdrop.open { display: flex; }
+
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    width: 100%;
+    max-width: 520px;
+    padding: 18px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-title { font-size: 16px; font-weight: 800; }
+
+  .toast {
+    position: fixed;
+    bottom: 18px;
+    right: 18px;
+    background
