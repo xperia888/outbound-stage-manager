@@ -17,51 +17,29 @@
     }
     .lane-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
       gap: 0.85rem;
     }
     @media (max-width: 640px) {
-      .lane-grid {
-        grid-template-columns: 1fr;
-        gap: 0.65rem;
-      }
+      .lane-grid { grid-template-columns: 1fr; gap: 0.65rem; }
     }
     .modal-backdrop {
       position: fixed;
       inset: 0;
       z-index: 50;
       background-color: rgba(15, 23, 42, 0.65);
-      backdrop-filter: blur(2px);
-      display: none;
       align-items: center;
       justify-content: center;
       padding: 0.75rem;
     }
-    .modal-backdrop.is-open {
-      display: flex;
-    }
-    .pallet-card {
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
-    }
-    .pallet-card:active {
-      transform: scale(0.99);
-    }
-    .lane-drop-active {
-      outline: 2px dashed #2563eb;
-      outline-offset: 2px;
-      background-color: #eff6ff !important;
-    }
-    .lane-highlight-pulse {
-      animation: pulseRing 1.4s ease-in-out 2;
-    }
+    .pallet-card { transition: transform 0.12s ease, box-shadow 0.12s ease; }
+    .pallet-card:active { transform: scale(0.99); }
+    .lane-drop-active { outline: 2px dashed #2563eb; outline-offset: 2px; background-color: #eff6ff !important; }
+    .lane-highlight-pulse { animation: pulseRing 1.4s ease-in-out 2; }
     @keyframes pulseRing {
       0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
       50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.35); }
     }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
-    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -69,7 +47,6 @@
   <!-- TOP HEADER BAR -->
   <header class="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
     <div class="max-w-[1600px] mx-auto px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
-      <!-- Brand & Version -->
       <div class="flex items-center gap-2.5">
         <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-black text-sm tracking-tight shadow-inner">
           ONT
@@ -86,7 +63,6 @@
               id="cloud-sync-pill"
               type="button"
               onclick="openCloudConfigModal()"
-              title="Click to configure Google Apps Script Cloud Sync URL"
               class="px-2.5 py-0.5 text-[11px] font-semibold rounded-full bg-slate-800 text-slate-200 border border-slate-600 hover:bg-slate-700 flex items-center gap-1.5 transition cursor-pointer"
             >
               <span id="cloud-sync-dot" class="w-2 h-2 rounded-full bg-amber-400"></span>
@@ -118,7 +94,6 @@
           type="button"
           onclick="openAgingModal()"
           class="bg-slate-800/90 border border-slate-700/80 hover:border-amber-500/60 rounded-lg px-2.5 py-1 text-center transition cursor-pointer"
-          title="View pallets staged over 7 days"
         >
           <div class="text-[10px] uppercase tracking-wider text-slate-400">Aging &gt;7d</div>
           <div id="stat-aging-count" class="font-bold text-slate-300 text-sm leading-tight">0</div>
@@ -127,152 +102,60 @@
 
       <!-- Primary Action Toolbar -->
       <div class="flex items-center gap-1.5 flex-wrap">
-        <button
-          type="button"
-          onclick="openScannerModal()"
-          class="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm flex items-center gap-1.5 transition cursor-pointer"
-        >
-          <i class="fa-solid fa-barcode"></i>
-          <span>Multi-SLP Scan</span>
+        <button type="button" onclick="openScannerModal()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer">
+          <i class="fa-solid fa-barcode"></i><span>Multi-SLP Scan</span>
         </button>
-
-        <button
-          type="button"
-          onclick="openConsolidateModal()"
-          class="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-semibold px-2.5 py-2 rounded-lg shadow-sm flex items-center gap-1.5 transition cursor-pointer"
-          title="Find tight-fit lane consolidation moves"
-        >
-          <i class="fa-solid fa-compress-arrows-alt"></i>
-          <span>Consolidate</span>
+        <button type="button" onclick="openConsolidateModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-2.5 py-2 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer">
+          <i class="fa-solid fa-compress-arrows-alt"></i><span>Consolidate</span>
         </button>
-
-        <button
-          type="button"
-          onclick="openBatchAddModal()"
-          class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
-          title="Batch add staging lanes"
-        >
-          <i class="fa-solid fa-layer-group"></i>
-          <span>Batch</span>
+        <button type="button" onclick="openBatchAddModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer">
+          <i class="fa-solid fa-layer-group"></i><span>Batch</span>
         </button>
-
-        <button
-          type="button"
-          onclick="exportEodCsv()"
-          class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
-          title="Download End-of-Day CSV report"
-        >
-          <i class="fa-solid fa-file-csv text-emerald-400"></i>
-          <span class="hidden sm:inline">EOD Report</span>
+        <button type="button" onclick="exportEodCsv()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer">
+          <i class="fa-solid fa-file-csv text-emerald-400"></i><span>EOD Report</span>
         </button>
-
-        <button
-          type="button"
-          onclick="openBackupModal()"
-          class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
-          title="JSON Backup, Restore & Cloud Endpoint"
-        >
-          <i class="fa-solid fa-cloud-arrow-up text-sky-400"></i>
-          <span class="hidden md:inline">Backup / Cloud</span>
+        <button type="button" onclick="openBackupModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer">
+          <i class="fa-solid fa-cloud-arrow-up text-sky-400"></i><span>Backup / Cloud</span>
         </button>
       </div>
     </div>
   </header>
 
   <!-- QUICK SCAN & FILTER BAR -->
-  <section class="bg-white border-b border-slate-200 shadow-sm sticky top-[56px] z-20">
+  <section class="bg-white border-b border-slate-200 shadow-sm">
     <div class="max-w-[1600px] mx-auto px-3 py-2 flex flex-wrap items-center gap-2">
-      <!-- Quick Single-Line Scan Form -->
       <form onsubmit="handleQuickScanSubmit(event)" class="flex flex-wrap items-center gap-1.5 flex-1 min-w-[280px]">
         <div class="relative flex-1 min-w-[140px] max-w-[210px]">
           <i class="fa-solid fa-qrcode absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-          <input
-            id="quick-slp-input"
-            type="text"
-            placeholder="Scan SLP / LPN..."
-            autocomplete="off"
-            class="w-full pl-7 pr-2 py-1.5 text-xs font-mono font-semibold bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-          />
+          <input id="quick-slp-input" type="text" placeholder="Scan SLP / LPN..." autocomplete="off" class="w-full pl-7 pr-2 py-1.5 text-xs font-mono font-semibold bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
         </div>
-
-        <input
-          id="quick-order-input"
-          type="text"
-          placeholder="Order / SO #"
-          oninput="updateQuickAutoSuggestBadge()"
-          autocomplete="off"
-          class="w-28 sm:w-32 px-2.5 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-        />
-
-        <input
-          id="quick-carrier-input"
-          type="text"
-          placeholder="Carrier (opt)"
-          autocomplete="off"
-          class="w-24 sm:w-28 px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-        />
-
-        <select
-          id="quick-lane-select"
-          class="px-2 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
+        <input id="quick-order-input" type="text" placeholder="Order / SO #" oninput="updateQuickAutoSuggestBadge()" autocomplete="off" class="w-28 sm:w-32 px-2.5 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+        <input id="quick-carrier-input" type="text" placeholder="Carrier (opt)" autocomplete="off" class="w-24 sm:w-28 px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white" />
+        <select id="quick-lane-select" class="px-2 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="AUTO">Auto-Suggest Lane</option>
         </select>
-
         <label class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-lg cursor-pointer select-none">
-          <input id="quick-double-checkbox" type="checkbox" onchange="updateQuickAutoSuggestBadge()" class="rounded text-indigo-600 focus:ring-indigo-500" />
+          <input id="quick-double-checkbox" type="checkbox" onchange="updateQuickAutoSuggestBadge()" class="rounded text-indigo-600" />
           <span>2x Stack</span>
         </label>
-
-        <button
-          type="submit"
-          class="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition cursor-pointer"
-        >
+        <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm cursor-pointer">
           + Stage
         </button>
-
-        <span
-          id="quick-auto-suggest-badge"
-          class="text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2 py-1 rounded-md hidden xl:inline-flex items-center gap-1"
-        >
+        <span id="quick-auto-suggest-badge" class="text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2 py-1 rounded-md hidden xl:inline-flex items-center gap-1">
           Suggest: <strong class="text-blue-700">S51</strong>
         </span>
       </form>
 
-      <!-- Search & Carrier Filter -->
       <div class="flex items-center gap-1.5 w-full sm:w-auto justify-end">
         <div class="relative flex-1 sm:w-48">
           <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-          <input
-            id="board-search-input"
-            type="text"
-            placeholder="Search SLP, Order, Dock..."
-            oninput="renderBoard()"
-            class="w-full pl-7 pr-6 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="button"
-            onclick="document.getElementById('board-search-input').value=''; renderBoard();"
-            class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-            title="Clear search"
-          >
-            &times;
-          </button>
+          <input id="board-search-input" type="text" placeholder="Search SLP, Order, Dock..." oninput="renderBoard()" class="w-full pl-7 pr-6 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <button type="button" onclick="document.getElementById('board-search-input').value=''; renderBoard();" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs">&times;</button>
         </div>
-
-        <select
-          id="carrier-filter-select"
-          onchange="renderBoard()"
-          class="px-2 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
+        <select id="carrier-filter-select" onchange="renderBoard()" class="px-2 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg">
           <option value="ALL">All Carriers</option>
         </select>
-
-        <select
-          id="status-filter-select"
-          onchange="renderBoard()"
-          class="px-2 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
+        <select id="status-filter-select" onchange="renderBoard()" class="px-2 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg">
           <option value="ALL">All Lanes</option>
           <option value="ACTIVE">Occupied Only</option>
           <option value="EMPTY">Empty Only</option>
@@ -288,18 +171,14 @@
     <div id="staging-board" class="lane-grid"></div>
   </main>
 
-  <!-- TOAST NOTIFICATION -->
-  <div
-    id="toast-banner"
-    style="display:none;"
-    class="fixed bottom-4 right-4 z-50 max-w-sm bg-slate-900 text-white text-xs font-medium px-3.5 py-2.5 rounded-xl shadow-lg border border-slate-700 items-center gap-2"
-  >
+  <!-- TOAST -->
+  <div id="toast-banner" style="display:none;" class="fixed bottom-4 right-4 z-50 max-w-sm bg-slate-900 text-white text-xs font-medium px-3.5 py-2.5 rounded-xl shadow-lg border border-slate-700 items-center gap-2">
     <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
     <span id="toast-message">Saved</span>
   </div>
 
-  <!-- MODAL 1: MULTI-SLP SCANNER MODAL -->
-  <div id="scanner-modal" class="modal-backdrop" onclick="if(event.target===this) closeModal('scanner-modal')">
+  <!-- MODAL 1: MULTI-SLP SCANNER -->
+  <div id="scanner-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('scanner-modal')">
     <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
       <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -308,40 +187,21 @@
         </div>
         <button type="button" onclick="closeModal('scanner-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
       </div>
-
       <div class="p-4 space-y-3">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <div>
             <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">1. Order / SO Number *</label>
-            <input
-              id="scanner-order-input"
-              type="text"
-              placeholder="Scan or type Order #"
-              oninput="updateScannerAutoSuggestPill()"
-              onkeydown="if(event.key==='Enter'){ event.preventDefault(); document.getElementById('scanner-slp-input').focus(); }"
-              class="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <input id="scanner-order-input" type="text" placeholder="Scan or type Order #" oninput="updateScannerAutoSuggestPill()" onkeydown="if(event.key==='Enter'){ event.preventDefault(); document.getElementById('scanner-slp-input').focus(); }" class="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg" />
           </div>
           <div>
             <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Carrier / SCAC</label>
-            <input
-              id="scanner-carrier-input"
-              type="text"
-              placeholder="e.g., FEDEX, UPS, XPO"
-              onkeydown="if(event.key==='Enter'){ event.preventDefault(); document.getElementById('scanner-slp-input').focus(); }"
-              class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <input id="scanner-carrier-input" type="text" placeholder="e.g., FEDEX, UPS, XPO" onkeydown="if(event.key==='Enter'){ event.preventDefault(); document.getElementById('scanner-slp-input').focus(); }" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg" />
           </div>
         </div>
-
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
           <div>
             <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Target Staging Lane</label>
-            <select
-              id="scanner-lane-select"
-              onchange="updateScannerAutoSuggestPill()"
-              class="w-full px-3 py-2 text-sm font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
+            <select id="scanner-lane-select" onchange="updateScannerAutoSuggestPill()" class="w-full px-3 py-2 text-sm font-semibold border border-slate-300 rounded-lg">
               <option value="AUTO">Auto-Suggest (Same Order / Empty First)</option>
             </select>
           </div>
@@ -350,4 +210,156 @@
               <input id="scanner-double-checkbox" type="checkbox" onchange="updateScannerAutoSuggestPill()" class="rounded text-indigo-600" />
               <span>Double-Stack (2x High)</span>
             </label>
-            <span id="scanner-auto-suggest-pill" class="text-[11px] font-bold text-blue-700 bg-blue-50 px-2
+            <span id="scanner-auto-suggest-pill" class="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">&rarr; S51</span>
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">2. Scan SLP Barcodes (Press Enter after each scan)</label>
+          <div class="flex gap-2">
+            <input id="scanner-slp-input" type="text" placeholder="Scan SLP QR / Barcode..." autocomplete="off" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addSlpToBatchQueue(); }" class="flex-1 px-3 py-2 text-sm font-mono font-bold bg-blue-50/40 border-2 border-blue-400 rounded-lg" />
+            <button type="button" onclick="addSlpToBatchQueue()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg cursor-pointer">Add</button>
+          </div>
+        </div>
+        <div class="border border-slate-200 rounded-xl bg-slate-50 p-2.5">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-bold text-slate-700">Scanned Pallets in Batch: <span id="scanner-queue-count" class="text-blue-600">0</span></span>
+            <button type="button" onclick="clearScannerQueue()" class="text-[11px] text-rose-600 hover:underline font-medium cursor-pointer">Clear List</button>
+          </div>
+          <div id="scanner-queue-list" class="max-h-40 overflow-y-auto space-y-1 text-xs"></div>
+        </div>
+      </div>
+      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 flex items-center justify-between gap-2">
+        <button type="button" onclick="closeModal('scanner-modal')" class="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer">Cancel</button>
+        <button type="button" onclick="commitScannerBatch()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-sm cursor-pointer">Stage All Pallets</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: EDIT LANE -->
+  <div id="lane-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('lane-modal')">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+        <h2 id="lane-modal-title" class="font-bold text-sm">Configure Staging Lane</h2>
+        <button type="button" onclick="closeModal('lane-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
+      </div>
+      <form onsubmit="saveLaneSettings(event)" class="p-4 space-y-3">
+        <input type="hidden" id="edit-lane-id" />
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Lane Code</label>
+            <input id="edit-lane-name" type="text" required class="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Max Floor Spots</label>
+            <input id="edit-lane-capacity" type="number" min="1" max="30" required class="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Assigned Dock Door</label>
+            <input id="edit-lane-dock" type="text" placeholder="e.g., Door 14" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Dedicated Carrier</label>
+            <input id="edit-lane-carrier" type="text" placeholder="e.g., FEDEX LTL" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Lane Notes</label>
+          <input id="edit-lane-notes" type="text" placeholder="Optional floor instructions..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg" />
+        </div>
+        <div class="pt-2 flex items-center justify-between border-t border-slate-200">
+          <button type="button" onclick="deleteCurrentLane()" class="text-xs font-semibold text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg cursor-pointer">Delete Empty Lane</button>
+          <div class="flex gap-2">
+            <button type="button" onclick="closeModal('lane-modal')" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer">Cancel</button>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg cursor-pointer">Save Lane</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL 3: BATCH ADD LANES -->
+  <div id="batch-add-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('batch-add-modal')">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden">
+      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+        <h2 class="font-bold text-sm">Batch Add Staging Lanes</h2>
+        <button type="button" onclick="closeModal('batch-add-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
+      </div>
+      <form onsubmit="handleBatchAddLanes(event)" class="p-4 space-y-3">
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Prefix</label>
+            <input id="batch-prefix" type="text" value="S" required class="w-full px-2.5 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Start #</label>
+            <input id="batch-start" type="number" value="63" min="1" required class="w-full px-2.5 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">End #</label>
+            <input id="batch-end" type="number" value="66" min="1" required class="w-full px-2.5 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Floor Spot Capacity per Lane</label>
+          <input id="batch-capacity" type="number" value="10" min="1" max="30" required class="w-full px-3 py-1.5 text-sm font-bold border border-slate-300 rounded-lg" />
+        </div>
+        <div class="pt-2 flex justify-end gap-2 border-t border-slate-200">
+          <button type="button" onclick="closeModal('batch-add-modal')" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer">Cancel</button>
+          <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg cursor-pointer">Create Lanes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL 4: CONSOLIDATE LANES -->
+  <div id="consolidate-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('consolidate-modal')">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden">
+      <div class="bg-indigo-900 text-white px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-compress-arrows-alt text-indigo-300"></i>
+          <h2 class="font-bold text-sm">Consolidate Staging Lanes (Zero-Blocking Tight Fit)</h2>
+        </div>
+        <button type="button" onclick="closeModal('consolidate-modal')" class="text-indigo-200 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
+      </div>
+      <div class="p-4">
+        <p class="text-xs text-slate-600 mb-3">Recommends minimum-movement pallet transfers to merge split orders without exceeding floor footprint capacity.</p>
+        <div id="consolidate-suggestions-list" class="max-h-72 overflow-y-auto space-y-2"></div>
+      </div>
+      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 flex justify-between items-center">
+        <button type="button" onclick="closeModal('consolidate-modal')" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer">Close</button>
+        <button id="apply-all-consolidate-btn" type="button" onclick="applyAllConsolidations()" style="display:none;" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-lg cursor-pointer">Apply All Moves</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 5: AGING ALERTS -->
+  <div id="aging-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('aging-modal')">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
+      <div class="bg-amber-700 text-white px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-clock"></i>
+          <h2 class="font-bold text-sm">Staged Pallet Dwell-Time Alerts (&gt;7 Days)</h2>
+        </div>
+        <button type="button" onclick="closeModal('aging-modal')" class="text-amber-100 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
+      </div>
+      <div id="aging-list-container" class="p-4 max-h-80 overflow-y-auto space-y-2 text-xs"></div>
+      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end">
+        <button type="button" onclick="closeModal('aging-modal')" class="px-3.5 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 rounded-lg cursor-pointer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 6: BACKUP, RESTORE & CLOUD API CONFIG -->
+  <div id="backup-modal" style="display:none;" class="modal-backdrop" onclick="if(event.target===this) closeModal('backup-modal')">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
+      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-cloud text-sky-400"></i>
+          <h2 class="font-bold text-sm">Google Sheets Cloud Sync &amp; JSON Backup (v2)</h2>
+        </div>
+        <button type="button" onclick="closeModal('backup-modal')" class="text-slate-400 hover:text-white text-lg leading-none cursor-pointer">&times;</button>
+      </div>
+      <div class="p-4 space-y-4 text-xs">
+        <div class="bg-sky-5
