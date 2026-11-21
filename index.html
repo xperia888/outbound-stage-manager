@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>ONUS-ONT Outbound Pallet Staging Manager v2</title>
+<title>ONUS Outbound Pallet Staging Manager v2</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root {
@@ -41,7 +41,7 @@
   .topbar {
     background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
     border-bottom: 1px solid var(--border);
-    padding: 12px 16px;
+    padding: 10px 14px;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -58,18 +58,21 @@
     gap: 10px;
   }
 
-  .brand-badge {
+  .wh-select {
     background: var(--primary);
     color: #fff;
     font-weight: 800;
     font-size: 13px;
-    padding: 4px 8px;
+    padding: 5px 10px;
     border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.2);
     letter-spacing: 0.5px;
+    width: auto;
+    cursor: pointer;
   }
 
   .brand-title {
-    font-size: 17px;
+    font-size: 16px;
     font-weight: 700;
   }
 
@@ -143,7 +146,7 @@
   .container {
     max-width: 1440px;
     margin: 0 auto;
-    padding: 14px 16px;
+    padding: 12px 14px;
   }
 
   /* Alert Banner */
@@ -152,7 +155,7 @@
     border: 1px solid var(--danger);
     border-radius: 10px;
     padding: 10px 14px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
     display: none;
     align-items: center;
     justify-content: space-between;
@@ -169,16 +172,16 @@
   /* KPI Grid */
   .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
     gap: 10px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
 
   .kpi-card {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 12px;
+    padding: 10px 12px;
   }
 
   .kpi-label {
@@ -190,7 +193,7 @@
   }
 
   .kpi-val {
-    font-size: 22px;
+    font-size: 21px;
     font-weight: 800;
   }
 
@@ -204,7 +207,7 @@
   .tabs {
     display: flex;
     gap: 6px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
     overflow-x: auto;
     padding-bottom: 4px;
   }
@@ -213,7 +216,7 @@
     background: var(--panel);
     color: var(--text-muted);
     border: 1px solid var(--border);
-    padding: 9px 16px;
+    padding: 8px 14px;
     border-radius: 8px;
     font-size: 13px;
     font-weight: 700;
@@ -234,13 +237,13 @@
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 14px;
-    margin-bottom: 16px;
+    padding: 13px;
+    margin-bottom: 14px;
   }
 
   .scan-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
     gap: 10px;
     align-items: end;
   }
@@ -262,7 +265,7 @@
     background: var(--bg);
     border: 1px solid var(--border);
     color: var(--text);
-    padding: 9px 11px;
+    padding: 8px 10px;
     border-radius: 8px;
     font-size: 14px;
     width: 100%;
@@ -300,12 +303,12 @@
     gap: 10px;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
 
   .search-wrap {
     flex: 1;
-    min-width: 220px;
+    min-width: 210px;
     max-width: 420px;
   }
 
@@ -319,7 +322,7 @@
     background: var(--panel);
     border: 1px solid var(--border);
     color: var(--text-muted);
-    padding: 6px 12px;
+    padding: 5px 11px;
     border-radius: 999px;
     font-size: 12px;
     font-weight: 600;
@@ -334,7 +337,7 @@
   /* Lane Grid */
   .lane-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 12px;
   }
 
@@ -342,10 +345,10 @@
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 13px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 9px;
     transition: border-color 0.2s;
   }
 
@@ -368,7 +371,7 @@
   .lane-title-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     flex-wrap: wrap;
   }
 
@@ -379,9 +382,9 @@
   }
 
   .badge {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    padding: 2px 7px;
+    padding: 2px 6px;
     border-radius: 5px;
     text-transform: uppercase;
   }
@@ -420,7 +423,7 @@
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 8px 10px;
+    padding: 7px 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -463,7 +466,7 @@
 
   .empty-lane {
     text-align: center;
-    padding: 18px 10px;
+    padding: 16px 10px;
     color: var(--text-muted);
     font-size: 12px;
     border: 1px dashed var(--border);
@@ -499,7 +502,7 @@
   }
 
   th, td {
-    padding: 10px 12px;
+    padding: 9px 11px;
     text-align: left;
     border-bottom: 1px solid var(--border);
   }
@@ -519,7 +522,7 @@
     display: none;
     align-items: center;
     justify-content: center;
-    padding: 16px;
+    padding: 14px;
     z-index: 999;
   }
   .modal-backdrop.open { display: flex; }
@@ -530,7 +533,7 @@
     border-radius: 14px;
     width: 100%;
     max-width: 520px;
-    padding: 18px;
+    padding: 16px;
     max-height: 90vh;
     overflow-y: auto;
   }
@@ -539,7 +542,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
     padding-bottom: 10px;
     border-bottom: 1px solid var(--border);
   }
@@ -577,7 +580,7 @@
   .dwell-bar {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -620,10 +623,13 @@
 
 <header class="topbar">
   <div class="brand">
-    <span class="brand-badge">ONUS-ONT</span>
+    <select id="headerWarehouseSelect" class="wh-select" onchange="switchWarehouse(this.value)" title="Switch Warehouse">
+      <option value="ONUS-ONT">ONUS-ONT</option>
+      <option value="ONUS-CHINO">ONUS-CHINO</option>
+    </select>
     <div>
       <div class="brand-title">Outbound Pallet Staging Manager</div>
-      <div class="brand-sub">Multi-SLP / Pallet Scan • Dwell Alert • Zero-Blocking Consolidation</div>
+      <div class="brand-sub">Multi-SLP Scan • Dwell Alert • Zero-Blocking Consolidation</div>
     </div>
   </div>
   <div class="topbar-actions">
@@ -636,7 +642,7 @@
     </div>
     <div class="sync-pill" id="syncStatusPill">
       <span class="sync-dot" id="syncDot"></span>
-      <span id="syncText">Connecting...</span>
+      <span id="syncText">Local Ready</span>
     </div>
     <button class="btn-ghost btn-sm" onclick="syncFromCloud()">↻ Sync</button>
     <button class="btn-purple btn-sm" onclick="openConsolidateModal()">⚡ Consolidate</button>
@@ -693,7 +699,7 @@
     <div class="scan-box">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
         <div style="font-weight:800; font-size:14px;">⚡ Scan / Stage Pallet(s) into Lane</div>
-        <button class="btn-primary btn-sm" onclick="openCameraScanner('slp')">📷 Camera QR Scanner</button>
+        <button class="btn-primary btn-sm" onclick="openCameraScanner()">📷 Camera QR Scanner</button>
       </div>
       <div class="scan-grid">
         <div class="field-group">
@@ -836,8 +842,11 @@
       <h3 style="font-size:15px; margin-bottom:10px;">⚙️ Warehouse &amp; Alert Configuration</h3>
       <div class="scan-grid" style="margin-bottom:14px;">
         <div class="field-group">
-          <label>Warehouse Code</label>
-          <input type="text" id="settingWarehouse" value="ONUS-ONT" onchange="saveSettings()" />
+          <label>Active Warehouse</label>
+          <select id="settingWarehouse" onchange="switchWarehouse(this.value)">
+            <option value="ONUS-ONT">ONUS-ONT</option>
+            <option value="ONUS-CHINO">ONUS-CHINO</option>
+          </select>
         </div>
         <div class="field-group">
           <label>Dwell Alert Threshold (Days)</label>
@@ -849,7 +858,7 @@
         </div>
       </div>
 
-      <h3 style="font-size:15px; margin:16px 0 10px;">➕ Add / Batch Generate Staging Lanes</h3>
+      <h3 style="font-size:15px; margin:16px 0 10px;">➕ Add Staging Lane</h3>
       <div class="scan-grid">
         <div class="field-group">
           <label>New Lane ID (e.g. s63)</label>
@@ -1003,30 +1012,28 @@
 
 <script>
 // =========================================================================
-// EXTERNAL GOOGLE APPS SCRIPT ENDPOINT (CORS-SAFE FOR GITHUB PAGES)
+// HYBRID SYNC CONFIG (GOOGLE SITES google.script.run + EXTERNAL FETCH)
 // =========================================================================
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzg4gF-j9v8-Z_j-pM39T4h2o2b3X8C0W_tW4b9M8yR9X5b7F4V1z/exec";
-const STORAGE_KEY = "ONUS_ONT_STAGING_V2";
+const STORAGE_PREFIX = "ONUS_STAGING_V2_";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-let state = {
-  warehouse: "ONUS-ONT",
-  overdueDays: 7,
-  dockDoors: ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"],
-  lanes: [],
-  dockQueue: [],
-  shippedHistory: [],
-  updatedAt: new Date().toISOString()
-};
+let currentWarehouse = localStorage.getItem("ONUS_ACTIVE_WH") || "ONUS-ONT";
 
+let state = createDefaultState(currentWarehouse);
 let activeFilter = "all";
 let html5QrCode = null;
 let lastScannedCode = "";
 let lastScannedTime = 0;
 
-// =========================================================================
-// DEFAULT DATA INITIALIZATION (s51 - s62)
-// =========================================================================
+function hasGasBridge() {
+  return typeof google !== "undefined" && google.script && google.script.run;
+}
+
+function getStorageKey(wh) {
+  return STORAGE_PREFIX + (wh || currentWarehouse);
+}
+
 function buildDefaultLanes() {
   const arr = [];
   for (let i = 51; i <= 62; i++) {
@@ -1041,12 +1048,30 @@ function buildDefaultLanes() {
   return arr;
 }
 
-function loadLocalState() {
+function createDefaultState(wh) {
+  return {
+    warehouse: wh || "ONUS-ONT",
+    overdueDays: 7,
+    dockDoors: ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"],
+    lanes: buildDefaultLanes(),
+    dockQueue: [],
+    shippedHistory: [],
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function loadLocalState(wh) {
+  const targetWh = wh || currentWarehouse;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    // Migrate legacy ONUS_ONT_STAGING_V2 key if present
+    let raw = localStorage.getItem(getStorageKey(targetWh));
+    if (!raw && targetWh === "ONUS-ONT") {
+      raw = localStorage.getItem("ONUS_ONT_STAGING_V2");
+    }
+
     if (raw) {
       const parsed = JSON.parse(raw);
-      state = { ...state, ...parsed };
+      state = { ...createDefaultState(targetWh), ...parsed, warehouse: targetWh };
       if (!Array.isArray(state.lanes) || state.lanes.length === 0) {
         state.lanes = buildDefaultLanes();
       }
@@ -1054,20 +1079,33 @@ function loadLocalState() {
       if (!Array.isArray(state.shippedHistory)) state.shippedHistory = [];
       if (!state.overdueDays || state.overdueDays < 1) state.overdueDays = 7;
     } else {
-      state.lanes = buildDefaultLanes();
+      state = createDefaultState(targetWh);
     }
   } catch (e) {
-    state.lanes = buildDefaultLanes();
+    state = createDefaultState(targetWh);
   }
 }
 
 function saveLocalState() {
+  state.warehouse = currentWarehouse;
   state.updatedAt = new Date().toISOString();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(getStorageKey(currentWarehouse), JSON.stringify(state));
+}
+
+function switchWarehouse(wh) {
+  currentWarehouse = wh || "ONUS-ONT";
+  localStorage.setItem("ONUS_ACTIVE_WH", currentWarehouse);
+  document.getElementById("headerWarehouseSelect").value = currentWarehouse;
+  document.getElementById("settingWarehouse").value = currentWarehouse;
+  loadLocalState(currentWarehouse);
+  syncSettingsInputs();
+  renderAll();
+  syncFromCloud();
+  showToast("Switched facility to " + currentWarehouse);
 }
 
 // =========================================================================
-// GOOGLE APPS SCRIPT CLOUD SYNC (FETCH API FOR EXTERNAL WEB HOSTING)
+// DUAL-MODE CLOUD SYNC (google.script.run OR fetch)
 // =========================================================================
 function setSyncStatus(status, label) {
   const dot = document.getElementById("syncDot");
@@ -1078,51 +1116,87 @@ function setSyncStatus(status, label) {
 
 async function syncToCloud() {
   saveLocalState();
+  setSyncStatus("syncing", "Syncing...");
+
+  if (hasGasBridge()) {
+    google.script.run
+      .withSuccessHandler(() => setSyncStatus("online", "Sites Synced"))
+      .withFailureHandler(() => setSyncStatus("error", "Local Saved"))
+      .saveStagingState(state, currentWarehouse);
+    return;
+  }
+
   if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("YOUR_SCRIPT_ID")) {
     setSyncStatus("online", "Local Saved");
     return;
   }
-  setSyncStatus("syncing", "Syncing...");
+
   try {
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       mode: "cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "saveStagingState", payload: state })
+      body: JSON.stringify({
+        action: "saveStagingState",
+        warehouse: currentWarehouse,
+        payload: state
+      })
     });
     const data = await res.json();
     if (data && data.ok) {
       setSyncStatus("online", "Cloud Synced");
     } else {
-      setSyncStatus("error", "Sync Error (Local Saved)");
+      setSyncStatus("error", "Sync Error (Local)");
     }
   } catch (err) {
-    console.warn("Cloud sync error:", err);
     setSyncStatus("error", "Offline (Local Saved)");
   }
 }
 
 async function syncFromCloud() {
+  setSyncStatus("syncing", "Loading Cloud...");
+
+  if (hasGasBridge()) {
+    google.script.run
+      .withSuccessHandler((res) => {
+        const remote = res && res.state ? res.state : res;
+        if (remote && Array.isArray(remote.lanes) && remote.lanes.length > 0) {
+          state = { ...createDefaultState(currentWarehouse), ...remote, warehouse: currentWarehouse };
+          saveLocalState();
+          syncSettingsInputs();
+          renderAll();
+          showToast("Synced " + currentWarehouse);
+        }
+        setSyncStatus("online", "Sites Synced");
+      })
+      .withFailureHandler(() => {
+        setSyncStatus("error", "Offline Mode");
+      })
+      .getStagingState(currentWarehouse);
+    return;
+  }
+
   if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("YOUR_SCRIPT_ID")) {
     setSyncStatus("online", "Local Ready");
     renderAll();
     return;
   }
-  setSyncStatus("syncing", "Loading Cloud...");
+
   try {
-    const url = APPS_SCRIPT_URL + (APPS_SCRIPT_URL.includes("?") ? "&" : "?") + "action=getStagingState&t=" + Date.now();
+    const sep = APPS_SCRIPT_URL.includes("?") ? "&" : "?";
+    const url = `${APPS_SCRIPT_URL}${sep}action=getStagingState&warehouse=${encodeURIComponent(currentWarehouse)}&t=${Date.now()}`;
     const res = await fetch(url, { method: "GET", mode: "cors" });
     const data = await res.json();
     if (data && data.ok && data.state && Array.isArray(data.state.lanes)) {
-      state = { ...state, ...data.state };
+      state = { ...createDefaultState(currentWarehouse), ...data.state, warehouse: currentWarehouse };
       saveLocalState();
+      syncSettingsInputs();
       setSyncStatus("online", "Cloud Synced");
-      showToast("Synced with Google Sheets");
+      showToast("Synced " + currentWarehouse + " with Google Sheets");
     } else {
       setSyncStatus("online", "Local Ready");
     }
   } catch (err) {
-    console.warn("Cloud fetch failed:", err);
     setSyncStatus("error", "Offline Mode");
   }
   renderAll();
@@ -1209,9 +1283,7 @@ function handleSlpKeydown(e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     const val = document.getElementById("scanSlpInput").value;
-    if (val.trim().endsWith(",")) {
-      return;
-    }
+    if (val.trim().endsWith(",")) return;
     stageScannedPallet();
   }
 }
@@ -1569,7 +1641,6 @@ function openConsolidateModal() {
   const container = document.getElementById("consolidateList");
   const suggestions = [];
 
-  // 1. Group by Order # across multiple lanes (zero-blocking: target lane must have room for ALL pallets of that order)
   const orderMap = {};
   state.lanes.forEach(lane => {
     lane.pallets.forEach(p => {
@@ -1583,7 +1654,6 @@ function openConsolidateModal() {
     const distinctLanes = [...new Set(entries.map(e => e.lane.id))];
     if (distinctLanes.length < 2) return;
 
-    // Pick best target lane that holds the most pallets of this order AND has free space for the rest
     let bestTarget = null;
     distinctLanes.forEach(candId => {
       const candLane = state.lanes.find(l => l.id === candId);
@@ -1614,7 +1684,6 @@ function openConsolidateModal() {
     }
   });
 
-  // 2. Group by Carrier across partially filled lanes
   const carrierMap = {};
   state.lanes.forEach(lane => {
     lane.pallets.forEach(p => {
@@ -1649,7 +1718,7 @@ function openConsolidateModal() {
   if (suggestions.length === 0) {
     container.innerHTML = `<div class="empty-lane">✅ All split orders &amp; carriers are already consolidated or target lanes are at full capacity.</div>`;
   } else {
-    container.innerHTML = suggestions.map((s, idx) => `
+    container.innerHTML = suggestions.map(s => `
       <div class="consol-card ${s.type === "ORDER" ? "recommended" : ""}">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px;">
           <strong style="font-size:13px;">${escapeHtml(s.title)}</strong>
@@ -1759,8 +1828,14 @@ function returnDockItemToLane(slp) {
 // =========================================================================
 // SETTINGS, BACKUP & EOD EXPORT
 // =========================================================================
+function syncSettingsInputs() {
+  document.getElementById("headerWarehouseSelect").value = currentWarehouse;
+  document.getElementById("settingWarehouse").value = currentWarehouse;
+  document.getElementById("settingOverdueDays").value = state.overdueDays;
+  document.getElementById("settingDockDoors").value = state.dockDoors.join(", ");
+}
+
 function saveSettings() {
-  state.warehouse = document.getElementById("settingWarehouse").value.trim() || "ONUS-ONT";
   state.overdueDays = Math.max(1, parseInt(document.getElementById("settingOverdueDays").value, 10) || 7);
   const doorsRaw = document.getElementById("settingDockDoors").value;
   const doors = doorsRaw.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
@@ -1794,7 +1869,7 @@ function addSingleLane() {
 }
 
 function resetDefaultLanes() {
-  if (!confirm("Reset lanes back to default s51–s62? Any currently staged pallets in lanes will be cleared.")) return;
+  if (!confirm(`Reset ${currentWarehouse} lanes back to default s51–s62? Any currently staged pallets in lanes will be cleared.`)) return;
   state.lanes = buildDefaultLanes();
   syncToCloud();
   renderAll();
@@ -1805,7 +1880,7 @@ function exportBackupJson() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `${state.warehouse}_staging_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `${currentWarehouse}_staging_backup_${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
 }
 
@@ -1817,10 +1892,11 @@ function importBackupJson(e) {
     try {
       const parsed = JSON.parse(ev.target.result);
       if (!Array.isArray(parsed.lanes)) throw new Error("Invalid format");
-      state = { ...state, ...parsed };
+      state = { ...state, ...parsed, warehouse: currentWarehouse };
+      syncSettingsInputs();
       syncToCloud();
       renderAll();
-      showToast("Backup restored successfully");
+      showToast("Backup restored into " + currentWarehouse);
     } catch (err) {
       alert("Invalid backup JSON file");
     }
@@ -1834,10 +1910,11 @@ function getTodayShipped() {
 }
 
 function exportEodCsv() {
-  const rows = [["Status", "Lane/Dock", "SLP_ID", "Order_No", "Carrier", "Double_Stacked", "Timestamp", "Age_Days"]];
+  const rows = [["Warehouse", "Status", "Lane/Dock", "SLP_ID", "Order_No", "Carrier", "Double_Stacked", "Timestamp", "Age_Days"]];
   state.lanes.forEach(l => {
     l.pallets.forEach(p => {
       rows.push([
+        currentWarehouse,
         isPalletOverdue(p) ? "OVERDUE_STAGED" : "STAGED",
         l.id.toUpperCase(),
         p.slp,
@@ -1851,6 +1928,7 @@ function exportEodCsv() {
   });
   getTodayShipped().forEach(s => {
     rows.push([
+      currentWarehouse,
       "SHIPPED_TODAY",
       "DOCK_" + s.dockDoor,
       s.slp,
@@ -1866,7 +1944,7 @@ function exportEodCsv() {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `${state.warehouse}_EOD_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `${currentWarehouse}_EOD_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
 }
 
@@ -1880,7 +1958,7 @@ function copyEodSummary() {
   });
 
   const lines = [
-    `[${state.warehouse}] EOD Outbound Staging Report - ${new Date().toLocaleDateString()}`,
+    `[${currentWarehouse}] EOD Outbound Staging Report - ${new Date().toLocaleDateString()}`,
     `• Staged Pallets Remaining: ${totalStaged}`,
     `• Overdue Aging (>${state.overdueDays}d): ${overdueCount}`,
     `• At Loading Dock: ${state.dockQueue.length}`,
@@ -1919,7 +1997,6 @@ function closeModal(id) {
 function renderAll() {
   const threshold = Number(state.overdueDays) || 7;
 
-  // Update dwell threshold buttons
   document.querySelectorAll(".dwell-btn").forEach(b => {
     b.classList.toggle("active", Number(b.dataset.days) === threshold);
   });
@@ -1927,14 +2004,12 @@ function renderAll() {
   document.getElementById("overdueFilterPill").textContent = `⚠️ Overdue (>${threshold}d)`;
   document.getElementById("eodOverdueLabel").textContent = `Overdue Aging (>${threshold}d)`;
 
-  // Populate Lane Dropdown
   const prevLane = document.getElementById("scanLaneSelect").value;
   document.getElementById("scanLaneSelect").innerHTML = state.lanes.map(l => {
     const spots = getLaneFloorSpots(l);
     return `<option value="${l.id}" ${l.id === prevLane ? "selected" : ""}>${l.id.toUpperCase()} (${spots}/${l.capacity} spots)${l.carrier ? " - " + l.carrier : ""}</option>`;
   }).join("");
 
-  // Compute KPIs
   let totalPallets = 0;
   let totalSpots = 0;
   let totalCap = 0;
@@ -1967,7 +2042,7 @@ function renderAll() {
   const banner = document.getElementById("overdueBanner");
   if (overdueCount > 0) {
     banner.classList.add("visible");
-    document.getElementById("overdueBannerText").textContent = `⚠️ ${overdueCount} staged pallet(s) exceed ${threshold} day(s) dwell time!`;
+    document.getElementById("overdueBannerText").textContent = `⚠️ [${currentWarehouse}] ${overdueCount} staged pallet(s) exceed ${threshold} day(s) dwell time!`;
   } else {
     banner.classList.remove("visible");
   }
@@ -2095,7 +2170,7 @@ function renderDock() {
 }
 
 function renderEod(totalStaged, overdueCount, shippedToday) {
-  document.getElementById("eodDateLabel").textContent = "Generated: " + new Date().toLocaleString();
+  document.getElementById("eodDateLabel").textContent = `${currentWarehouse} • Generated: ${new Date().toLocaleString()}`;
   document.getElementById("eodRemaining").textContent = totalStaged;
   document.getElementById("eodShipped").textContent = shippedToday.length;
   document.getElementById("eodOverdue").textContent = overdueCount;
@@ -2137,14 +2212,12 @@ function renderEod(totalStaged, overdueCount, shippedToday) {
 }
 
 // =========================================================================
-// BOOTSTRAP
+// NON-BLOCKING SAFE BOOTSTRAP
 // =========================================================================
-loadLocalState();
-document.getElementById("settingWarehouse").value = state.warehouse;
-document.getElementById("settingOverdueDays").value = state.overdueDays;
-document.getElementById("settingDockDoors").value = state.dockDoors.join(", ");
+loadLocalState(currentWarehouse);
+syncSettingsInputs();
 renderAll();
-syncFromCloud();
+setTimeout(syncFromCloud, 50);
 </script>
 </body>
 </html>
