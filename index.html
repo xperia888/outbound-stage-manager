@@ -2076,6 +2076,9 @@
         let pendingCloudSave = false;
         let isCloudLoadInFlight = false;
         let cloudConflictRetries = 0;
+        // True while this device has changes the sheet hasn't accepted yet. Background
+        // loads must not overwrite them (or mark the badge "Synced") until a save lands.
+        let lastCloudSaveFailed = false;
         const MAX_CLOUD_CONFLICT_RETRIES = 3;
 
         // Scan Log: one row per scan/move/ship in the Google Sheet's "Scan Log" tab.
@@ -2179,8 +2182,9 @@
             } else if (status === 'synced') {
                 pill.className = 'inline-flex items-center gap-1.5 text-[10px] font-mono-code font-extrabold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/50 px-2 py-0.5 rounded-full cursor-pointer transition-all';
                 dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-                const timePart = lastCloudUpdatedAt
-                    ? new Date(lastCloudUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                const syncedDate = lastCloudUpdatedAt ? new Date(lastCloudUpdatedAt) : null;
+                const timePart = syncedDate && !isNaN(syncedDate.getTime())
+                    ? syncedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                     : '';
                 label.textContent = customLabel || (timePart ? `Cloud Synced • ${timePart}` : 'Cloud Synced');
             } else if (status === 'error') {
@@ -2237,6 +2241,7 @@
                         isCloudSaveInFlight = false;
                         if (res && res.ok) {
                             cloudConflictRetries = 0;
+                            lastCloudSaveFailed = false;
                             lastCloudUpdatedAt = res.updatedAt || new Date().toISOString();
                             lastSyncedStateJson = serialized;
                             setCloudSyncStatus('synced');
@@ -2245,12 +2250,14 @@
                             if (applyCloudConflictMerge(res)) {
                                 pendingCloudSave = true; // re-save the merged board
                             } else {
+                                lastCloudSaveFailed = true;
                                 setCloudSyncStatus('error', 'Sync Error (Retry)');
                             }
                         } else {
                             cloudConflictRetries = 0;
+                            lastCloudSaveFailed = true;
                             console.error('[Cloud Save Rejected]', res);
-                            setCloudSyncStatus('error', 'Sync Error (Retry)');
+                            if (!(res && res.unauthorized)) setCloudSyncStatus('error', 'Sync Error (Retry)');
                         }
                         if (pendingCloudSave) {
                             pendingCloudSave = false;
@@ -2258,8 +2265,9 @@
                         }
                     }, (err) => {
                         isCloudSaveInFlight = false;
+                        lastCloudSaveFailed = true;
                         console.error('[Cloud Save Error]', err);
-                        setCloudSyncStatus('error', 'Sync Error (Retry)');
+                        if (!String(err && err.message).includes('Access code')) setCloudSyncStatus('error', 'Sync Error (Retry)');
                         if (typeof showToast === 'function') {
                             showToast('Cloud save failed — saved locally. Click status badge to retry.', 'warning');
                         }
@@ -2271,6 +2279,7 @@
                     });
             } catch (err) {
                 isCloudSaveInFlight = false;
+                lastCloudSaveFailed = true;
                 console.error('[Cloud Save Error]', err);
                 setCloudSyncStatus('error', 'Sync Error (Retry)');
             }
@@ -2405,7 +2414,15 @@
                 callCloud('loadBoardState', [], (res) => {
                         isCloudLoadInFlight = false;
                         if (!res || !res.ok) {
-                            if (!isBackgroundPoll) setCloudSyncStatus('error', 'Sync Error (Retry)');
+                            if (!isBackgroundPoll && !res?.unauthorized) setCloudSyncStatus('error', 'Sync Error (Retry)');
+                            return;
+                        }
+
+                        if (lastCloudSaveFailed) {
+                            // This device has scans the sheet never accepted: keep them and retry
+                            // the save (a conflict there merges both boards) instead of overwriting.
+                            setCloudSyncStatus('error', 'Sync Error (Retry)');
+                            if (!isCloudSaveInFlight && !pendingCloudSave && !cloudSaveDebounceTimer) executeCloudSaveNow();
                             return;
                         }
 
