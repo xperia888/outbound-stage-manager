@@ -48,7 +48,7 @@ function createFakeAppsScript() {
     return { google, calls, responses, respond };
 }
 
-function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl = '', fetchImpl = null } = {}) {
+function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl = '', fetchImpl = null, googleImpl = null } = {}) {
     const timers = [];
     const storage = () => {
         const data = new Map();
@@ -81,7 +81,7 @@ function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl
     if (accessCode) ctx.localStorage.setItem('outbound_access_code_v2', accessCode);
     if (fetchImpl) ctx.fetch = fetchImpl;
     const fake = createFakeAppsScript();
-    if (withAppsScript) ctx.google = fake.google;
+    if (withAppsScript) ctx.google = googleImpl || fake.google;
     vm.createContext(ctx);
     // Tests never talk to the real sheet: CLOUD_API_URL is blank unless a test sets one
     const script = appScript.replace(/const CLOUD_API_URL = '[^']*';/, `const CLOUD_API_URL = ${JSON.stringify(cloudApiUrl)};`);
@@ -212,13 +212,19 @@ function loadCodeGs({ accessCode = 'secret-1' } = {}) {
     const makeSheet = () => {
         const rows = [];
         const range = (r, c, nr = 1, nc = 1) => ({
-            setValues(vals) { vals.forEach((v, i) => { rows[r - 1 + i] = v; }); return this; },
+            setValues(vals) {
+                vals.forEach((v, i) => {
+                    const row = (rows[r - 1 + i] = rows[r - 1 + i] || []);
+                    v.forEach((x, j) => { row[c - 1 + j] = x; });
+                });
+                return this;
+            },
             setValue(v) { (rows[r - 1] = rows[r - 1] || [])[c - 1] = v; return this; },
             getValue() { return (rows[r - 1] || [])[c - 1] ?? ''; },
-            getValues() { return Array.from({ length: nr }, (_, i) => (rows[r - 1 + i] || []).slice(c - 1, c - 1 + nc)); },
+            getValues() { return Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => (rows[r - 1 + i] || [])[c - 1 + j] ?? '')); },
+            clearContent() { for (let i = 0; i < nr; i++) if (rows[r - 1 + i]) rows[r - 1 + i][c - 1] = ''; return this; },
             setNumberFormat() { return this; },
-            setFontWeight() { return this; },
-            clearContent() { return this; }
+            setFontWeight() { return this; }
         });
         return {
             rows,
@@ -334,4 +340,69 @@ test('no access code: the page waits instead of calling the server; a wrong code
     second.fake.responses.loadBoardState.push({ ok: false, unauthorized: true });
     second.run(`loadState({ isBackgroundPoll: true, silent: true })`);
     assert.equal(second.run(`safeStorageGet(ACCESS_CODE_KEY)`), '', 'wrong code forgotten so the device asks again');
+});
+
+/** Two devices whose google.script.run talks to one real Code.gs (fake sheet). */
+function twoDevicesOnOneSheet({ legacyJson = null, legacyAt = '' } = {}) {
+    const server = loadCodeGs({ accessCode: 'test-code' });
+    if (legacyJson !== null) {
+        const legacy = server.ctx.SpreadsheetApp.getActiveSpreadsheet().insertSheet('State');
+        legacy.rows[0] = [legacyJson, legacyAt];
+    }
+    const pending = [];
+    const googleFor = () => {
+        const g = { script: {} };
+        Object.defineProperty(g.script, 'run', {
+            get() {
+                let ok = () => {};
+                const r = {
+                    withSuccessHandler(f) { ok = f; return r; },
+                    withFailureHandler() { return r; },
+                    api(req) {
+                        const res = JSON.parse(JSON.stringify(server.ctx.api(JSON.parse(JSON.stringify(req)))));
+                        pending.push(() => ok(res));
+                    }
+                };
+                return r;
+            }
+        });
+        return g;
+    };
+    const A = loadApp({ withAppsScript: true, googleImpl: googleFor() });
+    const B = loadApp({ withAppsScript: true, googleImpl: googleFor() });
+    const settle = () => {
+        for (let i = 0; i < 50 && (pending.length || true); i++) {
+            while (pending.length) pending.shift()();
+            A.flushTimers(); B.flushTimers();
+            if (!pending.length) break;
+        }
+    };
+    const slps = d => d.run('appState.pallets.map(p => p.slp).sort().join(",")');
+    return { A, B, settle, slps, server };
+}
+
+test('two devices converge when the stored board has no timestamp (old State!A1 data)', () => {
+    const legacyJson = JSON.stringify({
+        columns: [{ id: 'col-s51', name: 'S51', capacity: 8 }, { id: 'col-s52', name: 'S52', capacity: 8 }],
+        pallets: [pallet('old', 'SLP-OLD')], shippedPallets: []
+    });
+    const { A, B, settle, slps } = twoDevicesOnOneSheet({ legacyJson, legacyAt: '' });
+    for (const d of [A, B]) { d.run('loadState({ isBackgroundPoll: false, silent: true })'); settle(); }
+
+    A.run(`addSlpToStaging({ slp: 'SLP-FROM-A', orderNumber: 'SO-A', columnId: 'col-s51' })`); settle();
+    B.run(`addSlpToStaging({ slp: 'SLP-FROM-B', orderNumber: 'SO-B', columnId: 'col-s52' })`); settle();
+    for (let i = 0; i < 3; i++) for (const d of [A, B]) { d.run('loadState({ isBackgroundPoll: true, silent: true })'); settle(); }
+
+    assert.equal(slps(A), 'SLP-FROM-A,SLP-FROM-B,SLP-OLD');
+    assert.equal(slps(B), slps(A));
+    assert.match(A.run('lastCloudUpdatedAt'), /^\d{4}-\d\d-\d\dT/, 'a real timestamp once a save lands');
+});
+
+test('a background load never overwrites scans the sheet has not accepted yet', () => {
+    const { A, settle, slps } = twoDevicesOnOneSheet();
+    A.run('loadState({ isBackgroundPoll: false, silent: true })'); settle();
+    A.run(`lastCloudSaveFailed = true; appState.pallets.push(${JSON.stringify(pallet('unsaved', 'SLP-UNSAVED'))})`);
+    A.run('loadState({ isBackgroundPoll: true, silent: true })'); settle();
+    assert.ok(slps(A).includes('SLP-UNSAVED'), 'unsaved scan kept');
+    assert.equal(A.run('lastCloudSaveFailed'), false, 'the retried save landed');
 });

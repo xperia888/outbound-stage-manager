@@ -80,6 +80,13 @@ function getStateSheet_() {
 }
 
 /** Layout: B2 = updatedAt (ISO), C2 = chunk count, A3:A = chunks. */
+/**
+ * Version marker for a stored board that has no timestamp (e.g. old data in State!A1
+ * with B1 empty). Without a stable marker every save looked like a conflict and
+ * nothing was ever written.
+ */
+const UNVERSIONED_ = 'unversioned';
+
 /** Sheets may turn an ISO timestamp into a Date; always hand back the same ISO string. */
 function toIsoString_(value) {
   if (!value) return '';
@@ -96,7 +103,7 @@ function loadBoardState_() {
     if (count > 0) {
       const values = sheet.getRange(3, 1, count, 1).getValues();
       const json = values.map(r => String(r[0]).replace(/^~/, '')).join('');
-      return { ok: true, stateJson: json, updatedAt: updatedAt || null };
+      return { ok: true, stateJson: json, updatedAt: updatedAt || UNVERSIONED_ };
     }
 
     // One-time fallback to the old single-cell layout
@@ -108,7 +115,7 @@ function loadBoardState_() {
         return {
           ok: true,
           stateJson: String(raw),
-          updatedAt: toIsoString_(legacyAt) || null
+          updatedAt: toIsoString_(legacyAt) || UNVERSIONED_
         };
       }
     }
@@ -156,7 +163,11 @@ function saveBoardState_(stateJson, baseUpdatedAt) {
       sheet.getRange(3 + chunks.length, 1, oldCount - chunks.length, 1).clearContent();
     }
 
-    const now = new Date().toISOString();
+    // Each save gets a strictly newer timestamp, so devices can always tell versions apart
+    let nowMs = Date.now();
+    const prevMs = Date.parse(toIsoString_(sheet.getRange('B2').getValue()));
+    if (!isNaN(prevMs) && nowMs <= prevMs) nowMs = prevMs + 1;
+    const now = new Date(nowMs).toISOString();
     sheet.getRange('B2').setNumberFormat('@');
     sheet.getRange('B2:C2').setValues([[now, chunks.length]]);
     SpreadsheetApp.flush();
