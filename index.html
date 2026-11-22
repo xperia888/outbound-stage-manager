@@ -2319,12 +2319,32 @@
         }
 
         /**
+         * Parses a board from the sheet. Returns null when it isn't a board this app can
+         * read (e.g. data saved by an older, different version of the app), so callers can
+         * treat it as empty instead of failing every sync.
+         */
+        function parseCloudBoard(stateJson) {
+            try {
+                return normalizeImportedAppState(JSON.parse(stateJson));
+            } catch (err) {
+                console.warn('[Cloud] Ignoring board data this version cannot read:', err && err.message);
+                return null;
+            }
+        }
+
+        /**
          * Another device saved first. Merge its board with ours so neither device's
          * scans, moves or shipments are lost, then adopt the merged board locally.
          */
         function applyCloudConflictMerge(res) {
             try {
-                const remote = normalizeImportedAppState(JSON.parse(res.stateJson));
+                const remote = parseCloudBoard(res.stateJson);
+                if (!remote) {
+                    // Unreadable data in the sheet: keep this board and replace it on the re-save
+                    lastCloudUpdatedAt = res.updatedAt || null;
+                    lastSyncedStateJson = '';
+                    return true;
+                }
                 const base = lastSyncedStateJson ? JSON.parse(lastSyncedStateJson) : null;
                 const merged = normalizeImportedAppState(mergeBoardStates(base, appState, remote));
 
@@ -2474,9 +2494,16 @@
                         const isNewerTimestamp = !lastCloudUpdatedAt || (incomingUpdatedAt && incomingUpdatedAt !== lastCloudUpdatedAt);
 
                         if (isNewerTimestamp) {
+                            const normalized = parseCloudBoard(res.stateJson);
+                            if (!normalized) {
+                                // The sheet holds data this version can't read: replace it with
+                                // this device's board (the save is based on that version).
+                                lastCloudUpdatedAt = incomingUpdatedAt;
+                                lastSyncedStateJson = '';
+                                saveState(true);
+                                return;
+                            }
                             try {
-                                const parsed = JSON.parse(res.stateJson);
-                                const normalized = normalizeImportedAppState(parsed);
                                 const normalizedStr = JSON.stringify(normalized);
                                 const currentLocalStr = JSON.stringify(appState);
 
