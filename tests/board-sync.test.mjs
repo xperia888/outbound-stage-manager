@@ -419,3 +419,22 @@ test('no access code: the page asks with its own box, never the browser pop-up',
     assert.equal(promptCalls, 0);
     assert.equal(boxShown, 1);
 });
+
+test('data from an older, different app version in the sheet is replaced, and devices then converge', () => {
+    // What the old ONT/CHINO page left in State!A1
+    const oldFormat = JSON.stringify({ version: 'v2', facility: 'ONUS-ONT', updatedAt: 1763751769161, detail: 'Staged 4 pallets' });
+    const { A, B, settle, slps } = twoDevicesOnOneSheet({ legacyJson: oldFormat, legacyAt: '2026-11-21T19:02:49.161Z' });
+
+    A.run('loadState({ isBackgroundPoll: false, silent: true })'); settle();
+    assert.equal(A.run('lastCloudSaveFailed'), false, 'first device replaced the unreadable data');
+    assert.match(A.run('lastCloudUpdatedAt'), /^2026|^\d{4}-/, 'real timestamp after the save');
+
+    B.run('loadState({ isBackgroundPoll: false, silent: true })'); settle();
+    A.run(`addSlpToStaging({ slp: 'SLP-FROM-A', orderNumber: 'SO-A', columnId: 'col-s52' })`); settle();
+    B.run(`addSlpToStaging({ slp: 'SLP-FROM-B', orderNumber: 'SO-B', columnId: 'col-s54' })`); settle();
+    for (let i = 0; i < 3; i++) for (const d of [A, B]) { d.run('loadState({ isBackgroundPoll: true, silent: true })'); settle(); }
+
+    assert.ok(slps(A).includes('SLP-FROM-A') && slps(A).includes('SLP-FROM-B'));
+    assert.equal(slps(B), slps(A));
+    assert.equal(A.run('lastCloudSaveFailed') || B.run('lastCloudSaveFailed'), false);
+});
