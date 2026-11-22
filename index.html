@@ -171,10 +171,14 @@
                 </div>
                 <div class="min-w-0">
                     <div class="flex items-center gap-1.5">
-                        <span class="inline-flex items-center gap-1 text-[10px] sm:text-xs font-mono-code font-extrabold bg-sky-500/20 text-sky-300 border border-sky-500/40 px-2 py-0.5 rounded" title="Warehouse Location">
+                        <label id="warehouse-chip" class="inline-flex items-center gap-1 text-[10px] sm:text-xs font-mono-code font-extrabold bg-sky-500/20 text-sky-300 border border-sky-500/40 px-2 py-0.5 rounded cursor-pointer" title="Warehouse Location — switch warehouse">
                             <i data-lucide="building-2" class="w-3 h-3 sm:w-3.5 sm:h-3.5"></i>
-                            <span>ONUS-ONT</span>
-                        </span>
+                            <select id="warehouse-select" onchange="switchWarehouse(this.value)" aria-label="Warehouse"
+                                class="bg-transparent font-mono-code font-extrabold cursor-pointer focus:outline-none">
+                                <option value="ONT" class="bg-slate-900 text-sky-200">ONUS-ONT</option>
+                                <option value="CHINO" class="bg-slate-900 text-amber-200">ONUS-CHINO</option>
+                            </select>
+                        </label>
                         <h1 class="text-xs sm:text-sm md:text-base font-extrabold tracking-tight leading-none truncate">
                             Outbound Pallet Staging
                         </h1>
@@ -1633,7 +1637,7 @@
                     </div>
                     <div>
                         <h2 class="font-bold text-sm sm:text-base leading-tight">Data Backup & Restore (JSON)</h2>
-                        <p class="text-[11px] text-slate-400">Export or restore full ONUS-ONT staging board & settings</p>
+                        <p class="text-[11px] text-slate-400">Export or restore full <span class="wh-name">ONUS-ONT</span> staging board & settings</p>
                     </div>
                 </div>
                 <button type="button" onclick="closeBackupRestoreModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer">
@@ -1710,7 +1714,7 @@
                     </div>
                     <div>
                         <h2 class="font-bold text-sm sm:text-base leading-tight">Smart Lane Consolidate Plan</h2>
-                        <p class="text-[11px] text-slate-400">ONUS-ONT • Small Orders → Small-Cap Lanes • Zero Order Blocking (Never places an order in front of another order)</p>
+                        <p class="text-[11px] text-slate-400"><span class="wh-name">ONUS-ONT</span> • Small Orders → Small-Cap Lanes • Zero Order Blocking (Never places an order in front of another order)</p>
                     </div>
                 </div>
                 <button type="button" onclick="closeReorganizeModal()" class="no-print text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer">
@@ -1807,9 +1811,37 @@
          * =========================================================================
          */
         const APP_VERSION = 'v2';
-        const WAREHOUSE_NAME = 'ONUS-ONT';
-        const STORAGE_KEY = 'outbound_pallet_staging_v2';
-        const LEGACY_STORAGE_KEYS = ['outbound_pallet_staging_v1', 'outbound_pallet_staging_v7'];
+
+        /**
+         * Warehouses. Each has its own board, access code, scan queue and sheet tabs.
+         * ONT keeps the original storage names (empty suffix) so existing data stays put.
+         * Pick one with ?wh=CHINO in the link, or the switcher in the header.
+         */
+        const WAREHOUSES = {
+            ONT: { id: 'ONT', name: 'ONUS-ONT', suffix: '' },
+            CHINO: { id: 'CHINO', name: 'ONUS-CHINO', suffix: '_chino' }
+        };
+        const ACTIVE_WAREHOUSE_KEY = 'outbound_active_warehouse';
+
+        function resolveWarehouseId() {
+            let fromUrl = '';
+            try {
+                fromUrl = String(new URLSearchParams(location.search).get('wh') || '').toUpperCase();
+            } catch (e) { /* no URL (tests) */ }
+            let saved = '';
+            try { saved = String(localStorage.getItem(ACTIVE_WAREHOUSE_KEY) || '').toUpperCase(); } catch (e) { /* storage blocked */ }
+            const id = WAREHOUSES[fromUrl] ? fromUrl : (WAREHOUSES[saved] ? saved : 'ONT');
+            if (fromUrl && WAREHOUSES[fromUrl]) {
+                try { localStorage.setItem(ACTIVE_WAREHOUSE_KEY, id); } catch (e) { /* storage blocked */ }
+            }
+            return id;
+        }
+
+        const WAREHOUSE_ID = resolveWarehouseId();
+        const WAREHOUSE_NAME = WAREHOUSES[WAREHOUSE_ID].name;
+        const WAREHOUSE_SUFFIX = WAREHOUSES[WAREHOUSE_ID].suffix;
+        const STORAGE_KEY = 'outbound_pallet_staging_v2' + WAREHOUSE_SUFFIX;
+        const LEGACY_STORAGE_KEYS = WAREHOUSE_ID === 'ONT' ? ['outbound_pallet_staging_v1', 'outbound_pallet_staging_v7'] : [];
         const WINDOW_NAME_PREFIX = '__OUTBOUND_STAGING_V2__:';
         const MS_PER_DAY = 86400000;
         const DEFAULT_DWELL_WARNING_DAYS = 1;
@@ -2083,7 +2115,7 @@
 
         // Scan Log: one row per scan/move/ship in the Google Sheet's "Scan Log" tab.
         // Events wait in a queue saved on this device until the sheet confirms them.
-        const SCAN_LOG_QUEUE_KEY = 'outbound_scan_log_queue_v2';
+        const SCAN_LOG_QUEUE_KEY = 'outbound_scan_log_queue_v2' + WAREHOUSE_SUFFIX;
         const SCAN_LOG_QUEUE_MAX = 5000;
         const SCAN_LOG_BATCH_SIZE = 200;
         const DEVICE_ID_KEY = 'outbound_device_id_v2';
@@ -2098,7 +2130,7 @@
          * Paste your Apps Script web-app URL (ends in /exec) here so every link shares one board.
          */
         const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
-        const ACCESS_CODE_KEY = 'outbound_access_code_v2';
+        const ACCESS_CODE_KEY = 'outbound_access_code_v2' + WAREHOUSE_SUFFIX;
 
         function hasGoogleScriptRun() {
             return typeof google !== 'undefined' && google && google.script && google.script.run;
@@ -2127,8 +2159,8 @@
             overlay.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/70 p-4';
             overlay.innerHTML = `
                 <form class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl space-y-3">
-                    <h2 class="text-lg font-extrabold text-slate-900">Enter access code</h2>
-                    <p class="text-sm text-slate-600">Needed once on this device to share the staging board with other devices.</p>
+                    <h2 class="text-lg font-extrabold text-slate-900">Enter ${WAREHOUSE_NAME} access code</h2>
+                    <p class="text-sm text-slate-600">Needed once on this device to open the ${WAREHOUSE_NAME} staging board. Each warehouse has its own code.</p>
                     <input id="access-code-input" type="password" autocomplete="off" required
                         class="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base font-mono-code focus:border-indigo-500 focus:outline-none"
                         placeholder="Access code">
@@ -2161,7 +2193,7 @@
          * cleared so the device asks again on the next manual sync.
          */
         function callCloud(fn, args, onSuccess, onFailure, { interactive = false } = {}) {
-            const request = { fn, args, key: getAccessCode({ interactive }) };
+            const request = { fn, args, key: getAccessCode({ interactive }), warehouse: WAREHOUSE_ID };
             if (!request.key) {
                 // No code on this device yet: don't hit the server until someone enters it
                 setCloudSyncStatus('error', 'Access Code Needed');
@@ -6148,6 +6180,41 @@
             }, 3400);
         }
 
+        /** Shows the active warehouse everywhere its name appears. */
+        function applyWarehouseLabels() {
+            document.title = document.title.replace('ONUS-ONT', WAREHOUSE_NAME);
+            document.querySelectorAll('.wh-name').forEach(el => { el.textContent = WAREHOUSE_NAME; });
+            const select = document.getElementById('warehouse-select');
+            if (select) select.value = WAREHOUSE_ID;
+            const chip = document.getElementById('warehouse-chip');
+            if (chip && WAREHOUSE_ID === 'CHINO') {
+                // Different colour so nobody scans into the wrong warehouse by accident
+                chip.className = chip.className
+                    .replace('bg-sky-500/20', 'bg-amber-500/25')
+                    .replace('text-sky-300', 'text-amber-200')
+                    .replace('border-sky-500/40', 'border-amber-400/60');
+            }
+        }
+
+        /** Switches warehouse: saves the choice and reopens the page with that board. */
+        function switchWarehouse(id) {
+            const target = String(id || '').toUpperCase();
+            if (!WAREHOUSES[target] || target === WAREHOUSE_ID) return;
+            safeStorageSet(STORAGE_KEY, JSON.stringify(appState)); // keep this warehouse's board locally
+            try { localStorage.setItem(ACTIVE_WAREHOUSE_KEY, target); } catch (e) { /* storage blocked */ }
+            if (hasGoogleScriptRun()) {
+                location.reload(); // inside Apps Script's frame: reload picks up the saved choice
+                return;
+            }
+            try {
+                const url = new URL(location.href);
+                url.searchParams.set('wh', target);
+                location.href = url.toString();
+            } catch (e) {
+                location.reload();
+            }
+        }
+
         /**
          * =========================================================================
          * 14. INITIALIZATION & AUTO-RESIZE LISTENERS
@@ -6155,6 +6222,7 @@
          */
         window.addEventListener('DOMContentLoaded', () => {
             try {
+                applyWarehouseLabels();
                 syncDeviceTierAndAutoSize();
                 renderBoard();
                 autoPickBestAvailableLocation(true);

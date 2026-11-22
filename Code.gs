@@ -5,7 +5,10 @@
  * reach the same sheet through api(request):
  *   - the Apps Script /exec link calls it with google.script.run.api(...)
  *   - the GitHub Pages link POSTs the same request to the /exec URL (doPost)
- * Every request must carry the access code saved in Script Properties as ACCESS_CODE.
+ * Each warehouse has its own board, Scan Log tab and access code (Script Properties):
+ *   ONT   → ACCESS_CODE,       tabs "StateChunks" and "Scan Log"
+ *   CHINO → ACCESS_CODE_CHINO, tabs "StateChunks CHINO" and "Scan Log CHINO"
+ * A request only reaches the warehouse whose code it carries.
  *
  * The board JSON is split across many cells (a single cell holds max 50,000
  * characters), so the board can grow without saves failing.
@@ -14,11 +17,14 @@
  * the page, paste this file as Code.gs, then Deploy > New deployment > Web app.
  */
 
-const STATE_SHEET = 'StateChunks';   // new chunked storage
-const LEGACY_SHEET = 'State';        // old single-cell storage (read once to migrate)
+/** Per-warehouse storage. ONT keeps the original tab names so existing data stays put. */
+const WAREHOUSES_ = {
+  ONT: { codeProperty: 'ACCESS_CODE', stateSheet: 'StateChunks', scanLogSheet: 'Scan Log', legacySheet: 'State' },
+  CHINO: { codeProperty: 'ACCESS_CODE_CHINO', stateSheet: 'StateChunks CHINO', scanLogSheet: 'Scan Log CHINO', legacySheet: null }
+};
+let ACTIVE_WH_ = WAREHOUSES_.ONT; // set per request by api(); each request runs on its own
 const CHUNK_SIZE = 40000;            // safely under the 50,000-char cell limit
 const CHUNK_PREFIX = '~';            // keeps chunks from being read as formulas/numbers/dates
-const SCAN_LOG_SHEET = 'Scan Log';
 const SCAN_LOG_HEADERS = [
   'Timestamp', 'Action', 'SLP', 'Order', 'From Lane', 'To Lane', 'Stack',
   'Carrier', 'Destination', 'Dock', 'Device', 'User', 'Event ID'
@@ -27,7 +33,7 @@ const SCAN_LOG_MAX_BATCH = 500;
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('ONUS-ONT • Outbound Pallet Staging')
+    .setTitle('ONUS • Outbound Pallet Staging')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // allows Google Sites embed
 }
@@ -45,14 +51,19 @@ function doPost(e) {
 }
 
 /**
- * Single entry point for both links: { fn, args, key }.
- * Only the functions listed here can be called, and only with the right access code.
+ * Single entry point for both links: { fn, args, key, warehouse }.
+ * Only the functions listed here can be called, and only with that warehouse's access code.
+ * Requests without a warehouse (older pages) are ONT.
  */
 function api(request) {
   const req = request || {};
-  const expected = PropertiesService.getScriptProperties().getProperty('ACCESS_CODE');
+  const whId = String(req.warehouse || 'ONT').toUpperCase();
+  if (!WAREHOUSES_[whId]) return { ok: false, error: 'Unknown warehouse: ' + whId };
+  ACTIVE_WH_ = WAREHOUSES_[whId];
+
+  const expected = PropertiesService.getScriptProperties().getProperty(ACTIVE_WH_.codeProperty);
   if (!expected) {
-    return { ok: false, error: 'Set ACCESS_CODE in Apps Script → Project Settings → Script Properties' };
+    return { ok: false, error: 'Set ' + ACTIVE_WH_.codeProperty + ' in Apps Script → Project Settings → Script Properties' };
   }
   if (String(req.key || '') !== String(expected)) {
     return { ok: false, unauthorized: true, error: 'Wrong or missing access code' };
@@ -68,9 +79,9 @@ function api(request) {
 
 function getStateSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(STATE_SHEET);
+  let sheet = ss.getSheetByName(ACTIVE_WH_.stateSheet);
   if (!sheet) {
-    sheet = ss.insertSheet(STATE_SHEET);
+    sheet = ss.insertSheet(ACTIVE_WH_.stateSheet);
     sheet.getRange('A:A').setNumberFormat('@');
     sheet.getRange('B2').setNumberFormat('@');
     sheet.getRange('A1').setValue('updatedAt');
@@ -107,7 +118,9 @@ function loadBoardState_() {
     }
 
     // One-time fallback to the old single-cell layout
-    const legacy = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LEGACY_SHEET);
+    const legacy = ACTIVE_WH_.legacySheet
+      ? SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ACTIVE_WH_.legacySheet)
+      : null;
     if (legacy) {
       const raw = legacy.getRange('A1').getValue();
       const legacyAt = legacy.getRange('B1').getValue();
@@ -181,9 +194,9 @@ function saveBoardState_(stateJson, baseUpdatedAt) {
 
 function getScanLogSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SCAN_LOG_SHEET);
+  let sheet = ss.getSheetByName(ACTIVE_WH_.scanLogSheet);
   if (!sheet) {
-    sheet = ss.insertSheet(SCAN_LOG_SHEET);
+    sheet = ss.insertSheet(ACTIVE_WH_.scanLogSheet);
     sheet.getRange(1, 1, 1, SCAN_LOG_HEADERS.length).setValues([SCAN_LOG_HEADERS]).setFontWeight('bold');
     sheet.setFrozenRows(1);
     sheet.getRange('A:A').setNumberFormat('yyyy-mm-dd hh:mm:ss');
