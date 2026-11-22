@@ -83,9 +83,8 @@ function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl
     const fake = createFakeAppsScript();
     if (withAppsScript) ctx.google = fake.google;
     vm.createContext(ctx);
-    const script = cloudApiUrl
-        ? appScript.replace("const CLOUD_API_URL = '';", `const CLOUD_API_URL = ${JSON.stringify(cloudApiUrl)};`)
-        : appScript;
+    // Tests never talk to the real sheet: CLOUD_API_URL is blank unless a test sets one
+    const script = appScript.replace(/const CLOUD_API_URL = '[^']*';/, `const CLOUD_API_URL = ${JSON.stringify(cloudApiUrl)};`);
     vm.runInContext(script, ctx);
     const run = code => vm.runInContext(code, ctx);
     const flushTimers = () => { while (timers.length) timers.shift().fn(); };
