@@ -406,3 +406,16 @@ test('a background load never overwrites scans the sheet has not accepted yet', 
     assert.ok(slps(A).includes('SLP-UNSAVED'), 'unsaved scan kept');
     assert.equal(A.run('lastCloudSaveFailed'), false, 'the retried save landed');
 });
+
+test('no access code: the page asks with its own box, never the browser pop-up', () => {
+    const { ctx, run } = loadApp({ withAppsScript: true, accessCode: '' });
+    let promptCalls = 0;
+    ctx.prompt = () => { promptCalls++; return 'x'; };
+    let boxShown = 0;
+    run('showAccessCodeBox = () => {}'); // DOM-free stub; count calls through a wrapper below
+    ctx.__countBox = () => { boxShown++; };
+    run('showAccessCodeBox = () => __countBox()');
+    run('loadState({ isBackgroundPoll: false, silent: true })');
+    assert.equal(promptCalls, 0);
+    assert.equal(boxShown, 1);
+});

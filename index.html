@@ -2111,12 +2111,44 @@
         }
 
         function getAccessCode({ interactive = false } = {}) {
-            let code = safeStorageGet(ACCESS_CODE_KEY) || '';
-            if (!code && interactive && typeof window.prompt === 'function') {
-                code = String(window.prompt('Enter the staging board access code:') || '').trim();
-                if (code) safeStorageSet(ACCESS_CODE_KEY, code);
-            }
+            const code = safeStorageGet(ACCESS_CODE_KEY) || '';
+            if (!code && interactive) showAccessCodeBox();
             return code;
+        }
+
+        /**
+         * In-page access-code box (instead of window.prompt, which some browsers, kiosk
+         * views and remote viewers don't show). Saving it reloads the board from the sheet.
+         */
+        function showAccessCodeBox() {
+            if (typeof document.createElement !== 'function' || document.getElementById('access-code-box')) return;
+            const overlay = document.createElement('div');
+            overlay.id = 'access-code-box';
+            overlay.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/70 p-4';
+            overlay.innerHTML = `
+                <form class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl space-y-3">
+                    <h2 class="text-lg font-extrabold text-slate-900">Enter access code</h2>
+                    <p class="text-sm text-slate-600">Needed once on this device to share the staging board with other devices.</p>
+                    <input id="access-code-input" type="password" autocomplete="off" required
+                        class="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base font-mono-code focus:border-indigo-500 focus:outline-none"
+                        placeholder="Access code">
+                    <div class="flex justify-end gap-2">
+                        <button type="button" id="access-code-cancel" class="rounded-xl px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100">Later</button>
+                        <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">Save &amp; Sync</button>
+                    </div>
+                </form>`;
+            document.body.appendChild(overlay);
+            const input = overlay.querySelector('#access-code-input');
+            overlay.querySelector('#access-code-cancel').onclick = () => overlay.remove();
+            overlay.querySelector('form').onsubmit = (e) => {
+                e.preventDefault();
+                const code = String(input.value || '').trim();
+                if (!code) return;
+                safeStorageSet(ACCESS_CODE_KEY, code);
+                overlay.remove();
+                loadState({ isBackgroundPoll: false, silent: false });
+            };
+            setTimeout(() => input.focus(), 50);
         }
 
         function forgetAccessCode() {
@@ -2142,8 +2174,9 @@
                     forgetAccessCode();
                     setCloudSyncStatus('error', 'Access Code Needed');
                     if (typeof showToast === 'function') {
-                        showToast('Wrong or missing access code — tap the sync badge to enter it.', 'warning');
+                        showToast('Wrong or missing access code — please enter it again.', 'warning');
                     }
+                    showAccessCodeBox();
                 }
             };
 
@@ -2470,7 +2503,8 @@
                     }, (err) => {
                         isCloudLoadInFlight = false;
                         console.error('[Cloud Load Error]', err);
-                        if (!isBackgroundPoll) {
+                        const needsCode = String(err && err.message).includes('Access code');
+                        if (!isBackgroundPoll && !needsCode) {
                             setCloudSyncStatus('error', 'Sync Error (Retry)');
                             if (typeof showToast === 'function') {
                                 showToast('Could not reach Google Sheets — running on local cache.', 'warning');
@@ -2489,7 +2523,7 @@
                 showToast('Running in Local Mode — set CLOUD_API_URL or open the Apps Script link for Cloud Sync.', 'info');
                 return;
             }
-            getAccessCode({ interactive: true }); // asks once if this device has no code yet
+            if (!getAccessCode({ interactive: true })) return; // shows the code box first
             if (document.getElementById('cloud-sync-label')?.textContent?.match(/Error|Access Code/)) {
                 saveState(true);
                 showToast('Retrying Google Sheets cloud sync...', 'info');
