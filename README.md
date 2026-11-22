@@ -21,17 +21,23 @@ Outbound pallet management app: ONUS-ONT Outbound Pallet Staging Manager (v2). A
 | `Code.gs` | Apps Script backend: serves the page, stores board state in the `StateChunks` tab and writes the `Scan Log` tab |
 | `tests/board-sync.test.mjs` | Tests for sync, merge, scan log and handler escaping (`node --test`) |
 
-## Running modes
+## One board on every link
 
-- **Local Mode** (opening `index.html` directly, or from GitHub Pages): the board is saved in that browser only. Each device keeps its own separate board.
-- **Cloud Sync** (served from Google Apps Script): all devices share one board stored in a Google Sheet.
+Both links show the same board, stored in one Google Sheet:
 
-## Deploying with Google Apps Script
+- **GitHub Pages** (`https://xperia888.github.io/outbound-stage-manager/`): talks to the sheet through the Apps Script web-app URL set in `CLOUD_API_URL` in `index.html`. Phone camera scanning works here.
+- **Apps Script web-app link** (ends in `/exec`): talks to the sheet directly.
+
+Every device asks for the **access code** once, then remembers it. Without `CLOUD_API_URL`, or when opening the file directly, the app runs in **Local Mode**, where the board is saved in that browser only.
+
+## Setup
 
 1. Create or open a Google Sheet, then go to **Extensions → Apps Script**.
 2. Replace `Code.gs` with this repo's `Code.gs`.
 3. Add an HTML file named **`Index`** and paste in `index.html`.
-4. **Deploy → New deployment → Web app**. Choose who can access it, then open the web-app URL.
+4. Set the access code: **Project Settings (gear) → Script Properties → Add script property**, with Property `ACCESS_CODE` and a Value of your choice. Share it only with staff.
+5. **Deploy → New deployment → Web app**, with **Execute as: Me** and **Who has access: Anyone**. The access code is what keeps outsiders out. Approve the permissions Google asks for. To update later, use **Manage deployments → Edit → Version: New version**, which keeps the same URL.
+6. Copy the web-app URL (ends in `/exec`), paste it into `const CLOUD_API_URL = '...';` in `index.html`, and commit. GitHub Pages republishes within a minute or two.
 
 Board state is saved to the `StateChunks` tab, split across rows to stay under the 50,000-character cell limit. Data from the old single-cell `State!A1` layout is read once if `StateChunks` is empty.
 
