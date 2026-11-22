@@ -30,12 +30,23 @@ Both links show the same board, stored in one Google Sheet:
 
 Every device asks for the **access code** once, then remembers it. Without `CLOUD_API_URL`, or when opening the file directly, the app runs in **Local Mode**, where the board is saved in that browser only.
 
+## Warehouses (ONT and CHINO)
+
+Each warehouse has its own board, access code, Scan Log tab and saved data on each device. Switch with the warehouse selector in the header. Chino is amber, so it's easy to tell apart.
+
+| Warehouse | Link | Access code (Script Property) | Sheet tabs |
+|---|---|---|---|
+| ONUS-ONT | `https://xperia888.github.io/outbound-stage-manager/` (or `?wh=ONT`) | `ACCESS_CODE` | `StateChunks`, `Scan Log` |
+| ONUS-CHINO | `https://xperia888.github.io/outbound-stage-manager/?wh=CHINO` | `ACCESS_CODE_CHINO` | `StateChunks CHINO`, `Scan Log CHINO` |
+
+A device remembers the last warehouse it opened. A code only opens its own warehouse.
+
 ## Setup
 
 1. Create or open a Google Sheet, then go to **Extensions → Apps Script**.
 2. Replace `Code.gs` with this repo's `Code.gs`.
 3. Add an HTML file named **`Index`** and paste in `index.html`.
-4. Set the access code: **Project Settings (gear) → Script Properties → Add script property**, with Property `ACCESS_CODE` and a Value of your choice. Share it only with staff.
+4. Set the access codes: **Project Settings (gear) → Script Properties → Add script property**. Add `ACCESS_CODE` for ONT and `ACCESS_CODE_CHINO` for Chino, each with a different value of your choice. Share each code only with that warehouse's staff.
 5. **Deploy → New deployment → Web app**, with **Execute as: Me** and **Who has access: Anyone**. The access code is what keeps outsiders out. Approve the permissions Google asks for. To update later, use **Manage deployments → Edit → Version: New version**, which keeps the same URL.
 6. Copy the web-app URL (ends in `/exec`), paste it into `const CLOUD_API_URL = '...';` in `index.html`, and commit. GitHub Pages republishes within a minute or two.
 

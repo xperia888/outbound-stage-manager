@@ -36,8 +36,8 @@ function createFakeAppsScript() {
             withSuccessHandler(fn) { onSuccess = fn; return runner; },
             withFailureHandler() { return runner; },
             api(request) {
-                const { fn, args, key } = JSON.parse(JSON.stringify(request));
-                calls.push({ fn, args, key });
+                const { fn, args, key, warehouse } = JSON.parse(JSON.stringify(request));
+                calls.push({ fn, args, key, warehouse });
                 onSuccess(respond(fn, args));
             }
         };
@@ -48,7 +48,7 @@ function createFakeAppsScript() {
     return { google, calls, responses, respond };
 }
 
-function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl = '', fetchImpl = null, googleImpl = null } = {}) {
+function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl = '', fetchImpl = null, googleImpl = null, search = '' } = {}) {
     const timers = [];
     const storage = () => {
         const data = new Map();
@@ -75,10 +75,14 @@ function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl
         innerWidth: 1280,
         name: '',
         addEventListener() {},
-        JSON, Math, Date, Map, Set, Array, Object, String, Number, Boolean, Promise, Error
+        JSON, Math, Date, Map, Set, Array, Object, String, Number, Boolean, Promise, Error, URL, URLSearchParams
     };
     ctx.window = ctx;
-    if (accessCode) ctx.localStorage.setItem('outbound_access_code_v2', accessCode);
+    if (accessCode) {
+        ctx.localStorage.setItem('outbound_access_code_v2', accessCode);
+        ctx.localStorage.setItem('outbound_access_code_v2_chino', accessCode);
+    }
+    if (search) ctx.location = { search, href: `https://example.test/${search}` };
     if (fetchImpl) ctx.fetch = fetchImpl;
     const fake = createFakeAppsScript();
     if (withAppsScript) ctx.google = googleImpl || fake.google;
@@ -206,7 +210,7 @@ test('scan log: nothing is queued in Local Mode', () => {
     assert.equal(run('scanLogQueue.length'), 0);
 });
 
-function loadCodeGs({ accessCode = 'secret-1' } = {}) {
+function loadCodeGs({ accessCode = 'secret-1', chinoCode = null } = {}) {
     const code = readFileSync(new URL('../Code.gs', import.meta.url), 'utf8');
     const sheets = new Map();
     const makeSheet = () => {
@@ -257,7 +261,11 @@ function loadCodeGs({ accessCode = 'secret-1' } = {}) {
             })
         },
         Session: { getActiveUser: () => ({ getEmail: () => 'lead@example.com' }) },
-        PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k === 'ACCESS_CODE' ? accessCode : null) }) },
+        PropertiesService: {
+            getScriptProperties: () => ({
+                getProperty: k => (k === 'ACCESS_CODE' ? accessCode : k === 'ACCESS_CODE_CHINO' ? chinoCode : null)
+            })
+        },
         ContentService: {
             MimeType: { JSON: 'json' },
             createTextOutput: text => ({ text, setMimeType() { return this; } })
@@ -343,8 +351,8 @@ test('no access code: the page waits instead of calling the server; a wrong code
 });
 
 /** Two devices whose google.script.run talks to one real Code.gs (fake sheet). */
-function twoDevicesOnOneSheet({ legacyJson = null, legacyAt = '' } = {}) {
-    const server = loadCodeGs({ accessCode: 'test-code' });
+function twoDevicesOnOneSheet({ legacyJson = null, legacyAt = '', searchA = '', searchB = '', chinoCode = null } = {}) {
+    const server = loadCodeGs({ accessCode: 'test-code', chinoCode });
     if (legacyJson !== null) {
         const legacy = server.ctx.SpreadsheetApp.getActiveSpreadsheet().insertSheet('State');
         legacy.rows[0] = [legacyJson, legacyAt];
@@ -368,8 +376,8 @@ function twoDevicesOnOneSheet({ legacyJson = null, legacyAt = '' } = {}) {
         });
         return g;
     };
-    const A = loadApp({ withAppsScript: true, googleImpl: googleFor() });
-    const B = loadApp({ withAppsScript: true, googleImpl: googleFor() });
+    const A = loadApp({ withAppsScript: true, googleImpl: googleFor(), search: searchA });
+    const B = loadApp({ withAppsScript: true, googleImpl: googleFor(), search: searchB });
     const settle = () => {
         for (let i = 0; i < 50 && (pending.length || true); i++) {
             while (pending.length) pending.shift()();
@@ -437,4 +445,52 @@ test('data from an older, different app version in the sheet is replaced, and de
     assert.ok(slps(A).includes('SLP-FROM-A') && slps(A).includes('SLP-FROM-B'));
     assert.equal(slps(B), slps(A));
     assert.equal(A.run('lastCloudSaveFailed') || B.run('lastCloudSaveFailed'), false);
+});
+
+test('Code.gs: each warehouse needs its own access code and has its own tabs', () => {
+    const { ctx, sheets } = loadCodeGs({ accessCode: 'ont-code', chinoCode: 'chino-code' });
+    const call = (warehouse, key, fn, args = []) => ctx.api({ fn, args, key, warehouse });
+
+    assert.equal(call('CHINO', 'ont-code', 'loadBoardState').unauthorized, true, 'ONT code cannot open CHINO');
+    assert.equal(call('ONT', 'chino-code', 'loadBoardState').unauthorized, true, 'CHINO code cannot open ONT');
+    assert.equal(call('CHINO', 'chino-code', 'loadBoardState').ok, true);
+    assert.equal(ctx.api({ fn: 'loadBoardState', args: [], key: 'ont-code' }).ok, true, 'no warehouse = ONT (older pages)');
+    assert.equal(call('NOWHERE', 'ont-code', 'loadBoardState').ok, false);
+
+    const board = JSON.stringify({ columns: [], pallets: [{ id: 'c1', slp: 'SLP-CHINO' }], shippedPallets: [] });
+    assert.equal(call('CHINO', 'chino-code', 'saveBoardState', [board, '']).ok, true);
+    assert.equal(call('ONT', 'ont-code', 'loadBoardState').stateJson, null, 'ONT board untouched');
+    assert.match(call('CHINO', 'chino-code', 'loadBoardState').stateJson, /SLP-CHINO/);
+    assert.ok(sheets.has('StateChunks CHINO'), 'CHINO board saved in its own tab');
+
+    call('CHINO', 'chino-code', 'logScanEvents', [[{ id: 'ev1', action: 'SCAN', slp: 'SLP-CHINO' }]]);
+    assert.ok(sheets.has('Scan Log CHINO') && !sheets.has('Scan Log'));
+
+    const { ctx: noChino } = loadCodeGs({ accessCode: 'ont-code', chinoCode: null });
+    assert.match(noChino.api({ fn: 'loadBoardState', args: [], key: 'x', warehouse: 'CHINO' }).error, /ACCESS_CODE_CHINO/);
+});
+
+test('page: ?wh=CHINO opens the Chino board with its own storage and code', () => {
+    const { run, fake } = loadApp({ withAppsScript: true, search: '?wh=chino' });
+    assert.equal(run('WAREHOUSE_ID'), 'CHINO');
+    assert.equal(run('WAREHOUSE_NAME'), 'ONUS-CHINO');
+    assert.equal(run('STORAGE_KEY'), 'outbound_pallet_staging_v2_chino');
+    assert.equal(run('ACCESS_CODE_KEY'), 'outbound_access_code_v2_chino');
+    run('loadState({ isBackgroundPoll: false, silent: true })');
+    assert.ok(fake.calls.some(c => c.fn === 'loadBoardState'));
+    assert.ok(fake.calls.every(c => c.warehouse === 'CHINO'), 'every request is tagged CHINO');
+
+    const ont = loadApp({ withAppsScript: true });
+    assert.equal(ont.run('WAREHOUSE_ID'), 'ONT', 'default stays ONT');
+    assert.equal(ont.run('STORAGE_KEY'), 'outbound_pallet_staging_v2', 'ONT keeps its original storage');
+});
+
+test('an ONT device and a CHINO device never see each other\'s pallets', () => {
+    const { A, B, settle, slps } = twoDevicesOnOneSheet({ searchA: '', searchB: '?wh=CHINO', chinoCode: 'test-code' });
+    for (const d of [A, B]) { d.run('loadState({ isBackgroundPoll: false, silent: true })'); settle(); }
+    A.run(`addSlpToStaging({ slp: 'SLP-ONT-1', orderNumber: 'SO-1', columnId: 'col-s52' })`); settle();
+    B.run(`addSlpToStaging({ slp: 'SLP-CHINO-1', orderNumber: 'SO-2', columnId: 'col-s52' })`); settle();
+    for (let i = 0; i < 2; i++) for (const d of [A, B]) { d.run('loadState({ isBackgroundPoll: true, silent: true })'); settle(); }
+    assert.ok(slps(A).includes('SLP-ONT-1') && !slps(A).includes('SLP-CHINO-1'));
+    assert.ok(slps(B).includes('SLP-CHINO-1') && !slps(B).includes('SLP-ONT-1'));
 });
