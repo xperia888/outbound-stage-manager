@@ -20,6 +20,7 @@ Outbound pallet management app: ONUS-ONT Outbound Pallet Staging Manager (v2). A
 | `index.html` | The full app (HTML, Tailwind CSS, JavaScript) |
 | `Code.gs` | Apps Script backend: serves the page, stores board state in the `StateChunks` tab and writes the `Scan Log` tab |
 | `tests/board-sync.test.mjs` | Tests for sync, merge, scan log and handler escaping (`node --test`) |
+| `tests/e2e/` | Browser click-through tests (`npm test`) |
 
 ## One board on every link
 
@@ -70,6 +71,10 @@ Actions: `SCAN`, `MOVE`, `CONSOLIDATE`, `DOCK`, `SHIP` (To Lane = dock), `REMOVE
 - **Device** is a short ID saved in each browser (for example `Android-K3F9`). **User** is the Google account email, which Google only provides when the web app runs as the user accessing it, or within your Workspace domain.
 - SLP and order codes are stored as text, so leading zeros are kept.
 
+## Test board (writes test data to the sheet safely)
+
+`…/outbound-stage-manager/?wh=TEST` opens **ONUS-TEST**, a separate board for trying things out. It needs no access code, and it only writes to the `StateChunks TEST` and `Scan Log TEST` tabs. The server allows it only while Script Property **`TEST_MODE`** is `on`. Delete that property to close it again.
+
 ## Tests
 
 ```bash
@@ -77,3 +82,9 @@ node --test tests/board-sync.test.mjs
 ```
 
 Requires Node 18 or newer. No install needed.
+
+Browser click-through tests (two devices per warehouse, real `Code.gs` against an in-memory sheet, every main button and dialog):
+
+```bash
+cd tests/e2e && npm install && npm test     # needs Python 3 + Playwright and Google Chrome
+```
