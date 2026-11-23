@@ -1603,7 +1603,7 @@
     <!-- ===================================================================== -->
     <!-- MODAL 13: CONFIRMATION DIALOG                                         -->
     <!-- ===================================================================== -->
-    <div id="confirm-modal" class="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 hidden items-center justify-center p-2 sm:p-4">
+    <div id="confirm-modal" class="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-[60] hidden items-center justify-center p-2 sm:p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
             <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
                 <h2 id="confirm-modal-title" class="font-bold text-sm sm:text-base">Confirm Action</h2>
@@ -2783,6 +2783,40 @@
             return singleCount + Math.ceil(doubleCount / 2);
         }
 
+        /**
+         * How full a lane would be after adding/moving `incoming` pallets into it
+         * (pallets already in that lane aren't counted twice). Returns null if it still fits.
+         */
+        function getOverCapacityInfo(columnId, incoming) {
+            const col = appState.columns.find(c => c.id === columnId);
+            const capacity = Number(col?.capacity) || 0;
+            if (!col || capacity <= 0 || !incoming || incoming.length === 0) return null;
+            const incomingIds = new Set(incoming.map(p => p && p.id).filter(Boolean));
+            const staying = appState.pallets.filter(p => p.columnId === columnId && !incomingIds.has(p.id));
+            const after = computeFloorSpotsUsed([...staying, ...incoming]);
+            return after > capacity ? { col, after, capacity } : null;
+        }
+
+        /**
+         * Warns before a lane goes over its floor-spot capacity, but lets the user continue.
+         * Fits → runs `proceed` straight away. Over → asks first; "Put it anyway" runs it.
+         */
+        function confirmIfOverCapacity(columnId, incoming, proceed, onCancel = null) {
+            const over = getOverCapacityInfo(columnId, incoming);
+            if (!over) {
+                proceed();
+                return;
+            }
+            openConfirmModal(
+                `${over.col.name} is over capacity`,
+                `${over.col.name} would use ${over.after} of ${over.capacity} floor spots. Put it there anyway?`,
+                proceed,
+                'Put it anyway',
+                'red',
+                onCancel
+            );
+        }
+
         function computeDoubleStackPairMap(palletsList) {
             const map = new Map();
             const doublePallets = (palletsList || []).filter(p => p && p.doubleStacked);
@@ -3882,13 +3916,16 @@
             const slpInp = document.getElementById('quick-slp-input');
             const is2x = Boolean(document.getElementById('quick-doublestack-chk')?.checked);
             const slpVal = slpInp?.value;
+            if (!String(slpVal || '').trim()) return;
 
-            if (addSlpToStaging({ slp: slpVal, orderNumber: orderVal, columnId: colId, doubleStacked: is2x })) {
-                if (slpInp) {
-                    slpInp.value = '';
-                    slpInp.focus();
+            confirmIfOverCapacity(colId, [{ doubleStacked: is2x }], () => {
+                if (addSlpToStaging({ slp: slpVal, orderNumber: orderVal, columnId: colId, doubleStacked: is2x })) {
+                    if (slpInp) {
+                        slpInp.value = '';
+                        slpInp.focus();
+                    }
                 }
-            }
+            }, () => slpInp?.focus());
         }
 
         function openScannerModal() {
@@ -3983,14 +4020,18 @@
             const carrier = document.getElementById('pallet-carrier-input')?.value || '';
             const dest = document.getElementById('pallet-dest-input')?.value || '';
             const is2x = Boolean(document.getElementById('scanner-doublestack-chk')?.checked);
+            const slpVal = slpInp?.value;
+            if (!String(slpVal || '').trim()) return;
 
-            if (addSlpToStaging({ slp: slpInp?.value, orderNumber: ordVal, columnId: colId, carrier, destination: dest, doubleStacked: is2x })) {
-                if (slpInp) {
-                    slpInp.value = '';
-                    slpInp.focus();
+            confirmIfOverCapacity(colId, [{ doubleStacked: is2x }], () => {
+                if (addSlpToStaging({ slp: slpVal, orderNumber: ordVal, columnId: colId, carrier, destination: dest, doubleStacked: is2x })) {
+                    if (slpInp) {
+                        slpInp.value = '';
+                        slpInp.focus();
+                    }
+                    refreshScannerModalBatchSummary();
                 }
-                refreshScannerModalBatchSummary();
-            }
+            }, () => slpInp?.focus());
         }
 
         function handleBulkMultiSlpSubmit(event) {
@@ -4007,15 +4048,21 @@
                 showToast('Please paste at least one SLP code.', 'warning');
                 return;
             }
-            let added = 0;
-            tokens.forEach(tok => {
-                if (addSlpToStaging({ slp: tok, orderNumber: ordVal, columnId: colId, carrier, destination: dest, doubleStacked: is2x })) {
-                    added++;
-                }
+            // Count only SLPs that will really be added (not already on the board, no repeats)
+            const onBoard = new Set(appState.pallets.map(p => String(p.slp).toUpperCase()));
+            const newCodes = [...new Set(tokens.map(t => t.toUpperCase()))].filter(t => !onBoard.has(t));
+
+            confirmIfOverCapacity(colId, newCodes.map(() => ({ doubleStacked: is2x })), () => {
+                let added = 0;
+                tokens.forEach(tok => {
+                    if (addSlpToStaging({ slp: tok, orderNumber: ordVal, columnId: colId, carrier, destination: dest, doubleStacked: is2x })) {
+                        added++;
+                    }
+                });
+                if (ta) ta.value = '';
+                refreshScannerModalBatchSummary();
+                showToast(`Added ${added} of ${tokens.length} SLP(s)`, added > 0 ? 'success' : 'warning');
             });
-            if (ta) ta.value = '';
-            refreshScannerModalBatchSummary();
-            showToast(`Added ${added} of ${tokens.length} SLP(s)`, added > 0 ? 'success' : 'warning');
         }
 
         function startCameraQrScanner() {
@@ -4041,6 +4088,10 @@
                             const carrier = document.getElementById('pallet-carrier-input')?.value || '';
                             const dest = document.getElementById('pallet-dest-input')?.value || '';
                             const is2x = Boolean(document.getElementById('scanner-doublestack-chk')?.checked);
+                            const camOver = getOverCapacityInfo(colId, [{ doubleStacked: is2x }]);
+                            if (camOver) {
+                                showToast(`${camOver.col.name} is over capacity (${camOver.after}/${camOver.capacity} floor spots)`, 'warning');
+                            }
                             if (addSlpToStaging({ slp: decodedText, orderNumber: ordVal, columnId: colId, carrier, destination: dest, doubleStacked: is2x })) {
                                 refreshScannerModalBatchSummary();
                             }
@@ -4134,9 +4185,14 @@
             if (!dragInfo) return;
 
             if (dragInfo.type === 'group') {
-                moveGroupedOrderInLaneToColumn(dragInfo.orderNumber, dragInfo.sourceColumnId, targetColumnId);
+                const norm = normalizeOrderNumber(dragInfo.orderNumber);
+                const moving = appState.pallets.filter(p => p.columnId === dragInfo.sourceColumnId && normalizeOrderNumber(p.orderNumber) === norm);
+                confirmIfOverCapacity(targetColumnId, moving, () =>
+                    moveGroupedOrderInLaneToColumn(dragInfo.orderNumber, dragInfo.sourceColumnId, targetColumnId));
             } else if (dragInfo.palletId) {
-                movePalletToColumn(dragInfo.palletId, targetColumnId);
+                const pallet = appState.pallets.find(p => p.id === dragInfo.palletId);
+                confirmIfOverCapacity(targetColumnId, pallet ? [pallet] : [], () =>
+                    movePalletToColumn(dragInfo.palletId, targetColumnId));
             }
         }
 
@@ -4264,8 +4320,12 @@
 
         function handleDetailMoveLocation(newColId) {
             if (!activeDetailPalletId) return;
-            movePalletToColumn(activeDetailPalletId, newColId);
-            openPalletDetailModal(activeDetailPalletId);
+            const palletId = activeDetailPalletId;
+            const pallet = appState.pallets.find(p => p.id === palletId);
+            confirmIfOverCapacity(newColId, pallet ? [pallet] : [], () => {
+                movePalletToColumn(palletId, newColId);
+                openPalletDetailModal(palletId);
+            }, () => openPalletDetailModal(palletId)); // cancelled: show the lane it's still in
         }
 
         function openEditOrderModalFromDetail() {
@@ -4532,14 +4592,40 @@
             const origOrd = document.getElementById('edit-order-original-number')?.value;
             const slpInp = document.getElementById('edit-order-new-slp-input');
             const locSel = document.getElementById('edit-order-new-slp-location');
-            if (addSlpToStaging({ slp: slpInp?.value, orderNumber: origOrd, columnId: locSel?.value })) {
-                if (slpInp) slpInp.value = '';
-                renderEditOrderSlpRows(origOrd);
-            }
+            const slpVal = slpInp?.value;
+            if (!String(slpVal || '').trim()) return;
+            confirmIfOverCapacity(locSel?.value, [{ doubleStacked: false }], () => {
+                if (addSlpToStaging({ slp: slpVal, orderNumber: origOrd, columnId: locSel?.value })) {
+                    if (slpInp) slpInp.value = '';
+                    renderEditOrderSlpRows(origOrd);
+                }
+            });
         }
 
-        function handleSaveEditedOrder(event) {
+        function handleSaveEditedOrder(event, capacityConfirmed = false) {
             event.preventDefault();
+            if (!capacityConfirmed) {
+                const moves = Array.from(document.querySelectorAll('.edit-order-slp-loc-sel'))
+                    .map(sel => ({ pallet: appState.pallets.find(p => p.id === sel.dataset.slpId), to: sel.value }))
+                    .filter(m => m.pallet && m.to && m.to !== m.pallet.columnId);
+                const stackChk = id => document.querySelector(`.edit-order-slp-2x-chk[data-slp-id="${CSS.escape(id)}"]`);
+                const overLanes = [...new Set(moves.map(m => m.to))]
+                    .map(colId => getOverCapacityInfo(colId, moves.filter(m => m.to === colId).map(m => ({
+                        ...m.pallet,
+                        doubleStacked: stackChk(m.pallet.id) ? stackChk(m.pallet.id).checked : m.pallet.doubleStacked
+                    }))))
+                    .filter(Boolean);
+                if (overLanes.length > 0) {
+                    openConfirmModal(
+                        overLanes.length === 1 ? `${overLanes[0].col.name} is over capacity` : 'Lanes over capacity',
+                        overLanes.map(o => `${o.col.name} would use ${o.after} of ${o.capacity} floor spots.`).join(' ') + ' Save anyway?',
+                        () => handleSaveEditedOrder({ preventDefault() {} }, true),
+                        'Save anyway',
+                        'red'
+                    );
+                    return;
+                }
+            }
             const origOrd = document.getElementById('edit-order-original-number').value;
             const newOrd = normalizeOrderNumber(document.getElementById('edit-order-number-input').value);
             const dock = document.getElementById('edit-order-dock-input').value.trim().toUpperCase();
@@ -6131,11 +6217,13 @@
         }
 
         let confirmModalAction = null;
+        let confirmModalCancel = null;
 
-        function openConfirmModal(title, message, onConfirm, okLabel = 'Confirm', okColor = 'red') {
+        function openConfirmModal(title, message, onConfirm, okLabel = 'Confirm', okColor = 'red', onCancel = null) {
             document.getElementById('confirm-modal-title').textContent = title;
             document.getElementById('confirm-modal-message').textContent = message;
             confirmModalAction = onConfirm;
+            confirmModalCancel = onCancel;
 
             const okBtn = document.getElementById('confirm-modal-ok-btn');
             if (okBtn) {
@@ -6145,6 +6233,7 @@
                     : 'px-4 py-1.5 text-xs font-extrabold bg-red-600 hover:bg-red-500 text-white rounded-lg cursor-pointer';
                 okBtn.onclick = () => {
                     const fn = confirmModalAction;
+                    confirmModalCancel = null; // confirmed, not cancelled
                     closeConfirmModal();
                     if (typeof fn === 'function') fn();
                 };
@@ -6156,12 +6245,15 @@
         }
 
         function closeConfirmModal() {
+            const onCancel = confirmModalCancel;
             confirmModalAction = null;
+            confirmModalCancel = null;
             const modal = document.getElementById('confirm-modal');
             if (modal) {
                 modal.classList.add('hidden');
                 modal.classList.remove('flex');
             }
+            if (typeof onCancel === 'function') onCancel();
         }
 
         function showToast(message, type = 'info') {

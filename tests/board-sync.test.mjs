@@ -521,3 +521,34 @@ test('page ?wh=TEST syncs without asking for a code', () => {
     assert.equal(boxShown, 0);
 });
 
+
+test('over-capacity check counts floor spots (2x pairs = 1 spot) and ignores pallets already in the lane', () => {
+    const { run } = loadApp();
+    run(`appState.columns = [{ id: 'L1', name: 'L1', capacity: 2 }, { id: 'L2', name: 'L2', capacity: 8 }];
+         appState.pallets = [${JSON.stringify(pallet('a', 'SLP-A', { columnId: 'L1' }))}, ${JSON.stringify(pallet('b', 'SLP-B', { columnId: 'L1' }))}];`);
+    assert.equal(run(`getOverCapacityInfo('L1', [{ doubleStacked: false }])?.after`), 3, 'third single pallet → 3 of 2');
+    assert.equal(run(`getOverCapacityInfo('L2', [{ doubleStacked: false }])`), null, 'fits');
+    assert.equal(run(`getOverCapacityInfo('L1', [appState.pallets[0]])`), null, 'a pallet already in the lane is not counted twice');
+    run(`appState.pallets = [${JSON.stringify(pallet('c', 'SLP-C', { columnId: 'L1', doubleStacked: true }))}, ${JSON.stringify(pallet('d', 'SLP-D', { columnId: 'L1' }))}];`);
+    assert.equal(run(`getOverCapacityInfo('L1', [{ doubleStacked: true }])`), null, '2x pallet pairs with the existing 2x → still 2 spots');
+    assert.equal(run(`getOverCapacityInfo('L1', [{ doubleStacked: false }])?.after`), 3);
+});
+
+test('quick scan into a full lane asks first; "Put it anyway" adds it, cancel does not', () => {
+    const { run, ctx } = loadApp();
+    run(`appState.columns = [{ id: 'L1', name: 'L1', capacity: 1 }];
+         appState.pallets = [${JSON.stringify(pallet('a', 'SLP-A', { columnId: 'L1' }))}];`);
+    const fields = { 'quick-scan-location': { value: 'L1' }, 'quick-order-input': { value: 'SO-9' }, 'quick-slp-input': { value: 'SLP-NEW', focus() {} }, 'quick-doublestack-chk': { checked: false } };
+    ctx.document.getElementById = id => fields[id] || null;
+    run(`openConfirmModal = (title, message, onConfirm, okLabel, okColor, onCancel) => { globalThis.__confirm = { title, message, onConfirm, onCancel }; }`);
+
+    run(`handleQuickScanSubmit({ preventDefault() {} })`);
+    assert.match(run('__confirm.message'), /L1 would use 2 of 1 floor spots/);
+    assert.equal(run(`appState.pallets.some(p => p.slp === 'SLP-NEW')`), false, 'nothing added before answering');
+    run('__confirm.onCancel()');
+    assert.equal(run(`appState.pallets.some(p => p.slp === 'SLP-NEW')`), false, 'cancel → not added');
+
+    run(`handleQuickScanSubmit({ preventDefault() {} })`);
+    run('__confirm.onConfirm()');
+    assert.equal(run(`appState.pallets.find(p => p.slp === 'SLP-NEW')?.columnId`), 'L1', '"Put it anyway" → added');
+});

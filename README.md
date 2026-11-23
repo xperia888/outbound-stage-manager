@@ -53,6 +53,14 @@ A device remembers the last warehouse it opened. A code only opens its own wareh
 
 Board state is saved to the `StateChunks` tab, split across rows to stay under the 50,000-character cell limit. Data from the old single-cell `State!A1` layout is read once if `StateChunks` is empty.
 
+## Over-capacity warning
+
+When a scan or move would put a lane over its floor-spot capacity (2x-stacked pairs count as one spot), the page warns first, for example "T2 would use 5 of 4 floor spots. Put it there anyway?".
+- **Put it anyway** places it.
+- **Cancel** leaves everything as it was.
+- Bulk scans warn once for the whole batch.
+- Camera scanning shows a warning message instead of stopping the camera.
+
 ## Multi-device sync
 
 Each save sends the cloud version the device last saw. If another device saved in the meantime, the server returns its board instead of overwriting it. The page then merges the two boards, keeping scans, moves and shipments from both devices, and saves again. A pallet shipped on one device stays shipped even if another device edited it.
