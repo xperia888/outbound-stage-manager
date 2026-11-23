@@ -11,6 +11,7 @@
  *   TEST  → no code, but only while Script Property TEST_MODE is "on";
  *           tabs "StateChunks TEST" and "Scan Log TEST" (for trying the app safely)
  * A request only reaches the warehouse whose code it carries.
+ * api({ fn: 'resolveWarehouse', key }) tells the page which warehouse a code opens.
  *
  * The board JSON is split across many cells (a single cell holds max 50,000
  * characters), so the board can grow without saves failing.
@@ -61,6 +62,10 @@ function doPost(e) {
  */
 function api(request) {
   const req = request || {};
+
+  // Which warehouse does this access code open? Lets the page pick the warehouse from the code.
+  if (req.fn === 'resolveWarehouse') return resolveWarehouse_(req.key);
+
   const whId = String(req.warehouse || 'ONT').toUpperCase();
   if (!WAREHOUSES_[whId]) return { ok: false, error: 'Unknown warehouse: ' + whId };
   ACTIVE_WH_ = WAREHOUSES_[whId];
@@ -79,6 +84,21 @@ function api(request) {
     return { ok: false, unauthorized: true, error: 'Wrong or missing access code' };
   }
   return runRequest_(req);
+}
+
+/** Returns the warehouse whose access code matches, or unauthorized. TEST is never matched by a code. */
+function resolveWarehouse_(key) {
+  const code = String(key || '');
+  if (!code) return { ok: false, unauthorized: true, error: 'Missing access code' };
+  const props = PropertiesService.getScriptProperties();
+  const ids = Object.keys(WAREHOUSES_);
+  for (let i = 0; i < ids.length; i++) {
+    const prop = WAREHOUSES_[ids[i]].codeProperty;
+    if (!prop) continue;
+    const expected = props.getProperty(prop);
+    if (expected && String(expected) === code) return { ok: true, warehouse: ids[i] };
+  }
+  return { ok: false, unauthorized: true, error: 'Access code not recognized' };
 }
 
 function runRequest_(req) {
