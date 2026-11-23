@@ -93,6 +93,16 @@ async def wait_for(page, js, timeout=15000):
     return False
 
 
+async def accept_capacity_warning(page):
+    """Regular steps: if a lane is full, answer the over-capacity warning with "Put it anyway"."""
+    await page.wait_for_timeout(250)
+    if await page.is_visible('#confirm-modal-ok-btn') and 'over capacity' in (await page.text_content('#confirm-modal-title') or ''):
+        await page.click('#confirm-modal-ok-btn')
+        await page.wait_for_timeout(350)
+        return True
+    return False
+
+
 async def enter_code(page, code):
     await page.wait_for_selector('#access-code-input', timeout=8000)
     await page.fill('#access-code-input', code)
@@ -133,11 +143,13 @@ async def run_round(browser, wh, rnd, devices):
     await A.fill('#quick-order-input', order)
     await A.fill('#quick-slp-input', f'SLP-{tag}-001')
     await A.press('#quick-slp-input', 'Enter')
-    await A.wait_for_timeout(500)
+    await accept_capacity_warning(A)
+    await A.wait_for_timeout(300)
     await A.check('#quick-doublestack-chk')
     await A.fill('#quick-slp-input', f'SLP-{tag}-002')
     await A.press('#quick-slp-input', 'Enter')
-    await A.wait_for_timeout(500)
+    await accept_capacity_warning(A)
+    await A.wait_for_timeout(300)
     await A.uncheck('#quick-doublestack-chk')
     s = await slps(A)
     ds = await state(A, f"appState.pallets.find(p => p.slp === 'SLP-{tag}-002')?.doubleStacked")
@@ -155,10 +167,12 @@ async def run_round(browser, wh, rnd, devices):
     await A.fill('#pallet-dest-input', 'Phoenix DC')
     await A.fill('#bulk-slp-textarea', f'SLP-{tag}-101, SLP-{tag}-102\nSLP-{tag}-103')
     await A.locator('form[onsubmit^="handleBulkMultiSlpSubmit"] button[type=submit]').click()
-    await A.wait_for_timeout(500)
+    await accept_capacity_warning(A)
+    await A.wait_for_timeout(300)
     await A.fill('#manual-slp-input', f'SLP-{tag}-104')
     await A.press('#manual-slp-input', 'Enter')
-    await A.wait_for_timeout(400)
+    await accept_capacity_warning(A)
+    await A.wait_for_timeout(200)
     await close_open_modals(A)
     s = await slps(A)
     bulk_ok = all(f'SLP-{tag}-{n}' in s for n in (101, 102, 103, 104))
@@ -187,7 +201,8 @@ async def run_round(browser, wh, rnd, devices):
     target = next((o for o in move_opts if o != before_col), None)
     if target:
         await B.select_option('#detail-move-select', target)
-        await B.wait_for_timeout(500)
+        await accept_capacity_warning(B)
+        await B.wait_for_timeout(300)
     await close_open_modals(B)
     after_col = await state(B, f"appState.pallets.find(p => p.id === {json.dumps(pid)})?.columnId")
     record(wh, rnd, 'Pallet detail: move to another lane', target and after_col == target, f'{before_col} → {after_col}')
@@ -202,8 +217,10 @@ async def run_round(browser, wh, rnd, devices):
     await A.fill('#edit-order-dock-input', 'DOCK-07')
     await A.fill('#edit-order-new-slp-input', f'SLP-{tag}-105')
     await click_fn(A, 'handleAddSlpInsideEditOrder')
+    await accept_capacity_warning(A)
     await A.locator('form[onsubmit^="handleSaveEditedOrder"] button[type=submit]').click()
-    await A.wait_for_timeout(500)
+    await accept_capacity_warning(A)
+    await A.wait_for_timeout(300)
     await close_open_modals(A)
     docks = await state(A, f"[...new Set(appState.pallets.filter(p => p.orderNumber === {json.dumps(border)}).map(p => p.dockNumber))]")
     record(wh, rnd, 'Edit order: set dock for whole order', docks == ['DOCK-07'], docks)
@@ -246,10 +263,10 @@ async def run_round(browser, wh, rnd, devices):
     record(wh, rnd, 'Docks: add dock', await state(A, f"appState.docks.includes('DOCK-9{rnd}')"))
 
     # --- Batch: add lanes, then batch capacity ---------------------------------------------------------
+    prefix = 'T' if wh == 'ONT' else 'C'
     if rnd == 1:
         await A.click('button:has-text("Batch")')
         await A.wait_for_timeout(300)
-        prefix = 'T' if wh == 'ONT' else 'C'
         await A.fill('#batch-prefix-input', prefix)
         await A.fill('#batch-start-num-input', '1')
         await A.fill('#batch-end-num-input', '2')
@@ -272,6 +289,70 @@ async def run_round(browser, wh, rnd, devices):
         await A.wait_for_timeout(400)
         c = await state(A, f"appState.columns.find(c => c.id === {json.dumps(col)})")
         record(wh, rnd, 'Edit lane: rename + capacity', c and c['name'] == f'{prefix}-RENAMED' and int(c['capacity']) == 6, c)
+        await close_open_modals(A)
+
+    # --- Over-capacity warning (rnd 1): warn, allow continue, cancel keeps things as they were ---------
+    if rnd == 1:
+        lane = await state(A, f"appState.columns.find(c => c.name.startsWith('{prefix}') && Number(c.capacity) === 4)?.id")
+        lane_name = await state(A, f"appState.columns.find(c => c.id === {json.dumps(lane)}).name")
+
+        async def quick_into_lane(code):
+            # Order first (typing it auto-picks a lane), then choose the lane by hand, like on the floor
+            await A.fill('#quick-order-input', f'SO-{tag}-CAP')
+            await A.select_option('#quick-scan-location', lane)
+            await A.fill('#quick-slp-input', code)
+            await A.press('#quick-slp-input', 'Enter')
+            await A.wait_for_timeout(350)
+
+        for n in range(1, 5):  # fill the 4-spot lane
+            await quick_into_lane(f'SLP-{tag}-CAP{n}')
+        in_lane = lambda: state(A, f"appState.pallets.filter(p => p.columnId === {json.dumps(lane)}).length")
+        dbg = await state(A, f"({{lane: {json.dumps(lane)}, cols: appState.columns.map(c => c.name + ':' + c.capacity).join(' '), inLane: appState.pallets.filter(p => p.columnId === {json.dumps(lane)}).map(p => p.slp), sel: document.getElementById('quick-scan-location').value, confirm: document.getElementById('confirm-modal-message').textContent}})")
+        record(wh, rnd, 'Capacity: lane filled to 4/4 without any warning', await in_lane() == 4 and not await A.is_visible('#confirm-modal'), dbg)
+
+        await quick_into_lane(f'SLP-{tag}-CAP5')
+        shown = await A.is_visible('#confirm-modal')
+        msg = (await A.text_content('#confirm-modal-message') or '').strip()
+        record(wh, rnd, 'Capacity: 5th quick scan shows the warning', shown and f'{lane_name} would use 5 of 4' in msg, msg)
+        await A.locator('#confirm-modal button:has-text("Cancel")').click()
+        await A.wait_for_timeout(300)
+        record(wh, rnd, 'Capacity: Cancel → not added', await in_lane() == 4 and not await A.is_visible('#confirm-modal'))
+
+        await quick_into_lane(f'SLP-{tag}-CAP5')
+        await A.click('#confirm-modal-ok-btn')
+        await A.wait_for_timeout(400)
+        record(wh, rnd, 'Capacity: "Put it anyway" → added (5/4)', await in_lane() == 5 and f'SLP-{tag}-CAP5' in await slps(A))
+
+        # Bulk scan into the already-full lane → one warning for the batch
+        await A.click('button:has-text("Multi-SLP Scan")')
+        await A.wait_for_timeout(300)
+        await A.fill('#scanner-order-input', f'SO-{tag}-CAP')
+        await A.select_option('#scanner-location-select', lane)
+        await A.uncheck('#scanner-doublestack-chk')
+        await A.fill('#bulk-slp-textarea', f'SLP-{tag}-CAP6, SLP-{tag}-CAP7')
+        await A.locator('form[onsubmit^="handleBulkMultiSlpSubmit"] button[type=submit]').click()
+        await A.wait_for_timeout(300)
+        msg = (await A.text_content('#confirm-modal-message') or '').strip()
+        on_top = await A.is_visible('#confirm-modal-ok-btn')
+        record(wh, rnd, 'Capacity: bulk scan warns once, on top of the scan window', on_top and 'would use 7 of 4' in msg, msg)
+        await A.click('#confirm-modal-ok-btn')
+        await A.wait_for_timeout(400)
+        await close_open_modals(A)
+        record(wh, rnd, 'Capacity: bulk "Put it anyway" adds both', await in_lane() == 7)
+
+        # Move a pallet into the full lane from the detail dialog → Cancel keeps it where it was
+        mover = await state(A, f"appState.pallets.find(p => p.columnId !== {json.dumps(lane)})")
+        await A.evaluate(f"openPalletDetailModal({json.dumps(mover['id'])})")
+        await A.wait_for_timeout(300)
+        await A.select_option('#detail-move-select', lane)
+        await A.wait_for_timeout(300)
+        warned = await A.is_visible('#confirm-modal')
+        await A.locator('#confirm-modal button:has-text("Cancel")').click()
+        await A.wait_for_timeout(300)
+        still = await state(A, f"appState.pallets.find(p => p.id === {json.dumps(mover['id'])}).columnId")
+        shown_lane = await A.input_value('#detail-move-select')
+        record(wh, rnd, 'Capacity: detail move warns; Cancel leaves pallet and dropdown unchanged',
+               warned and still == mover['columnId'] and shown_lane == mover['columnId'], f'{still} / {shown_lane}')
         await close_open_modals(A)
 
     # --- Dwell alert settings ---------------------------------------------------------------------------
@@ -369,6 +450,7 @@ async def run_round(browser, wh, rnd, devices):
     await A.fill('#quick-slp-input', f'SLP-{tag}-A')
     await B.fill('#quick-slp-input', f'SLP-{tag}-B')
     await asyncio.gather(A.press('#quick-slp-input', 'Enter'), B.press('#quick-slp-input', 'Enter'))
+    await asyncio.gather(accept_capacity_warning(A), accept_capacity_warning(B))
     want = f"['SLP-{tag}-A','SLP-{tag}-B'].every(x => appState.pallets.some(p => p.slp === x))"
     okA = await wait_for(A, want, 25000)
     okB = await wait_for(B, want, 25000)
@@ -381,7 +463,14 @@ async def run_round(browser, wh, rnd, devices):
     record(wh, rnd, 'No JavaScript errors on either device', not A.errors and not B.errors, (A.errors + B.errors)[:2])
 
 
+def build_css():
+    """Rebuild tw.css from index.html every run, so new Tailwind classes (e.g. z-[60]) exist in tests too."""
+    (E2E / 'in.css').write_text('@tailwind base;@tailwind components;@tailwind utilities;')
+    subprocess.run(['npx', 'tailwindcss', '-i', 'in.css', '-o', 'tw.css', '--minify'], cwd=E2E, check=True, capture_output=True)
+
+
 async def main():
+    build_css()
     site = http.server.ThreadingHTTPServer(('127.0.0.1', SITE_PORT), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(REPO)))
     site.RequestHandlerClass.log_message = lambda *a: None
     threading.Thread(target=site.serve_forever, daemon=True).start()
