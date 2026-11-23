@@ -2239,7 +2239,30 @@
          * Apps Script page, or a POST to CLOUD_API_URL elsewhere. A wrong access code is
          * cleared so the device asks again on the next manual sync.
          */
-        function callCloud(fn, args, onSuccess, onFailure, { interactive = false, key = null } = {}) {
+        // A request to Apps Script that never answers must not block syncing forever
+        const CLOUD_TIMEOUT_MS = 25000;
+
+        function callCloud(fn, args, onSuccessRaw, onFailureRaw, { interactive = false, key = null } = {}) {
+            // Settle exactly once: an answer, an error, or the time limit, whichever comes first
+            let settled = false;
+            let timeoutId = null;
+            let abortCtl = null;
+            const settle = (fnToCall) => (value) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeoutId);
+                fnToCall(value);
+            };
+            const onSuccess = settle(onSuccessRaw);
+            const onFailure = settle(onFailureRaw);
+            timeoutId = setTimeout(() => {
+                if (abortCtl) {
+                    try { abortCtl.abort(); } catch (e) { /* already done */ }
+                }
+                console.error('[Cloud Timeout]', fn);
+                onFailure(new Error(`No answer from Google Sheets after ${CLOUD_TIMEOUT_MS / 1000}s`));
+            }, CLOUD_TIMEOUT_MS);
+
             const request = { fn, args, key: key !== null ? key : getAccessCode({ interactive }), warehouse: WAREHOUSE_ID };
             if (!request.key) {
                 // No code on this device yet: don't hit the server until someone enters it
@@ -2271,10 +2294,12 @@
                 return;
             }
             // text/plain avoids a CORS preflight, which Apps Script can't answer
+            abortCtl = typeof AbortController === 'function' ? new AbortController() : null;
             fetch(CLOUD_API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(request)
+                body: JSON.stringify(request),
+                signal: abortCtl ? abortCtl.signal : undefined
             })
                 .then(r => r.json())
                 .then(handleResult)
@@ -2475,9 +2500,21 @@
             const b = base || {};
             const merged = { ...remote };
 
-            ['layoutMode', 'autoResize', 'columnWidth', 'cardGroupMode', 'carriers', 'docks', 'dwellSettings'].forEach(key => {
+            ['layoutMode', 'autoResize', 'columnWidth', 'cardGroupMode', 'dwellSettings'].forEach(key => {
                 const changedHere = base && JSON.stringify(local[key]) !== JSON.stringify(b[key]);
                 merged[key] = changedHere ? local[key] : remote[key];
+            });
+
+            // Docks and carriers are lists: keep what either side added, drop only what this
+            // device removed (with no base, keep everything from both sides)
+            ['docks', 'carriers'].forEach(key => {
+                const baseList = Array.isArray(b[key]) ? b[key] : [];
+                const localList = Array.isArray(local[key]) ? local[key] : [];
+                const remoteList = Array.isArray(remote[key]) ? remote[key] : [];
+                const removedHere = new Set(baseList.filter(x => !localList.includes(x)));
+                const out = remoteList.filter(x => !removedHere.has(x));
+                localList.forEach(x => { if (!out.includes(x)) out.push(x); });
+                merged[key] = out;
             });
 
             merged.columns = mergeRecordsById(b.columns, local.columns, remote.columns, c => c.id);
