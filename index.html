@@ -1819,7 +1819,9 @@
          */
         const WAREHOUSES = {
             ONT: { id: 'ONT', name: 'ONUS-ONT', suffix: '' },
-            CHINO: { id: 'CHINO', name: 'ONUS-CHINO', suffix: '_chino' }
+            CHINO: { id: 'CHINO', name: 'ONUS-CHINO', suffix: '_chino' },
+            // Test board (?wh=TEST): no access code; the server only allows it while TEST_MODE is on
+            TEST: { id: 'TEST', name: 'ONUS-TEST', suffix: '_test', noCode: true }
         };
         const ACTIVE_WAREHOUSE_KEY = 'outbound_active_warehouse';
 
@@ -2143,6 +2145,7 @@
         }
 
         function getAccessCode({ interactive = false } = {}) {
+            if (WAREHOUSES[WAREHOUSE_ID].noCode) return 'test-mode';
             const code = safeStorageGet(ACCESS_CODE_KEY) || '';
             if (!code && interactive) showAccessCodeBox();
             return code;
@@ -4561,7 +4564,11 @@
                     }
                 }
                 p.orderNumber = newOrd;
-                p.dockNumber = dock;
+                if ((p.dockNumber || '') !== dock) {
+                    const dockCol = appState.columns.find(c => c.id === p.columnId);
+                    p.dockNumber = dock;
+                    logScanEvent('DOCK', p, { fromLane: dockCol ? dockCol.name : '', toLane: dock });
+                }
                 p.carrier = carrier;
                 p.destination = destination;
                 p.notes = notes;
@@ -6185,8 +6192,21 @@
             document.title = document.title.replace('ONUS-ONT', WAREHOUSE_NAME);
             document.querySelectorAll('.wh-name').forEach(el => { el.textContent = WAREHOUSE_NAME; });
             const select = document.getElementById('warehouse-select');
+            if (select && WAREHOUSE_ID === 'TEST' && !select.querySelector('option[value="TEST"]')) {
+                const opt = document.createElement('option');
+                opt.value = 'TEST';
+                opt.textContent = 'ONUS-TEST';
+                opt.className = 'bg-slate-900 text-rose-200';
+                select.appendChild(opt);
+            }
             if (select) select.value = WAREHOUSE_ID;
             const chip = document.getElementById('warehouse-chip');
+            if (chip && WAREHOUSE_ID === 'TEST') {
+                chip.className = chip.className
+                    .replace('bg-sky-500/20', 'bg-rose-500/30')
+                    .replace('text-sky-300', 'text-rose-200')
+                    .replace('border-sky-500/40', 'border-rose-400/70');
+            }
             if (chip && WAREHOUSE_ID === 'CHINO') {
                 // Different colour so nobody scans into the wrong warehouse by accident
                 chip.className = chip.className

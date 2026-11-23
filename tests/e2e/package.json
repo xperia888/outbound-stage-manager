@@ -1,0 +1,10 @@
+{
+  "name": "outbound-stage-manager-e2e",
+  "private": true,
+  "description": "Click-through browser tests for index.html against the real Code.gs (in-memory sheet)",
+  "scripts": {
+    "css": "printf '@tailwind base;@tailwind components;@tailwind utilities;' > in.css && tailwindcss -i in.css -o tw.css --minify",
+    "test": "npm run css && python3 run_e2e.py 3"
+  },
+  "dependencies": { "tailwindcss": "3.4.19", "lucide": "1.78.0", "html5-qrcode": "2.3.8" }
+}

@@ -8,6 +8,8 @@
  * Each warehouse has its own board, Scan Log tab and access code (Script Properties):
  *   ONT   → ACCESS_CODE,       tabs "StateChunks" and "Scan Log"
  *   CHINO → ACCESS_CODE_CHINO, tabs "StateChunks CHINO" and "Scan Log CHINO"
+ *   TEST  → no code, but only while Script Property TEST_MODE is "on";
+ *           tabs "StateChunks TEST" and "Scan Log TEST" (for trying the app safely)
  * A request only reaches the warehouse whose code it carries.
  *
  * The board JSON is split across many cells (a single cell holds max 50,000
@@ -20,7 +22,9 @@
 /** Per-warehouse storage. ONT keeps the original tab names so existing data stays put. */
 const WAREHOUSES_ = {
   ONT: { codeProperty: 'ACCESS_CODE', stateSheet: 'StateChunks', scanLogSheet: 'Scan Log', legacySheet: 'State' },
-  CHINO: { codeProperty: 'ACCESS_CODE_CHINO', stateSheet: 'StateChunks CHINO', scanLogSheet: 'Scan Log CHINO', legacySheet: null }
+  CHINO: { codeProperty: 'ACCESS_CODE_CHINO', stateSheet: 'StateChunks CHINO', scanLogSheet: 'Scan Log CHINO', legacySheet: null },
+  // Test board: no access code, open only while TEST_MODE is "on". Delete TEST_MODE to close it.
+  TEST: { codeProperty: null, stateSheet: 'StateChunks TEST', scanLogSheet: 'Scan Log TEST', legacySheet: null }
 };
 let ACTIVE_WH_ = WAREHOUSES_.ONT; // set per request by api(); each request runs on its own
 const CHUNK_SIZE = 40000;            // safely under the 50,000-char cell limit
@@ -61,6 +65,12 @@ function api(request) {
   if (!WAREHOUSES_[whId]) return { ok: false, error: 'Unknown warehouse: ' + whId };
   ACTIVE_WH_ = WAREHOUSES_[whId];
 
+  if (!ACTIVE_WH_.codeProperty) {
+    const testMode = String(PropertiesService.getScriptProperties().getProperty('TEST_MODE') || '').toLowerCase();
+    if (testMode !== 'on') return { ok: false, error: 'Test mode is off (set Script Property TEST_MODE to "on")' };
+    return runRequest_(req);
+  }
+
   const expected = PropertiesService.getScriptProperties().getProperty(ACTIVE_WH_.codeProperty);
   if (!expected) {
     return { ok: false, error: 'Set ' + ACTIVE_WH_.codeProperty + ' in Apps Script → Project Settings → Script Properties' };
@@ -68,6 +78,10 @@ function api(request) {
   if (String(req.key || '') !== String(expected)) {
     return { ok: false, unauthorized: true, error: 'Wrong or missing access code' };
   }
+  return runRequest_(req);
+}
+
+function runRequest_(req) {
   const args = Array.isArray(req.args) ? req.args : [];
   switch (req.fn) {
     case 'loadBoardState': return loadBoardState_();

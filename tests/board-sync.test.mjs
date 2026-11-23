@@ -210,7 +210,7 @@ test('scan log: nothing is queued in Local Mode', () => {
     assert.equal(run('scanLogQueue.length'), 0);
 });
 
-function loadCodeGs({ accessCode = 'secret-1', chinoCode = null } = {}) {
+function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null } = {}) {
     const code = readFileSync(new URL('../Code.gs', import.meta.url), 'utf8');
     const sheets = new Map();
     const makeSheet = () => {
@@ -263,7 +263,7 @@ function loadCodeGs({ accessCode = 'secret-1', chinoCode = null } = {}) {
         Session: { getActiveUser: () => ({ getEmail: () => 'lead@example.com' }) },
         PropertiesService: {
             getScriptProperties: () => ({
-                getProperty: k => (k === 'ACCESS_CODE' ? accessCode : k === 'ACCESS_CODE_CHINO' ? chinoCode : null)
+                getProperty: k => (k === 'ACCESS_CODE' ? accessCode : k === 'ACCESS_CODE_CHINO' ? chinoCode : k === 'TEST_MODE' ? testMode : null)
             })
         },
         ContentService: {
@@ -494,3 +494,30 @@ test('an ONT device and a CHINO device never see each other\'s pallets', () => {
     assert.ok(slps(A).includes('SLP-ONT-1') && !slps(A).includes('SLP-CHINO-1'));
     assert.ok(slps(B).includes('SLP-CHINO-1') && !slps(B).includes('SLP-ONT-1'));
 });
+
+test('Code.gs TEST board: closed unless TEST_MODE is on, and only writes its own tabs', () => {
+    const closed = loadCodeGs({ accessCode: 'ont-code', testMode: null });
+    const res = closed.ctx.api({ fn: 'loadBoardState', args: [], warehouse: 'TEST' });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /TEST_MODE/);
+    assert.ok(!res.unauthorized, 'not treated as a wrong code');
+
+    const { ctx, sheets } = loadCodeGs({ accessCode: 'ont-code', testMode: 'on' });
+    const board = JSON.stringify({ columns: [], pallets: [{ id: 't1', slp: 'SLP-TEST' }], shippedPallets: [] });
+    assert.equal(ctx.api({ fn: 'saveBoardState', args: [board, ''], warehouse: 'TEST' }).ok, true, 'no code needed');
+    ctx.api({ fn: 'logScanEvents', args: [[{ id: 't-ev', action: 'SCAN', slp: 'SLP-TEST' }]], warehouse: 'TEST' });
+    assert.ok(sheets.has('StateChunks TEST') && sheets.has('Scan Log TEST'));
+    assert.equal(ctx.api({ fn: 'loadBoardState', args: [], key: 'ont-code' }).stateJson, null, 'ONT untouched');
+    assert.equal(ctx.api({ fn: 'loadBoardState', args: [], key: 'wrong', warehouse: 'ONT' }).unauthorized, true, 'ONT still needs its code');
+});
+
+test('page ?wh=TEST syncs without asking for a code', () => {
+    const { run, fake } = loadApp({ withAppsScript: true, accessCode: '', search: '?wh=TEST' });
+    let boxShown = 0;
+    run('showAccessCodeBox = () => {}');
+    run('loadState({ isBackgroundPoll: false, silent: true })');
+    assert.equal(run('WAREHOUSE_NAME'), 'ONUS-TEST');
+    assert.ok(fake.calls.length > 0 && fake.calls.every(c => c.warehouse === 'TEST'));
+    assert.equal(boxShown, 0);
+});
+
