@@ -50,6 +50,7 @@ function createFakeAppsScript() {
 
 function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl = '', fetchImpl = null, googleImpl = null, search = '' } = {}) {
     const timers = [];
+    const longTimers = []; // e.g. the 25 s request time limit: only fired when a test asks
     const storage = () => {
         const data = new Map();
         return {
@@ -68,7 +69,7 @@ function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl
             documentElement: { clientWidth: 1280 },
             addEventListener() {}
         },
-        setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+        setTimeout: (fn, ms) => { (ms >= 20000 ? longTimers : timers).push({ fn, ms }); return timers.length + longTimers.length; },
         clearTimeout: () => {},
         setInterval: () => 0,
         requestAnimationFrame: () => 0,
@@ -92,7 +93,8 @@ function loadApp({ withAppsScript = false, accessCode = 'test-code', cloudApiUrl
     vm.runInContext(script, ctx);
     const run = code => vm.runInContext(code, ctx);
     const flushTimers = () => { while (timers.length) timers.shift().fn(); };
-    return { ctx, run, flushTimers, fake };
+    const fireLongTimers = () => { const due = longTimers.splice(0); due.forEach(t => t.fn()); };
+    return { ctx, run, flushTimers, fireLongTimers, fake };
 }
 
 const pallet = (id, slp, extra = {}) => ({
@@ -551,4 +553,53 @@ test('quick scan into a full lane asks first; "Put it anyway" adds it, cancel do
     run(`handleQuickScanSubmit({ preventDefault() {} })`);
     run('__confirm.onConfirm()');
     assert.equal(run(`appState.pallets.find(p => p.slp === 'SLP-NEW')?.columnId`), 'L1', '"Put it anyway" → added');
+});
+
+test('a request Google never answers times out, and syncing recovers instead of staying stuck', () => {
+    // google.script.run that never calls back (a stalled request)
+    const hanging = { script: {} };
+    Object.defineProperty(hanging.script, 'run', {
+        get() { const r = { withSuccessHandler() { return r; }, withFailureHandler() { return r; }, api() { /* never answers */ } }; return r; }
+    });
+    const { run, fireLongTimers } = loadApp({ withAppsScript: true, googleImpl: hanging });
+    run('loadState({ isBackgroundPoll: false, silent: true })');
+    assert.equal(run('isCloudLoadInFlight'), true, 'waiting on the stalled request');
+    fireLongTimers(); // 25 s pass
+    assert.equal(run('isCloudLoadInFlight'), false, 'time limit released the load');
+
+    run('executeCloudSaveNow()');
+    assert.equal(run('isCloudSaveInFlight'), true);
+    fireLongTimers();
+    assert.equal(run('isCloudSaveInFlight'), false, 'time limit released the save');
+    assert.equal(run('lastCloudSaveFailed'), true, 'reported as a failed save, so it is retried');
+});
+
+test('a late answer after the time limit is ignored (no double handling)', () => {
+    let answer = null;
+    const slow = { script: {} };
+    Object.defineProperty(slow.script, 'run', {
+        get() { let ok = () => {}; const r = { withSuccessHandler(f) { ok = f; return r; }, withFailureHandler() { return r; }, api() { answer = ok; } }; return r; }
+    });
+    const { run, fireLongTimers } = loadApp({ withAppsScript: true, googleImpl: slow });
+    run(`globalThis.__calls = 0; callCloud('loadBoardState', [], () => { __calls++; }, () => { __calls += 10; })`);
+    fireLongTimers();
+    answer({ ok: true });
+    assert.equal(run('__calls'), 10, 'only the timeout was handled');
+});
+
+test('merge keeps docks and carriers added on either device', () => {
+    const { run } = loadApp();
+    const base = { columns: [], pallets: [], shippedPallets: [], docks: ['DOCK-01', 'DOCK-02'], carriers: ['FedEx'] };
+    const local = { ...base, docks: ['DOCK-01', 'DOCK-02', 'DOCK-13'], carriers: ['FedEx', 'Saia'] };
+    const remote = { ...base, docks: ['DOCK-01', 'DOCK-02', 'DOCK-14'], carriers: ['FedEx'] };
+    const m = run(`JSON.stringify(mergeBoardStates(${JSON.stringify(base)}, ${JSON.stringify(local)}, ${JSON.stringify(remote)}))`);
+    const merged = JSON.parse(m);
+    assert.deepEqual(merged.docks, ['DOCK-01', 'DOCK-02', 'DOCK-14', 'DOCK-13']);
+    assert.deepEqual(merged.carriers, ['FedEx', 'Saia']);
+
+    const removed = JSON.parse(run(`JSON.stringify(mergeBoardStates(${JSON.stringify(base)}, ${JSON.stringify({ ...base, docks: ['DOCK-01'] })}, ${JSON.stringify(remote)}))`));
+    assert.deepEqual(removed.docks, ['DOCK-01', 'DOCK-14'], 'a dock removed on this device stays removed');
+
+    const noBase = JSON.parse(run(`JSON.stringify(mergeBoardStates(null, ${JSON.stringify(local)}, ${JSON.stringify(remote)}))`));
+    assert.ok(noBase.docks.includes('DOCK-13') && noBase.docks.includes('DOCK-14'), 'never-synced device: keep both sides');
 });
