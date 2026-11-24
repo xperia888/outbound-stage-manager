@@ -28,6 +28,7 @@ function createFakeAppsScript() {
         if (fn === 'saveBoardState') return responses.saveBoardState.shift() || { ok: true, updatedAt: `t-save-${calls.length}` };
         if (fn === 'loadBoardState') return responses.loadBoardState.shift() || { ok: true, stateJson: null, updatedAt: null };
         if (fn === 'logScanEvents') return responses.logScanEvents.shift() || { ok: true, loggedIds: args[0].map(e => e.id) };
+        if (fn === 'resolveWarehouse') return (responses.resolveWarehouse || []).shift() || { ok: false, unauthorized: true };
         return { ok: false, error: 'unknown' };
     };
     const makeRunner = () => {
@@ -553,6 +554,44 @@ test('quick scan into a full lane asks first; "Put it anyway" adds it, cancel do
     run(`handleQuickScanSubmit({ preventDefault() {} })`);
     run('__confirm.onConfirm()');
     assert.equal(run(`appState.pallets.find(p => p.slp === 'SLP-NEW')?.columnId`), 'L1', '"Put it anyway" → added');
+});
+
+test('Code.gs resolveWarehouse: the code says which warehouse it opens', () => {
+    const { ctx } = loadCodeGs({ accessCode: 'ont-code', chinoCode: 'chino-code', testMode: 'on' });
+    const r = key => JSON.parse(JSON.stringify(ctx.api({ fn: 'resolveWarehouse', key })));
+    assert.deepEqual(r('ont-code'), { ok: true, warehouse: 'ONT' });
+    assert.deepEqual(r('chino-code'), { ok: true, warehouse: 'CHINO' });
+    assert.equal(r('nope').unauthorized, true);
+    assert.equal(r('').unauthorized, true);
+    assert.equal(r('test-mode').unauthorized, true, 'TEST is never chosen by a code');
+});
+
+test('page: entering the Chino code on the ONT page saves it for Chino and switches warehouse', () => {
+    const { run, ctx, fake } = loadApp({ withAppsScript: true, accessCode: '' });
+    fake.responses.resolveWarehouse = [{ ok: true, warehouse: 'CHINO' }];
+    run(`switchWarehouse = id => { globalThis.__switchedTo = id; }; showToast = () => {};`);
+    const calls = [];
+    run(`resolveWarehouseFromCode('chino-code', { onWarehouse: id => openWarehouseWithCode(id, 'chino-code'), onRejected() {}, onOffline() {} })`);
+    assert.equal(run('__switchedTo'), 'CHINO');
+    assert.equal(ctx.localStorage.getItem('outbound_access_code_v2_chino'), 'chino-code', 'code saved for Chino');
+    assert.equal(ctx.localStorage.getItem('outbound_access_code_v2') || '', '', 'not saved as the ONT code');
+    const lookup = fake.calls.find(c => c.fn === 'resolveWarehouse');
+    assert.equal(lookup.key, 'chino-code');
+});
+
+test('page: an unknown code is rejected in the box and nothing is saved', () => {
+    const { run, ctx, fake } = loadApp({ withAppsScript: true, accessCode: '' });
+    fake.responses.resolveWarehouse = [{ ok: false, unauthorized: true }];
+    run(`resolveWarehouseFromCode('bad', { onWarehouse() { globalThis.__r = 'opened'; }, onRejected() { globalThis.__r = 'rejected'; }, onOffline() { globalThis.__r = 'offline'; } })`);
+    assert.equal(run('__r'), 'rejected');
+    assert.equal(ctx.localStorage.getItem('outbound_access_code_v2') || '', '');
+});
+
+test('page: an older server without the lookup uses the code for the warehouse on screen', () => {
+    const { run, fake } = loadApp({ withAppsScript: true, accessCode: '' });
+    fake.responses.resolveWarehouse = [{ ok: false, error: 'Unknown request: resolveWarehouse' }];
+    run(`resolveWarehouseFromCode('x', { onWarehouse: id => { globalThis.__r = id; }, onRejected() {}, onOffline() {} })`);
+    assert.equal(run('__r'), 'ONT');
 });
 
 test('a request Google never answers times out, and syncing recovers instead of staying stuck', () => {

@@ -2162,11 +2162,12 @@
             overlay.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/70 p-4';
             overlay.innerHTML = `
                 <form class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl space-y-3">
-                    <h2 class="text-lg font-extrabold text-slate-900">Enter ${WAREHOUSE_NAME} access code</h2>
-                    <p class="text-sm text-slate-600">Needed once on this device to open the ${WAREHOUSE_NAME} staging board. Each warehouse has its own code.</p>
+                    <h2 class="text-lg font-extrabold text-slate-900">Enter access code</h2>
+                    <p class="text-sm text-slate-600">Your code opens your warehouse's staging board (ONUS-ONT or ONUS-CHINO). Needed once on this device.</p>
                     <input id="access-code-input" type="password" autocomplete="off" required
                         class="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base font-mono-code focus:border-indigo-500 focus:outline-none"
                         placeholder="Access code">
+                    <p id="access-code-error" class="hidden text-sm font-semibold text-red-600"></p>
                     <div class="flex justify-end gap-2">
                         <button type="button" id="access-code-cancel" class="rounded-xl px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100">Later</button>
                         <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">Save &amp; Sync</button>
@@ -2175,15 +2176,58 @@
             document.body.appendChild(overlay);
             const input = overlay.querySelector('#access-code-input');
             overlay.querySelector('#access-code-cancel').onclick = () => overlay.remove();
+            const errorEl = overlay.querySelector('#access-code-error');
+            const submitBtn = overlay.querySelector('button[type=submit]');
+            const showError = (msg) => {
+                errorEl.textContent = msg;
+                errorEl.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save & Sync';
+                input.select();
+            };
             overlay.querySelector('form').onsubmit = (e) => {
                 e.preventDefault();
                 const code = String(input.value || '').trim();
                 if (!code) return;
-                safeStorageSet(ACCESS_CODE_KEY, code);
-                overlay.remove();
-                loadState({ isBackgroundPoll: false, silent: false });
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Checking…';
+                errorEl.classList.add('hidden');
+                resolveWarehouseFromCode(code, {
+                    onWarehouse: (whId) => { overlay.remove(); openWarehouseWithCode(whId, code); },
+                    onRejected: () => showError('Access code not recognized. Please check it and try again.'),
+                    onOffline: () => showError("Couldn't reach Google Sheets. Check the connection and try again.")
+                });
             };
             setTimeout(() => input.focus(), 50);
+        }
+
+        /**
+         * Asks the sheet which warehouse an access code opens. Older servers without this
+         * lookup answer "Unknown request": then the code is used for the warehouse on screen.
+         */
+        function resolveWarehouseFromCode(code, { onWarehouse, onRejected, onOffline }) {
+            if (!isAppsScriptAvailable()) {
+                onWarehouse(WAREHOUSE_ID);
+                return;
+            }
+            callCloud('resolveWarehouse', [], (res) => {
+                if (res && res.ok && WAREHOUSES[res.warehouse]) onWarehouse(res.warehouse);
+                else if (res && res.unauthorized) onRejected();
+                else if (res && /Unknown request/i.test(String(res.error || ''))) onWarehouse(WAREHOUSE_ID);
+                else onOffline();
+            }, () => onOffline(), { key: code });
+        }
+
+        /** Saves the code for that warehouse and opens its board (reloads if it's another warehouse). */
+        function openWarehouseWithCode(whId, code) {
+            const wh = WAREHOUSES[whId];
+            safeStorageSet('outbound_access_code_v2' + wh.suffix, code);
+            if (whId === WAREHOUSE_ID) {
+                loadState({ isBackgroundPoll: false, silent: false });
+                return;
+            }
+            showToast(`Opening ${wh.name}…`, 'info');
+            switchWarehouse(whId);
         }
 
         function forgetAccessCode() {
@@ -2198,7 +2242,7 @@
         // A request to Apps Script that never answers must not block syncing forever
         const CLOUD_TIMEOUT_MS = 25000;
 
-        function callCloud(fn, args, onSuccessRaw, onFailureRaw, { interactive = false } = {}) {
+        function callCloud(fn, args, onSuccessRaw, onFailureRaw, { interactive = false, key = null } = {}) {
             // Settle exactly once: an answer, an error, or the time limit, whichever comes first
             let settled = false;
             let timeoutId = null;
@@ -2219,7 +2263,7 @@
                 onFailure(new Error(`No answer from Google Sheets after ${CLOUD_TIMEOUT_MS / 1000}s`));
             }, CLOUD_TIMEOUT_MS);
 
-            const request = { fn, args, key: getAccessCode({ interactive }), warehouse: WAREHOUSE_ID };
+            const request = { fn, args, key: key !== null ? key : getAccessCode({ interactive }), warehouse: WAREHOUSE_ID };
             if (!request.key) {
                 // No code on this device yet: don't hit the server until someone enters it
                 setCloudSyncStatus('error', 'Access Code Needed');
@@ -2228,7 +2272,7 @@
             }
             const handleResult = (res) => {
                 onSuccess(res);
-                if (res && res.unauthorized) {
+                if (res && res.unauthorized && key === null) {
                     forgetAccessCode();
                     setCloudSyncStatus('error', 'Access Code Needed');
                     if (typeof showToast === 'function') {

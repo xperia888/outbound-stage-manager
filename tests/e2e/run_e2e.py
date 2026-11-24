@@ -50,7 +50,7 @@ async def route_externals(context):
     await context.route('https://script.google.com/**', to_gas)
 
 
-async def new_device(browser, wh, name):
+async def new_device(browser, wh, name, plain_link=False):
     ctx = await browser.new_context(viewport={'width': 1280, 'height': 900}, accept_downloads=True)
     await route_externals(ctx)
     page = await ctx.new_page()
@@ -58,7 +58,8 @@ async def new_device(browser, wh, name):
     page.on('pageerror', lambda e: page.errors.append(str(e)))
     page.on('dialog', lambda d: asyncio.ensure_future(d.dismiss()))
     page.device_name = name
-    await page.goto(f'http://127.0.0.1:{SITE_PORT}/index.html?wh={wh}', wait_until='domcontentloaded')
+    suffix = '' if plain_link else f'?wh={wh}'
+    await page.goto(f'http://127.0.0.1:{SITE_PORT}/index.html{suffix}', wait_until='domcontentloaded')
     await page.wait_for_timeout(1200)
     return ctx, page
 
@@ -103,10 +104,14 @@ async def accept_capacity_warning(page):
     return False
 
 
-async def enter_code(page, code):
+async def enter_code(page, code, expect_wh=None):
     await page.wait_for_selector('#access-code-input', timeout=8000)
     await page.fill('#access-code-input', code)
     await page.click('#access-code-box button[type=submit]')
+    if expect_wh and await page.evaluate('WAREHOUSE_ID') != expect_wh:
+        # The code belongs to another warehouse: the page switches to it
+        await page.wait_for_url(f'**wh={expect_wh}**', timeout=10000)
+        await page.wait_for_load_state('domcontentloaded')
     await page.wait_for_timeout(1500)
 
 
@@ -125,14 +130,18 @@ async def run_round(browser, wh, rnd, devices):
         # --- Access code: wrong code rejected, right code accepted ---------------------------------
         box = await A.is_visible('#access-code-box')
         record(wh, rnd, 'Access-code box shows on first visit', box)
-        await enter_code(A, 'wrong-code')
-        await A.wait_for_timeout(1200)
-        record(wh, rnd, 'Wrong code rejected (box shown again, badge "Access Code Needed")',
-               await A.is_visible('#access-code-box') and 'Access Code' in await badge(A), await badge(A))
-        await enter_code(A, code)
+        await A.fill('#access-code-input', 'wrong-code')
+        await A.click('#access-code-box button[type=submit]')
+        await A.wait_for_timeout(1500)
+        err = (await A.text_content('#access-code-error') or '').strip()
+        record(wh, rnd, 'Wrong code rejected inside the box',
+               await A.is_visible('#access-code-box') and 'not recognized' in err, err)
+        start_wh = await A.evaluate('WAREHOUSE_ID')
+        await enter_code(A, code, expect_wh=wh)
+        record(wh, rnd, f'Code opens {wh} (page started on {start_wh})', await A.evaluate('WAREHOUSE_ID') == wh, A.url)
         ok = await wait_for(A, "document.getElementById('cloud-sync-label').textContent.includes('•')")
         record(wh, rnd, 'Correct code → "Cloud Synced • time"', ok, await badge(A))
-        await enter_code(B, code)
+        await enter_code(B, code, expect_wh=wh)
         ok = await wait_for(B, "document.getElementById('cloud-sync-label').textContent.includes('Synced')")
         record(wh, rnd, 'Second device signs in', ok, await badge(B))
         other = 'CHINO' if wh == 'ONT' else 'ONT'
@@ -480,8 +489,9 @@ async def main():
         async with async_playwright() as p:
             browser = await p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox'])
             for wh in ('ONT', 'CHINO'):
-                devA = await new_device(browser, wh, 'A')
-                devB = await new_device(browser, wh, 'B')
+                # CHINO devices open the plain link (ONT by default) and let the code pick Chino
+                devA = await new_device(browser, wh, 'A', plain_link=(wh == 'CHINO'))
+                devB = await new_device(browser, wh, 'B', plain_link=(wh == 'CHINO'))
                 for rnd in range(1, ROUNDS + 1):
                     try:
                         await run_round(browser, wh, rnd, (devA[1], devB[1]))

@@ -40,7 +40,7 @@ Each warehouse has its own board, access code, Scan Log tab and saved data on ea
 | ONUS-ONT | `https://xperia888.github.io/outbound-stage-manager/` (or `?wh=ONT`) | `ACCESS_CODE` | `StateChunks`, `Scan Log` |
 | ONUS-CHINO | `https://xperia888.github.io/outbound-stage-manager/?wh=CHINO` | `ACCESS_CODE_CHINO` | `StateChunks CHINO`, `Scan Log CHINO` |
 
-A device remembers the last warehouse it opened. A code only opens its own warehouse.
+**The access code picks the warehouse.** Open the normal link and enter your code: the ONT code opens ONUS-ONT, and the Chino code opens ONUS-CHINO. A device remembers its warehouse and code after that. A code only opens its own warehouse. The header switcher and `?wh=` links still work for people who have both codes. Keep the two codes different.
 
 ## Setup
 
