@@ -537,23 +537,83 @@ test('over-capacity check counts floor spots (2x pairs = 1 spot) and ignores pal
     assert.equal(run(`getOverCapacityInfo('L1', [{ doubleStacked: false }])?.after`), 3);
 });
 
-test('quick scan into a full lane asks first; "Put it anyway" adds it, cancel does not', () => {
+test('quick add into a full lane asks first; "Put it anyway" adds it, cancel does not', () => {
     const { run, ctx } = loadApp();
     run(`appState.columns = [{ id: 'L1', name: 'L1', capacity: 1 }];
          appState.pallets = [${JSON.stringify(pallet('a', 'SLP-A', { columnId: 'L1' }))}];`);
-    const fields = { 'quick-scan-location': { value: 'L1' }, 'quick-order-input': { value: 'SO-9' }, 'quick-slp-input': { value: 'SLP-NEW', focus() {} }, 'quick-doublestack-chk': { checked: false } };
+    const fields = { 'quick-scan-location': { value: 'L1' }, 'quick-order-input': { value: 'SO-9', focus() {} }, 'quick-pallet-count': { value: '1', focus() {} }, 'quick-doublestack-chk': { checked: false } };
     ctx.document.getElementById = id => fields[id] || null;
     run(`openConfirmModal = (title, message, onConfirm, okLabel, okColor, onCancel) => { globalThis.__confirm = { title, message, onConfirm, onCancel }; }`);
 
     run(`handleQuickScanSubmit({ preventDefault() {} })`);
     assert.match(run('__confirm.message'), /L1 would use 2 of 1 floor spots/);
-    assert.equal(run(`appState.pallets.some(p => p.slp === 'SLP-NEW')`), false, 'nothing added before answering');
+    assert.equal(run(`appState.pallets.some(p => p.orderNumber === 'SO-9')`), false, 'nothing added before answering');
     run('__confirm.onCancel()');
-    assert.equal(run(`appState.pallets.some(p => p.slp === 'SLP-NEW')`), false, 'cancel → not added');
+    assert.equal(run(`appState.pallets.some(p => p.orderNumber === 'SO-9')`), false, 'cancel → not added');
 
     run(`handleQuickScanSubmit({ preventDefault() {} })`);
     run('__confirm.onConfirm()');
-    assert.equal(run(`appState.pallets.find(p => p.slp === 'SLP-NEW')?.columnId`), 'L1', '"Put it anyway" → added');
+    assert.equal(run(`appState.pallets.find(p => p.orderNumber === 'SO-9')?.columnId`), 'L1', '"Put it anyway" → added');
+    assert.equal(fields['quick-order-input'].value, '', 'order box cleared for the next shipment');
+});
+
+test('shipment: order number + pallet count creates that many pallets, labelled ORDER-01…', () => {
+    const { run } = loadApp();
+    run(`appState.columns = [{ id: 'L1', name: 'S51', capacity: 8 }, { id: 'L2', name: 'S52', capacity: 8 }];
+         appState.pallets = []; appState.shippedPallets = [{ id: 'x', slp: 'SO-41200-02', orderNumber: 'SO-41200' }];`);
+    run(`requestAddShipment({ orderNumber: 'so-41200', count: '5', columnId: 'L1', carrier: 'Saia' })`);
+    const labels = JSON.parse(run(`JSON.stringify(appState.pallets.map(p => p.slp))`));
+    assert.deepEqual(labels, ['SO-41200-03', 'SO-41200-04', 'SO-41200-05', 'SO-41200-06', 'SO-41200-07'], 'numbering continues after shipped pallets');
+    assert.equal(run(`appState.pallets.every(p => p.columnId === 'L1' && p.carrier === 'Saia' && p.orderNumber === 'SO-41200')`), true);
+    run(`requestAddShipment({ orderNumber: 'SO-41200', count: '2', columnId: 'L1' })`);
+    assert.equal(run(`appState.pallets.filter(p => p.columnId === 'L1').length`), 7);
+    assert.equal(run(`appState.pallets[6].slp`), 'SO-41200-09');
+    assert.equal(run(`appState.pallets[6].carrier`), 'Saia', 'later pallets inherit the carrier');
+    assert.equal(run(`requestAddShipment({ orderNumber: '', count: '3', columnId: 'L1' })`), false, 'order number required');
+    assert.equal(run(`requestAddShipment({ orderNumber: 'SO-1', count: '0', columnId: 'L1' })`), false, 'count required');
+    assert.equal(run(`appState.pallets.length`), 7);
+});
+
+test('shipment too big for the lane → offer to spread over the next lanes (skipping lanes with other orders)', () => {
+    const { run } = loadApp();
+    run(`appState.columns = [{ id: 'c53', name: 'S53', capacity: 8 }, { id: 'c51', name: 'S51', capacity: 8 },
+                             { id: 'c52', name: 'S52', capacity: 8 }, { id: 'c54', name: 'S54', capacity: 4 }, { id: 'c55', name: 'S55', capacity: 8 }];
+         appState.pallets = [${JSON.stringify(pallet('o1', 'SO-7-01', { columnId: 'c51', orderNumber: 'SO-7' }))},
+                             ${JSON.stringify(pallet('o2', 'SO-7-02', { columnId: 'c51', orderNumber: 'SO-7' }))},
+                             ${JSON.stringify(pallet('x1', 'X-01', { columnId: 'c53', orderNumber: 'SO-OTHER' }))}];
+         openConfirmModal = (title, message, onConfirm, okLabel) => { globalThis.__confirm = { title, message, onConfirm, okLabel }; };`);
+    run(`requestAddShipment({ orderNumber: 'SO-7', count: '12', columnId: 'c51' })`);
+    assert.equal(run('__confirm.title'), 'S51 has room for 6 of 12 pallets');
+    assert.equal(run('__confirm.message'), 'Spread SO-7 over S51 (6), S52 (6)?', 'next lanes in number order');
+    assert.equal(run('__confirm.okLabel'), 'Spread over lanes');
+    assert.equal(run('appState.pallets.length'), 3, 'nothing added before answering');
+    run('__confirm.onConfirm()');
+    assert.equal(run(`appState.pallets.filter(p => p.columnId === 'c51').length`), 8);
+    assert.equal(run(`appState.pallets.filter(p => p.columnId === 'c52').length`), 6);
+
+    // S53 holds another order → skipped while lanes with room for only this order remain
+    run(`requestAddShipment({ orderNumber: 'SO-7', count: '8', columnId: 'c52' })`);
+    assert.equal(run('__confirm.message'), 'Spread SO-7 over S52 (2), S54 (4), S55 (2)?');
+
+    // 2x pallets: 2 per floor spot
+    run(`appState.pallets = []; globalThis.__confirm = null;`);
+    run(`requestAddShipment({ orderNumber: 'SO-8', count: '16', columnId: 'c51', doubleStacked: true })`);
+    assert.equal(run('__confirm'), null, '16 double-stacked pallets fit in 8 spots');
+    assert.equal(run(`appState.pallets.filter(p => p.columnId === 'c51' && p.doubleStacked).length`), 16);
+});
+
+test('merge: same generated label from two devices keeps both pallets; a real SLP twice keeps one', () => {
+    const { run } = loadApp();
+    const a = [pallet('id-a1', 'SO-5-01', { orderNumber: 'SO-5' }), pallet('id-a2', 'SO-5-02', { orderNumber: 'SO-5' })];
+    const b = [pallet('id-b1', 'SO-5-01', { orderNumber: 'SO-5' }), pallet('id-b2', 'SO-5-02', { orderNumber: 'SO-5' }), pallet('id-b3', 'SO-5-03', { orderNumber: 'SO-5' })];
+    const dupSlp = [pallet('x1', 'SLP-884101', { orderNumber: 'SO-6' }), pallet('x2', 'SLP-884101', { orderNumber: 'SO-6' })];
+    const ab = JSON.parse(run(`JSON.stringify(resolveDuplicatePalletLabels(${JSON.stringify([...a, ...b, ...dupSlp])}))`));
+    const ba = JSON.parse(run(`JSON.stringify(resolveDuplicatePalletLabels(${JSON.stringify([...b, ...a, ...dupSlp])}))`));
+    const labels = list => Object.fromEntries(list.map(p => [p.id, p.slp]));
+    assert.equal(ab.filter(p => p.orderNumber === 'SO-5').length, 5, 'all 5 pallets kept');
+    assert.equal(new Set(ab.map(p => p.slp)).size, ab.length, 'labels are unique');
+    assert.deepEqual(labels(ab), labels(ba), 'every device ends up with the same labels');
+    assert.equal(ab.filter(p => p.slp === 'SLP-884101').length, 1, 'a real barcode scanned twice is kept once');
 });
 
 test('Code.gs resolveWarehouse: the code says which warehouse it opens', () => {

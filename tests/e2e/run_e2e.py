@@ -97,7 +97,8 @@ async def wait_for(page, js, timeout=15000):
 async def accept_capacity_warning(page):
     """Regular steps: if a lane is full, answer the over-capacity warning with "Put it anyway"."""
     await page.wait_for_timeout(250)
-    if await page.is_visible('#confirm-modal-ok-btn') and 'over capacity' in (await page.text_content('#confirm-modal-title') or ''):
+    title = await page.text_content('#confirm-modal-title') or ''
+    if await page.is_visible('#confirm-modal-ok-btn') and ('over capacity' in title or 'has room for' in title):
         await page.click('#confirm-modal-ok-btn')
         await page.wait_for_timeout(350)
         return True
@@ -147,26 +148,32 @@ async def run_round(browser, wh, rnd, devices):
         other = 'CHINO' if wh == 'ONT' else 'ONT'
         record(wh, rnd, f'Header switcher shows {wh}', await A.input_value('#warehouse-select') == wh)
 
-    # --- Quick scan (single + 2x stack) ---------------------------------------------------------------
+    # --- Quick add: scan/type order → Enter jumps to pallet count → Enter adds the shipment ------------
     order = f'SO-{tag}-Q'
     await A.fill('#quick-order-input', order)
-    await A.fill('#quick-slp-input', f'SLP-{tag}-001')
-    await A.press('#quick-slp-input', 'Enter')
+    await A.press('#quick-order-input', 'Enter')
+    focused = await A.evaluate("document.activeElement && document.activeElement.id")
+    record(wh, rnd, 'Enter on the order number jumps to the pallet count', focused == 'quick-pallet-count', focused)
+    await A.keyboard.type('1')
+    await A.keyboard.press('Enter')
     await accept_capacity_warning(A)
     await A.wait_for_timeout(300)
+    await A.fill('#quick-order-input', order)
     await A.check('#quick-doublestack-chk')
-    await A.fill('#quick-slp-input', f'SLP-{tag}-002')
-    await A.press('#quick-slp-input', 'Enter')
+    await A.fill('#quick-pallet-count', '2')
+    await A.press('#quick-pallet-count', 'Enter')
     await accept_capacity_warning(A)
     await A.wait_for_timeout(300)
     await A.uncheck('#quick-doublestack-chk')
     s = await slps(A)
-    ds = await state(A, f"appState.pallets.find(p => p.slp === 'SLP-{tag}-002')?.doubleStacked")
-    record(wh, rnd, 'Quick scan adds SLPs (Enter key)', f'SLP-{tag}-001' in s and f'SLP-{tag}-002' in s, s)
-    record(wh, rnd, '2x Stack checkbox marks pallet double-stacked', ds is True)
+    ds = await state(A, f"appState.pallets.find(p => p.slp === '{order}-02')?.doubleStacked")
+    cleared = await A.input_value('#quick-order-input') == '' and await A.input_value('#quick-pallet-count') == ''
+    record(wh, rnd, 'Quick add: order + pallet count → pallets ORDER-01…03', all(f'{order}-0{n}' in s for n in (1, 2, 3)), s)
+    record(wh, rnd, '2x Stack checkbox marks pallets double-stacked', ds is True)
+    record(wh, rnd, 'Quick add clears the boxes for the next shipment', cleared)
 
-    # --- Multi-SLP Scan modal (bulk + single manual) ---------------------------------------------------
-    await A.click('button:has-text("Multi-SLP Scan")')
+    # --- Scan Order window: order + carrier/destination + number of pallets ---------------------------
+    await A.click('button:has-text("Scan Order")')
     await A.wait_for_timeout(300)
     border = f'SO-{tag}-M'
     await A.fill('#scanner-order-input', border)
@@ -174,27 +181,23 @@ async def run_round(browser, wh, rnd, devices):
     await A.select_option('#scanner-location-select', opts[min(3, len(opts) - 1)])
     await A.fill('#pallet-carrier-input', 'Estes Express')
     await A.fill('#pallet-dest-input', 'Phoenix DC')
-    await A.fill('#bulk-slp-textarea', f'SLP-{tag}-101, SLP-{tag}-102\nSLP-{tag}-103')
-    await A.locator('form[onsubmit^="handleBulkMultiSlpSubmit"] button[type=submit]').click()
+    await A.fill('#scanner-pallet-count', '4')
+    await A.locator('form[onsubmit^="handleModalShipmentSubmit"] button[type=submit]').click()
     await accept_capacity_warning(A)
     await A.wait_for_timeout(300)
-    await A.fill('#manual-slp-input', f'SLP-{tag}-104')
-    await A.press('#manual-slp-input', 'Enter')
-    await accept_capacity_warning(A)
-    await A.wait_for_timeout(200)
     await close_open_modals(A)
     s = await slps(A)
-    bulk_ok = all(f'SLP-{tag}-{n}' in s for n in (101, 102, 103, 104))
-    carrier = await state(A, f"appState.pallets.find(p => p.slp === 'SLP-{tag}-101')?.carrier")
-    record(wh, rnd, 'Multi-SLP Scan: bulk list + single manual scan', bulk_ok, s)
-    record(wh, rnd, 'Multi-SLP Scan: carrier/destination saved', carrier == 'Estes Express', carrier)
+    bulk_ok = all(f'{border}-0{n}' in s for n in (1, 2, 3, 4))
+    carrier = await state(A, f"appState.pallets.find(p => p.slp === '{border}-01')?.carrier")
+    record(wh, rnd, 'Scan Order window: 4 pallets added for the order', bulk_ok, s)
+    record(wh, rnd, 'Scan Order window: carrier/destination saved', carrier == 'Estes Express', carrier)
 
     # --- Other device receives everything ---------------------------------------------------------------
-    ok = await wait_for(B, f"['SLP-{tag}-001','SLP-{tag}-104'].every(x => appState.pallets.some(p => p.slp === x))", 20000)
+    ok = await wait_for(B, f"['{order}-01','{border}-04'].every(x => appState.pallets.some(p => p.slp === x))", 20000)
     record(wh, rnd, 'Device B sees A\'s scans (sync within ~10s)', ok, await slps(B))
 
     # --- Pallet detail on B: edit notes/carrier, move lane --------------------------------------------
-    pid = await state(B, f"appState.pallets.find(p => p.slp === 'SLP-{tag}-001')?.id")
+    pid = await state(B, f"appState.pallets.find(p => p.slp === '{order}-01')?.id")
     await B.evaluate(f"openPalletDetailModal({json.dumps(pid)})")
     await B.wait_for_timeout(300)
     await B.fill('#detail-notes-input', f'Checked by device B r{rnd}')
@@ -218,14 +221,14 @@ async def run_round(browser, wh, rnd, devices):
     ok = await wait_for(A, f"appState.pallets.find(p => p.id === {json.dumps(pid)})?.columnId === {json.dumps(after_col)} && appState.pallets.find(p => p.id === {json.dumps(pid)})?.notes?.includes('device B')", 20000)
     record(wh, rnd, 'Device A sees B\'s edit + move', ok)
 
-    # --- Orders overview → edit order: dock, add SLP ---------------------------------------------------
+    # --- Orders overview → edit order: dock, add a pallet ---------------------------------------------------
     await A.click('button:has-text("Orders")')
     await A.wait_for_timeout(300)
     await A.evaluate(f"openEditOrderModal({json.dumps(border)})")
     await A.wait_for_timeout(300)
     await A.fill('#edit-order-dock-input', 'DOCK-07')
-    await A.fill('#edit-order-new-slp-input', f'SLP-{tag}-105')
-    await click_fn(A, 'handleAddSlpInsideEditOrder')
+    await A.fill('#edit-order-new-pallet-count', '1')
+    await click_fn(A, 'handleAddPalletsInsideEditOrder')
     await accept_capacity_warning(A)
     await A.locator('form[onsubmit^="handleSaveEditedOrder"] button[type=submit]').click()
     await accept_capacity_warning(A)
@@ -233,7 +236,7 @@ async def run_round(browser, wh, rnd, devices):
     await close_open_modals(A)
     docks = await state(A, f"[...new Set(appState.pallets.filter(p => p.orderNumber === {json.dumps(border)}).map(p => p.dockNumber))]")
     record(wh, rnd, 'Edit order: set dock for whole order', docks == ['DOCK-07'], docks)
-    record(wh, rnd, 'Edit order: add SLP inside order', f'SLP-{tag}-105' in await slps(A))
+    record(wh, rnd, 'Edit order: add a pallet to the order', f'{border}-05' in await slps(A))
 
     # --- Load dock modal for the quick-scan order -----------------------------------------------------
     await A.evaluate(f"openLoadDockModal({json.dumps(order)})")
@@ -305,49 +308,51 @@ async def run_round(browser, wh, rnd, devices):
         lane = await state(A, f"appState.columns.find(c => c.name.startsWith('{prefix}') && Number(c.capacity) === 4)?.id")
         lane_name = await state(A, f"appState.columns.find(c => c.id === {json.dumps(lane)}).name")
 
-        async def quick_into_lane(code):
+        async def quick_into_lane(count):
             # Order first (typing it auto-picks a lane), then choose the lane by hand, like on the floor
             await A.fill('#quick-order-input', f'SO-{tag}-CAP')
             await A.select_option('#quick-scan-location', lane)
-            await A.fill('#quick-slp-input', code)
-            await A.press('#quick-slp-input', 'Enter')
+            await A.fill('#quick-pallet-count', str(count))
+            await A.press('#quick-pallet-count', 'Enter')
             await A.wait_for_timeout(350)
 
-        for n in range(1, 5):  # fill the 4-spot lane
-            await quick_into_lane(f'SLP-{tag}-CAP{n}')
+        await quick_into_lane(4)  # fill the 4-spot lane
         in_lane = lambda: state(A, f"appState.pallets.filter(p => p.columnId === {json.dumps(lane)}).length")
         dbg = await state(A, f"({{lane: {json.dumps(lane)}, cols: appState.columns.map(c => c.name + ':' + c.capacity).join(' '), inLane: appState.pallets.filter(p => p.columnId === {json.dumps(lane)}).map(p => p.slp), sel: document.getElementById('quick-scan-location').value, confirm: document.getElementById('confirm-modal-message').textContent}})")
         record(wh, rnd, 'Capacity: lane filled to 4/4 without any warning', await in_lane() == 4 and not await A.is_visible('#confirm-modal'), dbg)
 
-        await quick_into_lane(f'SLP-{tag}-CAP5')
+        await quick_into_lane(1)
         shown = await A.is_visible('#confirm-modal')
+        title = (await A.text_content('#confirm-modal-title') or '').strip()
         msg = (await A.text_content('#confirm-modal-message') or '').strip()
-        record(wh, rnd, 'Capacity: 5th quick scan shows the warning', shown and f'{lane_name} would use 5 of 4' in msg, msg)
+        record(wh, rnd, 'Full lane: 5th pallet offers to spread to the next lane', shown and f'{lane_name} has room for 0 of 1' in title and 'Spread' in msg, title + ' | ' + msg)
         await A.locator('#confirm-modal button:has-text("Cancel")').click()
         await A.wait_for_timeout(300)
         record(wh, rnd, 'Capacity: Cancel → not added', await in_lane() == 4 and not await A.is_visible('#confirm-modal'))
 
-        await quick_into_lane(f'SLP-{tag}-CAP5')
+        await quick_into_lane(1)
         await A.click('#confirm-modal-ok-btn')
         await A.wait_for_timeout(400)
-        record(wh, rnd, 'Capacity: "Put it anyway" → added (5/4)', await in_lane() == 5 and f'SLP-{tag}-CAP5' in await slps(A))
+        spread = await state(A, f"appState.pallets.filter(p => p.orderNumber === 'SO-{tag}-CAP' && p.columnId !== {json.dumps(lane)}).length")
+        record(wh, rnd, 'Full lane: "Spread over lanes" puts it in the next lane', await in_lane() == 4 and spread == 1, spread)
 
-        # Bulk scan into the already-full lane → one warning for the batch
-        await A.click('button:has-text("Multi-SLP Scan")')
+        # Shipment bigger than all free space → over-capacity warning, "Put it anyway" puts all in the lane
+        free_total = await state(A, "appState.columns.reduce((t, c) => t + Math.max(0, (Number(c.capacity) || 0) - computeFloorSpotsUsed(appState.pallets.filter(p => p.columnId === c.id))), 0)")
+        await A.click('button:has-text("Scan Order")')
         await A.wait_for_timeout(300)
         await A.fill('#scanner-order-input', f'SO-{tag}-CAP')
         await A.select_option('#scanner-location-select', lane)
         await A.uncheck('#scanner-doublestack-chk')
-        await A.fill('#bulk-slp-textarea', f'SLP-{tag}-CAP6, SLP-{tag}-CAP7')
-        await A.locator('form[onsubmit^="handleBulkMultiSlpSubmit"] button[type=submit]').click()
+        await A.fill('#scanner-pallet-count', str(free_total + 1))
+        await A.locator('form[onsubmit^="handleModalShipmentSubmit"] button[type=submit]').click()
         await A.wait_for_timeout(300)
         msg = (await A.text_content('#confirm-modal-message') or '').strip()
         on_top = await A.is_visible('#confirm-modal-ok-btn')
-        record(wh, rnd, 'Capacity: bulk scan warns once, on top of the scan window', on_top and 'would use 7 of 4' in msg, msg)
+        record(wh, rnd, 'Capacity: no room anywhere → over-capacity warning on top of the scan window', on_top and f'would use {4 + free_total + 1} of 4' in msg, msg)
         await A.click('#confirm-modal-ok-btn')
         await A.wait_for_timeout(400)
         await close_open_modals(A)
-        record(wh, rnd, 'Capacity: bulk "Put it anyway" adds both', await in_lane() == 7)
+        record(wh, rnd, 'Capacity: "Put it anyway" adds them all to the lane', await in_lane() == 4 + free_total + 1)
 
         # Move a pallet into the full lane from the detail dialog → Cancel keeps it where it was
         mover = await state(A, f"appState.pallets.find(p => p.columnId !== {json.dumps(lane)})")
@@ -377,7 +382,7 @@ async def run_round(browser, wh, rnd, devices):
     record(wh, rnd, 'Alerts: save dwell thresholds', dw and float(dw.get('warningDays', 0)) == 2 and float(dw.get('overdueDays', 0)) == 3, dw)
 
     # --- Board views: search, carrier filter, grouped, layout, 2x filter --------------------------------
-    await A.fill('#search-filter-input', f'SLP-{tag}-10')
+    await A.fill('#search-filter-input', f'{border}-0')
     await A.dispatch_event('#search-filter-input', 'input')
     await A.wait_for_timeout(300)
     vis = await A.evaluate(f"document.querySelectorAll('#staging-board [onclick^=\"openPalletDetailModal(\"]').length")
@@ -403,7 +408,7 @@ async def run_round(browser, wh, rnd, devices):
     await close_open_modals(A)
 
     # --- Ship single pallet, ship whole order, remove pallet ------------------------------------------
-    ship_id = await state(A, f"appState.pallets.find(p => p.slp === 'SLP-{tag}-104')?.id")
+    ship_id = await state(A, f"appState.pallets.find(p => p.slp === '{border}-04')?.id")
     await A.evaluate(f"openPalletDetailModal({json.dumps(ship_id)})")
     await A.wait_for_timeout(300)
     await click_fn(A, 'handleShipActivePallet')
@@ -411,8 +416,8 @@ async def run_round(browser, wh, rnd, devices):
     if await A.is_visible('#confirm-modal-ok-btn'):
         await A.click('#confirm-modal-ok-btn'); await A.wait_for_timeout(300)
     await close_open_modals(A)
-    shipped = await state(A, f"appState.shippedPallets.some(s => s.slp === 'SLP-{tag}-104')")
-    record(wh, rnd, 'Ship single pallet', shipped and f'SLP-{tag}-104' not in await slps(A))
+    shipped = await state(A, f"appState.shippedPallets.some(s => s.slp === '{border}-04')")
+    record(wh, rnd, 'Ship single pallet', shipped and f'{border}-04' not in await slps(A))
 
     await A.evaluate(f"confirmShipWholeOrder({json.dumps(order)})")
     await A.wait_for_timeout(300)
@@ -421,7 +426,7 @@ async def run_round(browser, wh, rnd, devices):
     left = await state(A, f"appState.pallets.filter(p => p.orderNumber === {json.dumps(order)}).length")
     record(wh, rnd, 'Ship whole order (confirm dialog)', left == 0, left)
 
-    rm_id = await state(A, f"appState.pallets.find(p => p.slp === 'SLP-{tag}-103')?.id")
+    rm_id = await state(A, f"appState.pallets.find(p => p.slp === '{border}-03')?.id")
     await A.evaluate(f"openPalletDetailModal({json.dumps(rm_id)})")
     await A.wait_for_timeout(300)
     await click_fn(A, 'handleRemoveActivePallet')
@@ -429,7 +434,7 @@ async def run_round(browser, wh, rnd, devices):
     if await A.is_visible('#confirm-modal-ok-btn'):
         await A.click('#confirm-modal-ok-btn'); await A.wait_for_timeout(300)
     await close_open_modals(A)
-    record(wh, rnd, 'Remove pallet (confirm dialog)', f'SLP-{tag}-103' not in await slps(A))
+    record(wh, rnd, 'Remove pallet (confirm dialog)', f'{border}-03' not in await slps(A))
 
     # --- EOD report + CSV export, Backup export ---------------------------------------------------------
     await A.click('button:has-text("EOD Report")')
@@ -440,7 +445,7 @@ async def run_round(browser, wh, rnd, devices):
     path = OUT / f'{wh}_r{rnd}_{d.suggested_filename}'
     await d.save_as(path)
     csv = path.read_text(errors='ignore')
-    record(wh, rnd, 'EOD Report: CSV export includes shipped SLPs', f'SLP-{tag}-104' in csv, d.suggested_filename)
+    record(wh, rnd, 'EOD Report: CSV export includes shipped pallets', f'{border}-04' in csv, d.suggested_filename)
     await close_open_modals(A)
     await A.click('button:has-text("Backup")')
     await A.wait_for_timeout(300)
@@ -450,20 +455,20 @@ async def run_round(browser, wh, rnd, devices):
     bpath = OUT / f'{wh}_r{rnd}_{d.suggested_filename}'
     await d.save_as(bpath)
     backup = json.loads(bpath.read_text())
-    record(wh, rnd, 'Backup: JSON export has the board', any(p.get('slp') == f'SLP-{tag}-101' for p in backup.get('pallets', backup.get('state', {}).get('pallets', []))) or f'SLP-{tag}-101' in bpath.read_text(), d.suggested_filename)
+    record(wh, rnd, 'Backup: JSON export has the board', f'{border}-01' in bpath.read_text(), d.suggested_filename)
     await close_open_modals(A)
 
     # --- Both devices scan at the same moment → both kept --------------------------------------------
     await A.fill('#quick-order-input', f'SO-{tag}-SIM')
     await B.fill('#quick-order-input', f'SO-{tag}-SIM')
-    await A.fill('#quick-slp-input', f'SLP-{tag}-A')
-    await B.fill('#quick-slp-input', f'SLP-{tag}-B')
-    await asyncio.gather(A.press('#quick-slp-input', 'Enter'), B.press('#quick-slp-input', 'Enter'))
+    await A.fill('#quick-pallet-count', '2')
+    await B.fill('#quick-pallet-count', '3')
+    await asyncio.gather(A.press('#quick-pallet-count', 'Enter'), B.press('#quick-pallet-count', 'Enter'))
     await asyncio.gather(accept_capacity_warning(A), accept_capacity_warning(B))
-    want = f"['SLP-{tag}-A','SLP-{tag}-B'].every(x => appState.pallets.some(p => p.slp === x))"
+    want = f"appState.pallets.filter(p => p.orderNumber === 'SO-{tag}-SIM').length === 5"
     okA = await wait_for(A, want, 25000)
     okB = await wait_for(B, want, 25000)
-    record(wh, rnd, 'Simultaneous scans on 2 devices → both kept on both', okA and okB)
+    record(wh, rnd, 'Two devices add the same order at once → all 5 pallets kept on both', okA and okB)
 
     # --- Final convergence ------------------------------------------------------------------------------
     await A.wait_for_timeout(9000)

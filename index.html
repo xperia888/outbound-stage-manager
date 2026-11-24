@@ -200,7 +200,7 @@
                     <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-slate-300 mt-1">
                         <span>Spots: <strong id="stat-used-spots" class="font-mono-code text-amber-400">0</strong>/<span id="stat-total-capacity" class="font-mono-code">96</span></span>
                         <span class="text-slate-600">•</span>
-                        <span>SLPs: <strong id="stat-total-pallets" class="font-mono-code text-white">0</strong></span>
+                        <span>Pallets: <strong id="stat-total-pallets" class="font-mono-code text-white">0</strong></span>
                         <span class="text-slate-600">•</span>
                         <button
                             type="button"
@@ -228,7 +228,7 @@
                     class="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-extrabold text-[11px] sm:text-xs px-2.5 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer"
                 >
                     <i data-lucide="qr-code" class="w-3.5 h-3.5 stroke-[2.3]"></i>
-                    <span>Multi-SLP Scan</span>
+                    <span>Scan Order</span>
                 </button>
 
                 <button
@@ -349,13 +349,14 @@
                     <span>Auto</span>
                 </button>
 
-                <div class="relative w-28 sm:w-36">
+                <div class="relative w-36 sm:w-48">
                     <input
                         type="text"
                         id="quick-order-input"
                         list="existing-orders-datalist"
                         oninput="syncQuickOrderBanner()"
-                        placeholder="Order # (SO-...)"
+                        onkeydown="if (event.key === 'Enter') { event.preventDefault(); focusPalletCount('quick-pallet-count'); }"
+                        placeholder="Scan / type order #"
                         autocomplete="off"
                         class="w-full px-2.5 py-1.5 bg-sky-50/70 border border-sky-300 rounded-lg font-mono-code text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all"
                     >
@@ -367,20 +368,21 @@
                     <span id="quick-auto-suggest-label">Ready</span>
                 </span>
 
-                <div class="relative flex-1 min-w-[130px] max-w-[220px]">
-                    <input
-                        type="text"
-                        id="quick-slp-input"
-                        placeholder="Scan / Enter SLP..."
-                        autocomplete="off"
-                        class="w-full px-2.5 py-1.5 bg-amber-50/70 border border-amber-300 rounded-lg font-mono-code text-xs font-extrabold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition-all"
-                    >
-                </div>
+                <input
+                    type="number"
+                    id="quick-pallet-count"
+                    min="1"
+                    max="200"
+                    inputmode="numeric"
+                    placeholder="Pallets"
+                    aria-label="Number of pallets"
+                    class="w-20 px-2.5 py-1.5 bg-amber-50/70 border border-amber-300 rounded-lg font-mono-code text-xs font-extrabold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition-all"
+                >
 
                 <!-- Double-Stack (2-High) Quick Toggle -->
                 <label
                     class="inline-flex items-center gap-1 bg-cyan-50 hover:bg-cyan-100 border border-cyan-300 text-cyan-950 font-mono-code font-extrabold text-[11px] px-2 py-1.5 rounded-lg cursor-pointer select-none shrink-0"
-                    title="Stage scanned SLP as Double-Stacked (2 pallets = 1 floor spot)"
+                    title="Pallets are double-stacked (2 pallets = 1 floor spot)"
                 >
                     <input type="checkbox" id="quick-doublestack-chk" onchange="updateAutoSuggestBadges(document.getElementById('quick-order-input')?.value || '')" class="accent-cyan-700 rounded">
                     <span>2x Stack</span>
@@ -390,8 +392,8 @@
                     type="submit"
                     class="inline-flex items-center gap-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-3 py-1.5 rounded-lg cursor-pointer shadow-2xs shrink-0"
                 >
-                    <i data-lucide="scan-line" class="w-3.5 h-3.5 text-amber-400"></i>
-                    <span>Log SLP</span>
+                    <i data-lucide="plus" class="w-3.5 h-3.5 text-amber-400"></i>
+                    <span>Add Shipment</span>
                 </button>
             </form>
 
@@ -402,7 +404,7 @@
                         type="text"
                         id="search-filter-input"
                         oninput="handleSearchFilter(this.value)"
-                        placeholder="Search SLP, Order, Lane..."
+                        placeholder="Search order, pallet, lane..."
                         class="w-36 sm:w-44 pl-7 pr-6 py-1 bg-slate-100 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white"
                     >
                     <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
@@ -427,7 +429,7 @@
 
                 <!-- Card Grouping Mode Toggle -->
                 <div class="inline-flex items-center bg-slate-100 border border-slate-300 rounded-lg p-0.5">
-                    <button type="button" id="card-mode-pallets-btn" onclick="setCardGroupMode('pallets')" class="px-2 py-1 rounded-md text-[11px] font-bold bg-slate-900 text-white cursor-pointer">SLPs</button>
+                    <button type="button" id="card-mode-pallets-btn" onclick="setCardGroupMode('pallets')" class="px-2 py-1 rounded-md text-[11px] font-bold bg-slate-900 text-white cursor-pointer">Pallets</button>
                     <button type="button" id="card-mode-grouped-btn" onclick="setCardGroupMode('grouped')" class="px-2 py-1 rounded-md text-[11px] font-bold text-slate-600 hover:text-slate-900 cursor-pointer">Grouped</button>
                 </div>
 
@@ -458,7 +460,7 @@
             <div class="flex flex-wrap items-center gap-1.5">
                 <span class="font-bold text-slate-600">Active Batch Order:</span>
                 <span id="batch-order-badge" class="font-mono-code font-extrabold bg-sky-700 text-white px-2 py-0.5 rounded">SO-00000</span>
-                <span class="font-mono-code text-[11px] font-bold text-slate-700">(<span id="batch-order-slp-count">0</span> SLP staged)</span>
+                <span class="font-mono-code text-[11px] font-bold text-slate-700">(<span id="batch-order-slp-count">0</span> pallets staged)</span>
                 <div id="batch-order-slp-chips" class="flex flex-wrap gap-1"></div>
             </div>
             <button type="button" onclick="startNewOrderBatch()" class="text-[11px] font-bold text-slate-600 hover:text-slate-900 underline cursor-pointer">
@@ -506,8 +508,8 @@
                         <i data-lucide="qr-code" class="w-4 h-4"></i>
                     </div>
                     <div>
-                        <h2 class="font-bold text-sm sm:text-base leading-tight">Multi-SLP Scanner & Batch Entry</h2>
-                        <p id="scanner-status-text" class="text-[11px] text-slate-400">Scan camera QR/barcodes or enter multiple SLPs under one Order</p>
+                        <h2 class="font-bold text-sm sm:text-base leading-tight">Add Shipment</h2>
+                        <p id="scanner-status-text" class="text-[11px] text-slate-400">Scan the order barcode (or type it), then enter the number of pallets</p>
                     </div>
                 </div>
                 <button type="button" onclick="closeScannerModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer">
@@ -528,7 +530,8 @@
                                 id="scanner-order-input"
                                 list="existing-orders-datalist"
                                 oninput="refreshScannerModalBatchSummary()"
-                                placeholder="e.g., SO-40210"
+                                onkeydown="if (event.key === 'Enter') { event.preventDefault(); focusPalletCount('scanner-pallet-count'); }"
+                                placeholder="Scan or type, e.g. SO-40210"
                                 class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono-code text-xs font-extrabold bg-white focus:ring-2 focus:ring-sky-500 outline-none"
                             >
                         </div>
@@ -577,7 +580,7 @@
 
                         <div class="flex items-center gap-1.5">
                             <span id="modal-order-color-dot" class="w-3 h-3 rounded-full bg-slate-400"></span>
-                            <span class="font-bold text-slate-700">Order SLPs:</span>
+                            <span class="font-bold text-slate-700">Already staged:</span>
                             <span id="modal-order-slp-count" class="font-mono-code font-extrabold text-sm text-slate-900 bg-white border border-slate-300 px-2 py-0.2 rounded">0</span>
                         </div>
                     </div>
@@ -588,33 +591,21 @@
                 <!-- Camera Reader Container -->
                 <div id="qr-reader" class="w-full bg-slate-900 rounded-xl overflow-hidden"></div>
 
-                <!-- Single Manual SLP Scan Input -->
-                <form onsubmit="handleModalManualScan(event)" class="flex gap-1.5">
+                <!-- Number of pallets for the order -->
+                <form onsubmit="handleModalShipmentSubmit(event)" class="flex items-center gap-1.5">
+                    <label for="scanner-pallet-count" class="text-xs font-bold text-slate-700 shrink-0">Number of pallets</label>
                     <input
-                        type="text"
-                        id="manual-slp-input"
-                        placeholder="Scan or type single SLP barcode..."
-                        class="flex-1 px-3 py-2 border border-slate-300 rounded-lg font-mono-code text-xs font-extrabold focus:ring-2 focus:ring-amber-500 outline-none"
+                        type="number"
+                        id="scanner-pallet-count"
+                        min="1"
+                        max="200"
+                        inputmode="numeric"
+                        placeholder="e.g. 6"
+                        class="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-lg font-mono-code text-sm font-extrabold focus:ring-2 focus:ring-amber-500 outline-none"
                     >
                     <button type="submit" class="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-4 py-2 rounded-lg cursor-pointer shrink-0">
-                        + Add SLP
+                        + Add Shipment
                     </button>
-                </form>
-
-                <!-- Bulk Paste Multiple SLPs -->
-                <form onsubmit="handleBulkMultiSlpSubmit(event)" class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-                    <label for="bulk-slp-textarea" class="block text-[11px] font-bold text-slate-700">Bulk Paste Multiple SLP Barcodes (space, comma, or newline separated)</label>
-                    <textarea
-                        id="bulk-slp-textarea"
-                        rows="2"
-                        placeholder="SLP-884301, SLP-884302, SLP-884303"
-                        class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono-code text-xs bg-white outline-none"
-                    ></textarea>
-                    <div class="flex justify-end">
-                        <button type="submit" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-3.5 py-1.5 rounded-lg cursor-pointer">
-                            Add All Pasted SLPs
-                        </button>
-                    </div>
                 </form>
             </div>
         </div>
@@ -701,9 +692,10 @@
                     <div id="edit-order-slp-rows" class="space-y-1.5 max-h-40 overflow-y-auto"></div>
 
                     <div class="flex items-center gap-1.5 pt-1.5 border-t border-slate-200">
-                        <input type="text" id="edit-order-new-slp-input" placeholder="Add another SLP..." class="flex-1 px-2 py-1 border border-slate-300 rounded font-mono-code text-xs font-bold bg-white">
+                        <span class="text-xs font-bold text-slate-700 shrink-0">Add pallets</span>
+                        <input type="number" id="edit-order-new-pallet-count" min="1" max="200" inputmode="numeric" placeholder="How many" class="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded font-mono-code text-xs font-bold bg-white">
                         <select id="edit-order-new-slp-location" class="w-24 px-1.5 py-1 border border-slate-300 rounded text-xs font-bold bg-white"></select>
-                        <button type="button" onclick="handleAddSlpInsideEditOrder()" class="px-2.5 py-1 bg-slate-800 text-white text-xs font-bold rounded cursor-pointer">+ Add</button>
+                        <button type="button" onclick="handleAddPalletsInsideEditOrder()" class="px-2.5 py-1 bg-slate-800 text-white text-xs font-bold rounded cursor-pointer">+ Add</button>
                     </div>
                 </div>
 
@@ -2496,6 +2488,54 @@
             return Array.from(result.values());
         }
 
+        /**
+         * Two pallets with the same label after a merge:
+         * - a real SLP barcode scanned on two devices at once → keep one copy;
+         * - generated labels (ORDER-01, ORDER-02 …) made on two devices for the same order → both are
+         *   real pallets, so keep both and give the later one (by id) the next free number.
+         * Sorting by id makes every device pick the same result.
+         */
+        function resolveDuplicatePalletLabels(pallets, shipped = []) {
+            const label = p => String(p && p.slp || '').toUpperCase();
+            const isGenerated = p => {
+                const ord = String(p.orderNumber || '').toUpperCase();
+                const l = label(p);
+                return Boolean(ord) && l.startsWith(`${ord}-`) && /^\d+$/.test(l.slice(ord.length + 1));
+            };
+            const groups = new Map();
+            pallets.forEach(p => {
+                const k = label(p);
+                if (!groups.has(k)) groups.set(k, []);
+                groups.get(k).push(p);
+            });
+            const drop = new Set();
+            const renumber = [];
+            groups.forEach(group => {
+                if (group.length < 2) return;
+                const sorted = group.slice().sort((x, y) => String(x.id).localeCompare(String(y.id)));
+                sorted.slice(1).forEach(p => {
+                    if (isGenerated(p)) renumber.push(p);
+                    else drop.add(p);
+                });
+            });
+            if (!drop.size && !renumber.length) return pallets;
+            const taken = new Set([...pallets, ...(shipped || [])].map(label));
+            const relabel = new Map();
+            renumber.sort((x, y) => String(x.id).localeCompare(String(y.id))).forEach(p => {
+                const prefix = `${String(p.orderNumber).toUpperCase()}-`;
+                let n = 0;
+                taken.forEach(l => {
+                    if (l.startsWith(prefix)) n = Math.max(n, parseInt(l.slice(prefix.length), 10) || 0);
+                });
+                const next = `${prefix}${String(n + 1).padStart(2, '0')}`;
+                taken.add(next);
+                relabel.set(p, next);
+            });
+            return pallets
+                .filter(p => !drop.has(p))
+                .map(p => (relabel.has(p) ? { ...p, slp: relabel.get(p) } : p));
+        }
+
         function mergeBoardStates(base, local, remote) {
             const b = base || {};
             const merged = { ...remote };
@@ -2519,20 +2559,15 @@
 
             merged.columns = mergeRecordsById(b.columns, local.columns, remote.columns, c => c.id);
 
-            // Same SLP scanned on two devices at once → keep one copy
-            const seenSlps = new Set();
-            merged.pallets = mergeRecordsById(b.pallets, local.pallets, remote.pallets, p => p.id)
-                .filter(p => {
-                    const key = String(p.slp || '').toUpperCase();
-                    if (seenSlps.has(key)) return false;
-                    seenSlps.add(key);
-                    return true;
-                });
-
             merged.shippedPallets = mergeRecordsById(
                 b.shippedPallets, local.shippedPallets, remote.shippedPallets,
                 s => `${s.id}|${s.shippedAt}`
             ).sort((x, y) => (Number(y.shippedAt) || 0) - (Number(x.shippedAt) || 0));
+
+            merged.pallets = resolveDuplicatePalletLabels(
+                mergeRecordsById(b.pallets, local.pallets, remote.pallets, p => p.id),
+                merged.shippedPallets
+            );
 
             return merged;
         }
@@ -3990,23 +4025,194 @@
             return true;
         }
 
+        /**
+         * Shipments: an order number + a number of pallets (no SLP barcodes).
+         * Each pallet still gets its own record, labelled ORDER-01, ORDER-02, … so moving, docking,
+         * shipping, capacity and sync work exactly as before.
+         */
+        function nextPalletLabels(ord, count) {
+            const prefix = `${ord}-`;
+            const taken = new Set([...appState.pallets, ...(appState.shippedPallets || [])]
+                .map(p => String(p && p.slp || '').toUpperCase()));
+            let n = 0;
+            taken.forEach(label => {
+                if (!label.startsWith(prefix)) return;
+                const k = parseInt(label.slice(prefix.length), 10);
+                if (k > n) n = k;
+            });
+            const labels = [];
+            while (labels.length < count) {
+                n++;
+                const label = `${prefix}${String(n).padStart(2, '0')}`;
+                if (!taken.has(label)) labels.push(label);
+            }
+            return labels;
+        }
+
+        /** How many more pallets fit in a lane (2x pallets pair up, 2 per floor spot). */
+        function palletRoomInLane(col, is2x) {
+            const cap = Number(col && col.capacity) || 0;
+            if (cap <= 0) return Infinity;
+            const inLane = appState.pallets.filter(p => p.columnId === col.id);
+            const free = Math.max(0, cap - computeFloorSpotsUsed(inLane));
+            if (!is2x) return free;
+            const oddDouble = inLane.filter(p => p.doubleStacked).length % 2;
+            return free * 2 + oddDouble;
+        }
+
+        /** Lanes in floor order (by lane number), starting at the chosen lane. */
+        function lanesFrom(startColId) {
+            const num = c => { const m = /(\d+)/.exec(String(c.name || '')); return m ? Number(m[1]) : Infinity; };
+            const sorted = appState.columns.map((c, i) => ({ c, i }))
+                .sort((a, b) => num(a.c) - num(b.c) || a.i - b.i).map(x => x.c);
+            const at = Math.max(0, sorted.findIndex(c => c.id === startColId));
+            return [...sorted.slice(at), ...sorted.slice(0, at)];
+        }
+
+        /**
+         * Where a shipment goes: the chosen lane first, then the next lanes that are empty or hold only
+         * this order, then any lane with room. `left` = pallets that fit nowhere.
+         */
+        function planShipmentLanes(startColId, count, is2x, ord) {
+            const lanes = lanesFrom(startColId);
+            const plan = [];
+            let left = count;
+            const take = col => {
+                if (left <= 0 || plan.some(x => x.col.id === col.id)) return;
+                const n = Math.min(palletRoomInLane(col, is2x), left);
+                if (n > 0) { plan.push({ col, n }); left -= n; }
+            };
+            if (lanes[0]) take(lanes[0]);
+            const onlyThisOrder = col => appState.pallets
+                .filter(p => p.columnId === col.id)
+                .every(p => normalizeOrderNumber(p.orderNumber) === ord);
+            lanes.slice(1).filter(onlyThisOrder).forEach(take);
+            lanes.slice(1).forEach(take);
+            return { plan, left };
+        }
+
+        function addShipmentPallets(ord, parts, { carrier = '', destination = '', notes = '', doubleStacked = false } = {}) {
+            const total = parts.reduce((t, x) => t + x.n, 0);
+            const labels = nextPalletLabels(ord, total);
+            const peers = appState.pallets.filter(p => normalizeOrderNumber(p.orderNumber) === ord);
+            const inherited = {
+                carrier: String(carrier).trim() || peers[0]?.carrier || '',
+                destination: String(destination).trim() || peers[0]?.destination || '',
+                dockNumber: peers[0]?.dockNumber || '',
+                notes: String(notes).trim() || peers[0]?.notes || ''
+            };
+            const is2x = Boolean(doubleStacked);
+            const now = Date.now();
+            let k = 0;
+            const added = [];
+            parts.forEach(({ col, n }) => {
+                for (let i = 0; i < n; i++) {
+                    const label = labels[k++];
+                    const pallet = {
+                        id: `plt-${now}-${k}-${Math.random().toString(36).slice(2, 6)}`,
+                        slp: label,
+                        orderNumber: ord,
+                        columnId: col.id,
+                        ...inherited,
+                        doubleStacked: is2x,
+                        createdAt: now,
+                        history: [{
+                            time: now,
+                            text: `Staged in ${col.name} under Order ${ord} (pallet ${peers.length + k} • shipment of ${total}${is2x ? ' • 2x Stacked' : ''})`
+                        }]
+                    };
+                    appState.pallets.push(pallet);
+                    logScanEvent('SCAN', pallet, { toLane: col.name });
+                    added.push(pallet);
+                }
+            });
+            recentlyScannedPalletId = added.length ? added[added.length - 1].id : null;
+            saveState();
+            playScanBeep(true);
+            renderBoard();
+            syncQuickOrderBanner();
+            checkAndNotifyOverduePallets(true);
+            showToast(`Added ${total} pallet${total === 1 ? '' : 's'} for ${ord} → ${parts.map(x => `${x.col.name} (${x.n})`).join(', ')}${is2x ? ' • 2x' : ''}`, 'success');
+            return added;
+        }
+
+        /**
+         * Adds a shipment. Fits in the chosen lane → added straight away. Too big → offers to spread it
+         * over the next lanes. No room anywhere → the usual over-capacity warning for the chosen lane.
+         */
+        function requestAddShipment({ orderNumber, count, columnId, carrier = '', destination = '', notes = '', doubleStacked = false }, onDone = null, onCancel = null) {
+            const ord = normalizeOrderNumber(orderNumber);
+            if (!String(orderNumber || '').trim() || ord === 'UNASSIGNED') {
+                showToast('Scan or type the order number first.', 'warning');
+                return false;
+            }
+            const n = parseInt(String(count || '').trim(), 10);
+            if (!(n >= 1 && n <= 200)) {
+                showToast('Enter the number of pallets (1–200).', 'warning');
+                return false;
+            }
+            const col = appState.columns.find(c => c.id === columnId) || appState.columns[0];
+            if (!col) {
+                showToast('Add a staging lane first.', 'warning');
+                return false;
+            }
+            const is2x = Boolean(doubleStacked);
+            const extras = { carrier, destination, notes, doubleStacked: is2x };
+            const run = parts => {
+                addShipmentPallets(ord, parts, extras);
+                if (onDone) onDone();
+            };
+            const { plan, left } = planShipmentLanes(col.id, n, is2x, ord);
+            if (left === 0 && plan.length === 1 && plan[0].col.id === col.id) {
+                run(plan);
+                return true;
+            }
+            if (left === 0) {
+                const roomHere = plan[0].col.id === col.id ? plan[0].n : 0;
+                openConfirmModal(
+                    `${col.name} has room for ${roomHere} of ${n} pallets`,
+                    `Spread ${ord} over ${plan.map(x => `${x.col.name} (${x.n})`).join(', ')}?`,
+                    () => run(plan),
+                    'Spread over lanes',
+                    'emerald',
+                    onCancel
+                );
+                return true;
+            }
+            confirmIfOverCapacity(col.id, Array.from({ length: n }, () => ({ doubleStacked: is2x })), () => run([{ col, n }]), onCancel);
+            return true;
+        }
+
+        function focusPalletCount(inputId) {
+            const inp = document.getElementById(inputId);
+            if (!inp) return;
+            inp.focus();
+            if (typeof inp.select === 'function') inp.select();
+        }
+
         function handleQuickScanSubmit(event) {
             event.preventDefault();
             const colId = document.getElementById('quick-scan-location')?.value;
-            const orderVal = document.getElementById('quick-order-input')?.value;
-            const slpInp = document.getElementById('quick-slp-input');
+            const orderInp = document.getElementById('quick-order-input');
+            const countInp = document.getElementById('quick-pallet-count');
             const is2x = Boolean(document.getElementById('quick-doublestack-chk')?.checked);
-            const slpVal = slpInp?.value;
-            if (!String(slpVal || '').trim()) return;
-
-            confirmIfOverCapacity(colId, [{ doubleStacked: is2x }], () => {
-                if (addSlpToStaging({ slp: slpVal, orderNumber: orderVal, columnId: colId, doubleStacked: is2x })) {
-                    if (slpInp) {
-                        slpInp.value = '';
-                        slpInp.focus();
-                    }
+            if (!String(orderInp?.value || '').trim()) {
+                orderInp?.focus?.();
+                return;
+            }
+            if (!String(countInp?.value || '').trim()) {
+                focusPalletCount('quick-pallet-count');
+                return;
+            }
+            requestAddShipment({ orderNumber: orderInp.value, count: countInp.value, columnId: colId, doubleStacked: is2x }, () => {
+                // Ready for the next shipment
+                if (countInp) countInp.value = '';
+                if (orderInp) {
+                    orderInp.value = '';
+                    orderInp.focus?.();
                 }
-            }, () => slpInp?.focus());
+                syncQuickOrderBanner();
+            }, () => countInp?.focus?.());
         }
 
         function openScannerModal() {
@@ -4093,57 +4299,30 @@
             }
         }
 
-        function handleModalManualScan(event) {
+        function handleModalShipmentSubmit(event) {
             event.preventDefault();
-            const slpInp = document.getElementById('manual-slp-input');
-            const ordVal = document.getElementById('scanner-order-input')?.value;
-            const colId = document.getElementById('scanner-location-select')?.value;
-            const carrier = document.getElementById('pallet-carrier-input')?.value || '';
-            const dest = document.getElementById('pallet-dest-input')?.value || '';
-            const is2x = Boolean(document.getElementById('scanner-doublestack-chk')?.checked);
-            const slpVal = slpInp?.value;
-            if (!String(slpVal || '').trim()) return;
-
-            confirmIfOverCapacity(colId, [{ doubleStacked: is2x }], () => {
-                if (addSlpToStaging({ slp: slpVal, orderNumber: ordVal, columnId: colId, carrier, destination: dest, doubleStacked: is2x })) {
-                    if (slpInp) {
-                        slpInp.value = '';
-                        slpInp.focus();
-                    }
-                    refreshScannerModalBatchSummary();
-                }
-            }, () => slpInp?.focus());
-        }
-
-        function handleBulkMultiSlpSubmit(event) {
-            event.preventDefault();
-            const ta = document.getElementById('bulk-slp-textarea');
-            const ordVal = document.getElementById('scanner-order-input')?.value;
-            const colId = document.getElementById('scanner-location-select')?.value;
-            const carrier = document.getElementById('pallet-carrier-input')?.value || '';
-            const dest = document.getElementById('pallet-dest-input')?.value || '';
-            const is2x = Boolean(document.getElementById('scanner-doublestack-chk')?.checked);
-
-            const tokens = String(ta?.value || '').split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
-            if (tokens.length === 0) {
-                showToast('Please paste at least one SLP code.', 'warning');
+            const ordInp = document.getElementById('scanner-order-input');
+            const countInp = document.getElementById('scanner-pallet-count');
+            if (!String(ordInp?.value || '').trim()) {
+                showToast('Scan or type the order number first.', 'warning');
+                ordInp?.focus?.();
                 return;
             }
-            // Count only SLPs that will really be added (not already on the board, no repeats)
-            const onBoard = new Set(appState.pallets.map(p => String(p.slp).toUpperCase()));
-            const newCodes = [...new Set(tokens.map(t => t.toUpperCase()))].filter(t => !onBoard.has(t));
-
-            confirmIfOverCapacity(colId, newCodes.map(() => ({ doubleStacked: is2x })), () => {
-                let added = 0;
-                tokens.forEach(tok => {
-                    if (addSlpToStaging({ slp: tok, orderNumber: ordVal, columnId: colId, carrier, destination: dest, doubleStacked: is2x })) {
-                        added++;
-                    }
-                });
-                if (ta) ta.value = '';
+            requestAddShipment({
+                orderNumber: ordInp.value,
+                count: countInp?.value,
+                columnId: document.getElementById('scanner-location-select')?.value,
+                carrier: document.getElementById('pallet-carrier-input')?.value || '',
+                destination: document.getElementById('pallet-dest-input')?.value || '',
+                doubleStacked: Boolean(document.getElementById('scanner-doublestack-chk')?.checked)
+            }, () => {
+                if (countInp) countInp.value = '';
+                if (ordInp) {
+                    ordInp.value = '';
+                    ordInp.focus?.();
+                }
                 refreshScannerModalBatchSummary();
-                showToast(`Added ${added} of ${tokens.length} SLP(s)`, added > 0 ? 'success' : 'warning');
-            });
+            }, () => countInp?.focus?.());
         }
 
         function startCameraQrScanner() {
@@ -4151,7 +4330,7 @@
                 const readerEl = document.getElementById('qr-reader');
                 const statusEl = document.getElementById('scanner-status-text');
                 if (!readerEl || typeof Html5Qrcode === 'undefined') {
-                    if (statusEl) statusEl.textContent = 'Camera scanner unavailable — use manual or batch SLP entry below.';
+                    if (statusEl) statusEl.textContent = 'Camera scanner unavailable — type the order number above.';
                     return;
                 }
                 try {
@@ -4164,25 +4343,20 @@
                             const now = Date.now();
                             if (now - lastScanTimestamp < 1200) return;
                             lastScanTimestamp = now;
-                            const ordVal = document.getElementById('scanner-order-input')?.value;
-                            const colId = document.getElementById('scanner-location-select')?.value;
-                            const carrier = document.getElementById('pallet-carrier-input')?.value || '';
-                            const dest = document.getElementById('pallet-dest-input')?.value || '';
-                            const is2x = Boolean(document.getElementById('scanner-doublestack-chk')?.checked);
-                            const camOver = getOverCapacityInfo(colId, [{ doubleStacked: is2x }]);
-                            if (camOver) {
-                                showToast(`${camOver.col.name} is over capacity (${camOver.after}/${camOver.capacity} floor spots)`, 'warning');
-                            }
-                            if (addSlpToStaging({ slp: decodedText, orderNumber: ordVal, columnId: colId, carrier, destination: dest, doubleStacked: is2x })) {
-                                refreshScannerModalBatchSummary();
-                            }
+                            // The barcode is the order number; the pallet count is typed in next
+                            const ordInp = document.getElementById('scanner-order-input');
+                            if (ordInp) ordInp.value = normalizeOrderNumber(decodedText);
+                            refreshScannerModalBatchSummary();
+                            playScanBeep(true);
+                            showToast(`Order ${normalizeOrderNumber(decodedText)} scanned — enter the number of pallets`, 'info');
+                            focusPalletCount('scanner-pallet-count');
                         },
                         () => {}
                     );
                     isScannerRunning = true;
                 } catch (err) {
                     isScannerRunning = false;
-                    if (statusEl) statusEl.textContent = 'Camera access unavailable — use manual or batch SLP entry below.';
+                    if (statusEl) statusEl.textContent = 'Camera access unavailable — type the order number above.';
                 }
             }).catch(() => {});
         }
@@ -4669,17 +4843,13 @@
             });
         }
 
-        function handleAddSlpInsideEditOrder() {
+        function handleAddPalletsInsideEditOrder() {
             const origOrd = document.getElementById('edit-order-original-number')?.value;
-            const slpInp = document.getElementById('edit-order-new-slp-input');
+            const countInp = document.getElementById('edit-order-new-pallet-count');
             const locSel = document.getElementById('edit-order-new-slp-location');
-            const slpVal = slpInp?.value;
-            if (!String(slpVal || '').trim()) return;
-            confirmIfOverCapacity(locSel?.value, [{ doubleStacked: false }], () => {
-                if (addSlpToStaging({ slp: slpVal, orderNumber: origOrd, columnId: locSel?.value })) {
-                    if (slpInp) slpInp.value = '';
-                    renderEditOrderSlpRows(origOrd);
-                }
+            requestAddShipment({ orderNumber: origOrd, count: countInp?.value, columnId: locSel?.value }, () => {
+                if (countInp) countInp.value = '';
+                renderEditOrderSlpRows(origOrd);
             });
         }
 
