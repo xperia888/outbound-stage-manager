@@ -616,6 +616,15 @@ test('merge: same generated label from two devices keeps both pallets; a real SL
     assert.equal(ab.filter(p => p.slp === 'SLP-884101').length, 1, 'a real barcode scanned twice is kept once');
 });
 
+test('built-in demo pallets never come back: new devices start empty and merges drop them', () => {
+    const { run } = loadApp();
+    assert.equal(run('createInitialDemoState().pallets.length'), 0);
+    const demo = pallet('plt-demo-1', 'SLP-884101', { orderNumber: 'SO-40118' });
+    const real = pallet('p-1', 'SO-1-01', { orderNumber: 'SO-1' });
+    const merged = JSON.parse(run(`JSON.stringify(mergeBoardStates(null, { ...appState, pallets: [${JSON.stringify(demo)}] }, { ...appState, pallets: [${JSON.stringify(real)}] }))`));
+    assert.deepEqual(merged.pallets.map(p => p.id), ['p-1']);
+});
+
 test('Code.gs resolveWarehouse: the code says which warehouse it opens', () => {
     const { ctx } = loadCodeGs({ accessCode: 'ont-code', chinoCode: 'chino-code', testMode: 'on' });
     const r = key => JSON.parse(JSON.stringify(ctx.api({ fn: 'resolveWarehouse', key })));
