@@ -625,6 +625,28 @@ test('built-in demo pallets never come back: new devices start empty and merges 
     assert.deepEqual(merged.pallets.map(p => p.id), ['p-1']);
 });
 
+test('board: lanes in number order; search shows only lanes with a match', () => {
+    const { run, ctx } = loadApp();
+    const board = { innerHTML: '', className: '', style: {}, classList: { add() {}, remove() {} } };
+    const realGet = ctx.document.getElementById;
+    ctx.document.getElementById = id => (id === 'staging-board' ? board : realGet(id));
+    run(`appState.columns = [{ id: 'c62', name: 'S62', capacity: 8 }, { id: 'c30', name: 'S30', capacity: 8 }, { id: 'c51', name: 'S51', capacity: 8 }, { id: 'c5', name: 'S5', capacity: 8 }];
+         appState.pallets = [${JSON.stringify(pallet('a', 'SO-1-01', { columnId: 'c51', orderNumber: 'SO-1', carrier: 'Saia' }))},
+                             ${JSON.stringify(pallet('b', 'SO-2-01', { columnId: 'c62', orderNumber: 'SO-2', carrier: 'Estes Express' }))}];
+         searchQuery = ''; selectedCarrierFilter = ''; renderBoard();`);
+    assert.deepEqual(JSON.parse(run('JSON.stringify(appState.columns.map(c => c.name))')), ['S5', 'S30', 'S51', 'S62']);
+    const lanesIn = () => [...board.innerHTML.matchAll(/id="lane-card-([^"]+)"/g)].map(m => m[1]);
+    assert.deepEqual(lanesIn(), ['c5', 'c30', 'c51', 'c62']);
+    run(`searchQuery = 'estes'; renderBoard();`);
+    assert.deepEqual(lanesIn(), ['c62'], 'carrier search → only that lane');
+    run(`searchQuery = 'so-1'; renderBoard();`);
+    assert.deepEqual(lanesIn(), ['c51'], 'order search → only that lane');
+    run(`searchQuery = 's30'; renderBoard();`);
+    assert.deepEqual(lanesIn(), ['c30'], 'lane name still finds the (empty) lane');
+    run(`searchQuery = 'nothing-here'; renderBoard();`);
+    assert.match(board.innerHTML, /No lane has a pallet matching/);
+});
+
 test('Code.gs resolveWarehouse: the code says which warehouse it opens', () => {
     const { ctx } = loadCodeGs({ accessCode: 'ont-code', chinoCode: 'chino-code', testMode: 'on' });
     const r = key => JSON.parse(JSON.stringify(ctx.api({ fn: 'resolveWarehouse', key })));

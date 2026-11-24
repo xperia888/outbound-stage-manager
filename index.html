@@ -519,7 +519,7 @@
 
             <div class="p-4 space-y-3 max-h-[84vh] overflow-y-auto">
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div class="space-y-2">
                         <div>
                             <div class="flex items-center justify-between mb-1">
                                 <label for="scanner-order-input" class="block text-[11px] font-bold text-slate-700">Order / SO Number</label>
@@ -532,9 +532,29 @@
                                 oninput="refreshScannerModalBatchSummary()"
                                 onkeydown="if (event.key === 'Enter') { event.preventDefault(); focusPalletCount('scanner-pallet-count'); }"
                                 placeholder="Scan or type, e.g. SO-40210"
-                                class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono-code text-xs font-extrabold bg-white focus:ring-2 focus:ring-sky-500 outline-none"
+                                class="w-full px-2.5 py-2 border border-slate-300 rounded-lg font-mono-code text-sm font-extrabold bg-white focus:ring-2 focus:ring-sky-500 outline-none"
                             >
                         </div>
+
+                        <!-- Number of pallets: right under the order number -->
+                        <form onsubmit="handleModalShipmentSubmit(event)">
+                            <label for="scanner-pallet-count" class="block text-[11px] font-bold text-slate-700 mb-1">Number of Pallets</label>
+                            <div class="flex items-center gap-1.5">
+                                <input
+                                    type="number"
+                                    id="scanner-pallet-count"
+                                    min="1"
+                                    max="200"
+                                    inputmode="numeric"
+                                    placeholder="e.g. 6"
+                                    class="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-lg font-mono-code text-sm font-extrabold bg-white focus:ring-2 focus:ring-amber-500 outline-none"
+                                >
+                                <button type="submit" class="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-4 py-2 rounded-lg cursor-pointer shrink-0">
+                                    + Add Shipment
+                                </button>
+                            </div>
+                        </form>
+
                         <div>
                             <label for="scanner-location-select" class="block text-[11px] font-bold text-slate-700 mb-1">Target Staging Lane</label>
                             <select
@@ -591,22 +611,6 @@
                 <!-- Camera Reader Container -->
                 <div id="qr-reader" class="w-full bg-slate-900 rounded-xl overflow-hidden"></div>
 
-                <!-- Number of pallets for the order -->
-                <form onsubmit="handleModalShipmentSubmit(event)" class="flex items-center gap-1.5">
-                    <label for="scanner-pallet-count" class="text-xs font-bold text-slate-700 shrink-0">Number of pallets</label>
-                    <input
-                        type="number"
-                        id="scanner-pallet-count"
-                        min="1"
-                        max="200"
-                        inputmode="numeric"
-                        placeholder="e.g. 6"
-                        class="flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-lg font-mono-code text-sm font-extrabold focus:ring-2 focus:ring-amber-500 outline-none"
-                    >
-                    <button type="submit" class="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-4 py-2 rounded-lg cursor-pointer shrink-0">
-                        + Add Shipment
-                    </button>
-                </form>
             </div>
         </div>
     </div>
@@ -1175,7 +1179,7 @@
                     </div>
                     <div>
                         <h2 class="font-bold text-sm sm:text-base leading-tight">Find Available Staging Locations</h2>
-                        <p class="text-[11px] text-slate-400">Locate open lanes with enough free floor spots (accounting for 2x stacked pallets)</p>
+                        <p class="text-[11px] text-slate-400">Lanes with room for your pallets (2x stacked pallets take 1 spot per 2)</p>
                     </div>
                 </div>
                 <button type="button" onclick="closeAvailableFinderModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer">
@@ -1187,7 +1191,7 @@
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5">
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                         <div>
-                            <label for="finder-min-slots-input" class="block text-[11px] font-bold text-slate-700 mb-1">Min Free Floor Spots Needed</label>
+                            <label for="finder-min-slots-input" class="block text-[11px] font-bold text-slate-700 mb-1">Pallets to Stage</label>
                             <input
                                 type="number"
                                 id="finder-min-slots-input"
@@ -1197,6 +1201,10 @@
                                 oninput="renderAvailableLocationsResults()"
                                 class="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono-code text-xs font-extrabold bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
                             >
+                            <label class="mt-1.5 inline-flex items-center gap-1.5 bg-cyan-50 border border-cyan-300 text-cyan-950 font-mono-code font-extrabold text-[11px] px-2 py-1 rounded-lg cursor-pointer select-none">
+                                <input type="checkbox" id="finder-doublestack-chk" onchange="renderAvailableLocationsResults()" class="accent-cyan-700 rounded">
+                                <span>2x Double-Stacked (2 per spot)</span>
+                            </label>
                         </div>
                         <div>
                             <label for="finder-filter-mode-select" class="block text-[11px] font-bold text-slate-700 mb-1">Lane Filter</label>
@@ -1219,14 +1227,14 @@
                             >
                                 <option value="most_free">Most Free Floor Spots</option>
                                 <option value="empty_first">Empty Lanes First</option>
-                                <option value="name_asc">Location Name (S51–S62)</option>
+                                <option value="name_asc">Lane Number (S30 → S80)</option>
                             </select>
                         </div>
                     </div>
 
                     <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
                         <div class="flex items-center gap-1 text-[11px]">
-                            <span class="font-bold text-slate-500">Min Spots:</span>
+                            <span class="font-bold text-slate-500">Pallets:</span>
                             <button type="button" onclick="setFinderMinSlots(1)" class="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 border border-slate-300 font-mono-code font-bold cursor-pointer">1+</button>
                             <button type="button" onclick="setFinderMinSlots(2)" class="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 border border-slate-300 font-mono-code font-bold cursor-pointer">2+</button>
                             <button type="button" onclick="setFinderMinSlots(4)" class="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 border border-slate-300 font-mono-code font-bold cursor-pointer">4+</button>
@@ -3322,7 +3330,20 @@
             renderBoard();
         }
 
+        /** Lane number from its name (S30 → 30); lanes without a number go last, A→Z. */
+        function laneNumberOf(col) {
+            const m = /(\d+)/.exec(String(col && col.name || ''));
+            return m ? Number(m[1]) : Infinity;
+        }
+
+        /** Keeps lanes in number order (S30, S31 … S80) everywhere: board, lane lists, sync. */
+        function sortColumnsByLaneNumber(cols) {
+            return cols.sort((a, b) => laneNumberOf(a) - laneNumberOf(b)
+                || String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }));
+        }
+
         function renderBoard() {
+            sortColumnsByLaneNumber(appState.columns);
             syncHeaderLaneRangeBadge();
             applyBoardGridStyles();
 
@@ -3379,6 +3400,8 @@
             const q = searchQuery.trim().toLowerCase();
             const carrierFilter = selectedCarrierFilter.trim().toLowerCase();
 
+            const searchActive = Boolean(q || carrierFilter || filterDoubleStackedOnly);
+            let lanesShown = 0;
             board.innerHTML = appState.columns.map(col => {
                 const colPallets = appState.pallets.filter(p => p.columnId === col.id);
                 const pairMap = computeDoubleStackPairMap(colPallets);
@@ -3418,6 +3441,11 @@
                 });
 
                 const isFiltering = Boolean(q || carrierFilter || filterDoubleStackedOnly);
+                // While searching, only lanes with a match are shown (or the lane itself, e.g. "S52")
+                const laneNameMatches = Boolean(q) && !carrierFilter && !filterDoubleStackedOnly
+                    && String(col.name || '').toLowerCase() === q;
+                if (isFiltering && visiblePallets.length === 0 && !laneNameMatches) return '';
+                lanesShown++;
                 const cardsHtml = appState.cardGroupMode === 'grouped'
                     ? renderGroupedOrderCardsForColumn(visiblePallets, orderSlpMap, isFiltering, pairMap)
                     : renderIndividualPalletCardsForColumn(visiblePallets, orderSlpMap, isFiltering, pairMap);
@@ -3479,6 +3507,12 @@
                     </div>
                 `;
             }).join('');
+
+            if (searchActive && lanesShown === 0) {
+                board.innerHTML = `<div class="col-span-full w-full text-center py-10 text-sm font-semibold text-slate-500 bg-white/70 border border-dashed border-slate-300 rounded-xl">
+                    No lane has a pallet matching this search.
+                </div>`;
+            }
 
             if (window.lucide) lucide.createIcons();
         }
@@ -5206,15 +5240,18 @@
             const listEl = document.getElementById('finder-results-list');
             if (!listEl) return;
 
+            const is2x = Boolean(document.getElementById('finder-doublestack-chk')?.checked);
+            const spotsNeeded = is2x ? Math.ceil(minSlots / 2) : minSlots;
             let matches = appState.columns.map(col => {
                 const colPallets = appState.pallets.filter(p => p.columnId === col.id);
                 const cap = Number(col.capacity) || 8;
                 const usedSpots = computeFloorSpotsUsed(colPallets);
                 const free = Math.max(0, cap - usedSpots);
+                const room = palletRoomInLane(col, is2x);
                 const hasTargetOrder = targetOrd !== 'UNASSIGNED' && colPallets.some(p => normalizeOrderNumber(p.orderNumber) === targetOrd);
-                return { col, slpCount: colPallets.length, usedSpots, cap, free, hasTargetOrder };
+                return { col, slpCount: colPallets.length, usedSpots, cap, free, room, hasTargetOrder };
             }).filter(item => {
-                if (item.free < minSlots) return false;
+                if (item.room < minSlots) return false;
                 if (filterMode === 'empty_only' && item.slpCount > 0) return false;
                 if (filterMode === 'same_order' && !item.hasTargetOrder) return false;
                 return true;
@@ -5228,7 +5265,7 @@
                 matches.sort((a, b) => b.free - a.free);
             }
 
-            if (statsEl) statsEl.textContent = `Found ${matches.length} location(s) with at least ${minSlots} open floor spot(s).`;
+            if (statsEl) statsEl.textContent = `Found ${matches.length} lane(s) with room for ${minSlots} ${is2x ? 'double-stacked ' : ''}pallet(s)${is2x ? ` (${spotsNeeded} floor spot${spotsNeeded === 1 ? '' : 's'})` : ''}.`;
 
             listEl.innerHTML = matches.map(m => `
                 <div class="border border-slate-200 bg-white rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
@@ -5236,12 +5273,13 @@
                         <div class="flex items-center gap-2 flex-wrap">
                             <span class="font-mono-code font-extrabold text-sm text-slate-900">${escapeHtml(m.col.name)}</span>
                             <span class="font-mono-code font-extrabold bg-emerald-100 text-emerald-900 px-2 py-0.2 rounded">${m.free} spot(s) free</span>
-                            <span class="font-mono-code text-slate-500">(${m.usedSpots}/${m.cap} spots • ${m.slpCount} SLPs)</span>
+                            ${is2x ? `<span class="font-mono-code font-extrabold bg-cyan-100 text-cyan-900 px-2 py-0.2 rounded">fits ${m.room === Infinity ? 'any' : m.room} 2x pallets</span>` : ''}
+                            <span class="font-mono-code text-slate-500">(${m.usedSpots}/${m.cap} spots • ${m.slpCount} pallets)</span>
                         </div>
                     </div>
                     <button
                         type="button"
-                        onclick="selectFoundLocationAndClose(${jsArg(m.col.id)})"
+                        onclick="selectFoundLocationAndClose(${jsArg(m.col.id)}, ${is2x}, ${minSlots})"
                         class="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-3 py-1.5 rounded-lg cursor-pointer shrink-0"
                     >
                         Use Location
@@ -5250,9 +5288,14 @@
             `).join('') || `<div class="text-center py-6 text-xs text-slate-500 bg-slate-50 rounded-xl border border-slate-200">No locations match this free floor-spot requirement.</div>`;
         }
 
-        function selectFoundLocationAndClose(colId) {
+        function selectFoundLocationAndClose(colId, is2x = false, pallets = 0) {
             const sel = document.getElementById('quick-scan-location');
             if (sel) sel.value = colId;
+            // Carry the 2x choice and pallet count over to the quick bar
+            const dsChk = document.getElementById('quick-doublestack-chk');
+            if (dsChk) dsChk.checked = Boolean(is2x);
+            const countInp = document.getElementById('quick-pallet-count');
+            if (countInp && pallets > 0) countInp.value = String(pallets);
             const targetOrd = document.getElementById('finder-new-order-input')?.value.trim();
             const ordInp = document.getElementById('quick-order-input');
             if (targetOrd && ordInp) {
