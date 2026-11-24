@@ -174,6 +174,12 @@ async def run_round(browser, wh, rnd, devices):
 
     # --- Scan Order window: order + carrier/destination + number of pallets ---------------------------
     await A.click('button:has-text("Scan Order")')
+    await A.wait_for_timeout(200)
+    order_box = await A.locator('#scanner-order-input').bounding_box()
+    count_box = await A.locator('#scanner-pallet-count').bounding_box()
+    lane_box = await A.locator('#scanner-location-select').bounding_box()
+    record(wh, rnd, 'Scan Order: pallet count sits right under the order number',
+           order_box and count_box and lane_box and order_box['y'] < count_box['y'] < lane_box['y'] and count_box['y'] - order_box['y'] < 90, (order_box, count_box))
     await A.wait_for_timeout(300)
     border = f'SO-{tag}-M'
     await A.fill('#scanner-order-input', border)
@@ -387,7 +393,35 @@ async def run_round(browser, wh, rnd, devices):
     await A.wait_for_timeout(300)
     vis = await A.evaluate(f"document.querySelectorAll('#staging-board [onclick^=\"openPalletDetailModal(\"]').length")
     record(wh, rnd, 'Search filter narrows the board', vis >= 1, vis)
+    shown = await A.evaluate("[...document.querySelectorAll('#staging-board [id^=lane-card-]')].map(e => e.id)")
+    want = await state(A, f"[...new Set(appState.pallets.filter(p => p.slp.toLowerCase().includes('{border}-0'.toLowerCase())).map(p => 'lane-card-' + p.columnId))]")
+    record(wh, rnd, 'Search shows only the lanes with a match', sorted(shown) == sorted(want) and len(shown) < await state(A, 'appState.columns.length'), shown)
+    await A.fill('#search-filter-input', 'Estes Express')
+    await A.dispatch_event('#search-filter-input', 'input')
+    await A.wait_for_timeout(300)
+    lanes_ok = await A.evaluate("[...document.querySelectorAll('#staging-board [id^=lane-card-]')].every(e => /Estes Express/i.test(e.textContent))")
+    record(wh, rnd, 'Carrier search shows only lanes holding that carrier', lanes_ok)
     await click_fn(A, 'clearSearch')
+    names = await A.evaluate("[...document.querySelectorAll('#staging-board [id^=lane-card-]')].map(e => appState.columns.find(c => 'lane-card-' + c.id === e.id).name)")
+    nums = [int(''.join(ch for ch in n if ch.isdigit())) if any(ch.isdigit() for ch in n) else 10**9 for n in names]
+    record(wh, rnd, 'Board lists lanes in number order', nums == sorted(nums), names)
+
+    # Find Space with 2x pallets: 2 per floor spot, and the choice carries to the quick bar
+    await A.click('button:has-text("Find Space")'); await A.wait_for_timeout(300)
+    await A.uncheck('#finder-doublestack-chk')
+    await A.fill('#finder-min-slots-input', '16')
+    await A.dispatch_event('#finder-min-slots-input', 'input')
+    single = await A.evaluate("document.querySelectorAll('#finder-results-list button').length")
+    await A.check('#finder-doublestack-chk'); await A.wait_for_timeout(200)
+    double = await A.evaluate("document.querySelectorAll('#finder-results-list button').length")
+    stats = (await A.text_content('#finder-summary-stats') or '').strip()
+    exp_single = await state(A, "appState.columns.filter(c => palletRoomInLane(c, false) >= 16).length")
+    exp_double = await state(A, "appState.columns.filter(c => palletRoomInLane(c, true) >= 16).length")
+    record(wh, rnd, 'Find Space: 2x option counts 2 pallets per spot', single == exp_single and double == exp_double and double >= single and '(8 floor spots)' in stats, f'{single}/{exp_single} -> {double}/{exp_double} {stats}')
+    await A.locator('#finder-results-list button').first.click(); await A.wait_for_timeout(200)
+    carried = await A.evaluate("document.getElementById('quick-doublestack-chk').checked && document.getElementById('quick-pallet-count').value === '16'")
+    record(wh, rnd, 'Find Space: "Use Location" carries 2x + pallet count to the quick bar', carried)
+    await A.uncheck('#quick-doublestack-chk'); await A.fill('#quick-pallet-count', '')
     await A.click('#card-mode-grouped-btn'); await A.wait_for_timeout(200)
     grouped = await state(A, "appState.cardGroupMode")
     await A.click('#card-mode-pallets-btn'); await A.wait_for_timeout(200)
