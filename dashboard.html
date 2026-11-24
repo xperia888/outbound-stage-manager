@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outbound Staging — Live Dashboard</title>
+<!--
+  Big-screen (TV) dashboard for the outbound staging board.
+  Read-only: it loads the same board the app saves to Google Sheets and refreshes itself.
+  It never writes anything. Sign-in uses the same access code as the app; the code picks the warehouse.
+  Layout follows the warehouse plan along the north wall, west → east:
+    - 9 loading docks (groups of 5 and 4) where shipments are loaded,
+    - then the staging area (the red box on the plan): 12 lanes S51–S62 in front of that wall's
+      12 doors (groups of 2, 4 and 6), with racking behind.
+  Edit FLOOR_LAYOUT below if doors or lanes change.
+-->
+<style>
+    :root {
+        --surface-0: #121211;
+        --surface-1: #1a1a19;
+        --surface-2: #242422;
+        --surface-3: #2f2f2c;
+        --line: #3d3d39;
+        --text-primary: #f0efec;
+        --text-secondary: #c3c2b7;
+        --text-muted: #8f8e86;
+        --accent: #3987e5;          /* dock assigned / loading */
+        --accent-soft: rgba(57, 135, 229, 0.18);
+        --good: #0ca30c;
+        --warning: #fab219;
+        --serious: #ec835a;
+        --critical: #d03b3b;
+        --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+        --mono: "JetBrains Mono", "Consolas", "SFMono-Regular", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    body { font-family: var(--font); color: var(--text-primary); }
+    body.idle { cursor: none; }
+
+    /* Fixed 1920×1080 stage, scaled to fit any screen */
+    #stage {
+        position: absolute; left: 50%; top: 50%;
+        width: 1920px; height: 1080px;
+        transform-origin: center center;
+        background: var(--surface-0);
+        display: grid;
+        grid-template-rows: 112px minmax(0, 1fr) 286px;
+        grid-template-columns: minmax(0, 1fr);
+        overflow: hidden;
+    }
+
+    /* ---------- Header ---------- */
+    header {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 28px;
+        padding: 0 32px;
+        background: var(--surface-1);
+        border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; flex-direction: column; gap: 6px; }
+    .brand h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; }
+    .brand .sub { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--text-secondary); }
+    .wh-chip {
+        font-family: var(--mono); font-weight: 800; font-size: 16px;
+        padding: 3px 10px; border-radius: 6px;
+        background: rgba(57, 135, 229, 0.16); color: #9ec5f4; border: 1px solid rgba(57, 135, 229, 0.45);
+    }
+    .wh-chip.chino { background: rgba(250, 178, 25, 0.16); color: #fcd27a; border-color: rgba(250, 178, 25, 0.5); }
+    .wh-chip.test { background: rgba(208, 59, 59, 0.2); color: #f3a5a5; border-color: rgba(208, 59, 59, 0.55); }
+    .kpis { display: flex; justify-content: center; gap: 14px; }
+    .kpi {
+        min-width: 136px; padding: 10px 14px; border-radius: 12px;
+        background: var(--surface-2); border: 1px solid var(--line);
+    }
+    .kpi .label { font-size: 14px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+    .kpi .value { font-size: 38px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+    .kpi .value small { font-size: 20px; font-weight: 700; color: var(--text-secondary); }
+    .kpi .meter { height: 6px; border-radius: 3px; background: var(--surface-3); margin-top: 6px; overflow: hidden; }
+    .kpi .meter > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+    .kpi.alert .value { color: var(--critical); }
+    .clock { text-align: right; }
+    .clock .time { font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+    .clock .date { font-size: 16px; color: var(--text-secondary); margin-top: 4px; }
+    .sync { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 15px; color: var(--text-secondary); }
+    .sync .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); }
+    .sync.stale .dot { background: var(--warning); }
+    .sync.error .dot { background: var(--critical); }
+
+    /* ---------- Body ---------- */
+    main { padding: 14px 24px 0; min-height: 0; min-width: 0; display: flex; }
+
+    /* Floor plan */
+    .floor {
+        position: relative;
+        display: grid;
+        grid-template-rows: 30px 86px minmax(0, 1fr) 46px 22px;
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%; min-width: 0;
+        background: var(--surface-1);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 10px 18px 12px;
+        min-height: 0;
+    }
+    .floor-title { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+    .legend { display: flex; gap: 16px; text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+    .row { position: relative; display: flex; align-items: stretch; }
+    .slot { flex: 0 0 auto; }
+    .gap { flex: 0 0 auto; position: relative; }
+
+    /* North wall with dock doors */
+    .wall { border-top: 6px solid #6d6c66; padding-top: 0; }
+    .gap.people-door::after {
+        content: ''; position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
+        width: 22px; height: 16px; border: 2px solid #6d6c66; border-top: none; border-radius: 0 0 12px 12px;
+    }
+    .door {
+        margin: 0 4px; position: relative;
+        display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+        border: 2px dashed #5c5b55; border-top: none;
+        border-radius: 0 0 10px 10px;
+        background: var(--surface-2);
+        padding: 6px 4px 4px;
+        overflow: hidden;
+    }
+    .door .name { font-family: var(--mono); font-size: 20px; font-weight: 800; color: var(--text-secondary); }
+    .door .state { margin-top: 4px; font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .door .order { margin-top: 2px; font-family: var(--mono); font-size: 14px; font-weight: 800; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .door.active { border: 2px solid var(--accent); border-top: none; background: var(--accent-soft); }
+    .door.active .name { color: #cde2fb; }
+    .door.active .state { color: #9ec5f4; }
+
+    /* Staging lanes */
+    .lanes { padding-top: 10px; min-height: 0; }
+    .lane {
+        margin: 0 4px;
+        display: grid; grid-template-rows: 54px minmax(0, 1fr);
+        border-radius: 10px;
+        background: repeating-linear-gradient(0deg, transparent 0 calc(100% - 1px), rgba(255,255,255,0.0) 0);
+        border: 1px solid var(--line);
+        background-color: #1f1f1d;
+        min-height: 0; overflow: hidden;
+    }
+    .lane.over { border: 2px solid var(--critical); box-shadow: 0 0 0 2px rgba(208,59,59,0.25); }
+    .lane.missing { border-style: dashed; opacity: 0.55; }
+    .lane-head { padding: 4px 8px 0; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+    .lane-head .top { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
+    .lane-head .lname { font-family: var(--mono); font-size: 19px; font-weight: 800; }
+    .lane-head .count { font-size: 14px; font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .lane.over .lane-head .count { color: #f3a5a5; }
+    .lane-head .bar { height: 5px; border-radius: 3px; background: var(--surface-3); margin-top: 4px; overflow: hidden; }
+    .lane-head .bar > i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+    .lane.over .lane-head .bar > i { background: var(--critical); }
+    .spots { display: flex; flex-direction: column; gap: 4px; padding: 5px; min-height: 0; }
+    .spot {
+        flex: 1 1 0; min-height: 0;
+        border-radius: 6px;
+        border: 1px dashed #3a3a36;
+        display: flex; flex-direction: column; gap: 2px;
+    }
+    .spot.filled { border: none; }
+    .tile {
+        flex: 1 1 0; min-width: 0;
+        border-radius: 6px;
+        background: var(--surface-3);
+        border-left: 6px solid #6d6c66;
+        padding: 2px 5px 2px 6px;
+        display: flex; flex-direction: column; justify-content: center;
+        overflow: hidden;
+    }
+    .tile .slp { font-family: var(--mono); font-size: 14px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile.half { flex-direction: row; align-items: center; justify-content: space-between; gap: 4px; padding-top: 0; padding-bottom: 0; }
+    .tile.half .slp { font-size: 13px; }
+    .tile .meta { display: flex; justify-content: space-between; gap: 4px; font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+    .tile .meta .ord { overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); }
+    .tile .meta .age { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .tile.stack { border-left-color: #9085e9; }
+    .tile .tier { font-size: 10px; font-weight: 800; color: #b9b2f2; letter-spacing: 0.04em; }
+    .tile.lvl-warning { border-left-color: var(--warning); }
+    .tile.lvl-overdue { border-left-color: var(--serious); background: rgba(236,131,90,0.16); }
+    .tile.lvl-overweek { border-left-color: var(--critical); background: rgba(208,59,59,0.22); animation: pulse 2.4s ease-in-out infinite; }
+    .tile.lvl-warning .age { color: var(--warning); }
+    .tile.lvl-overdue .age { color: var(--serious); }
+    .tile.lvl-overweek .age { color: #f3a5a5; }
+    .tile.dock-match { box-shadow: inset 0 0 0 2px rgba(57,135,229,0.75); }
+    @keyframes pulse { 0%, 100% { background: rgba(208,59,59,0.22); } 50% { background: rgba(208,59,59,0.42); } }
+    .spot.extra { border-color: var(--critical); }
+
+    /* Racking behind the staging floor */
+    .racks { padding-top: 10px; }
+    .rack {
+        border: 1px solid #44433f; border-radius: 6px;
+        background:
+            repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 14px),
+            repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 14px),
+            #191918;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--text-muted); font-size: 14px; font-weight: 700; letter-spacing: 0.06em;
+    }
+    .aisle { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 12px; writing-mode: vertical-rl; }
+    .floor-foot { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: var(--text-muted); padding-top: 4px; }
+    .floor-foot b { color: var(--text-secondary); }
+
+    /* Side panels */
+    aside { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 16px; min-height: 0; padding: 14px 24px 18px; }
+    .zone-labels { position: absolute; left: 18px; right: 18px; top: 12px; bottom: 34px; pointer-events: none; }
+    .zone-tag { position: absolute; top: 0; white-space: nowrap; font-size: 14px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .zone-tag.loading { color: #9ec5f4; }
+    .zone-tag.staging { color: #f3a5a5; }
+    .zone-divider { position: absolute; top: 26px; bottom: 0; border-left: 3px dashed rgba(208,59,59,0.6); }
+    .door.minor { border-color: #45443f; background: #1d1d1b; }
+    .door.minor .name { font-size: 13px; color: var(--text-muted); }
+    .door.loading-door { border: 2px solid #5c5b55; border-top: none; }
+    /* Loading bays (floor in front of each loading dock) */
+    .bay {
+        margin: 10px 4px 0; border-radius: 10px; border: 1px dashed #4a4945; background: #1c1c1a;
+        display: flex; flex-direction: column; align-items: stretch; padding: 8px 3px; gap: 6px; overflow: hidden;
+    }
+    .bay.active { border: 2px solid var(--accent); background: linear-gradient(180deg, rgba(57,135,229,0.22), rgba(57,135,229,0.06)); }
+    .bay .status { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); text-align: center; }
+    .bay.active .status { color: #cde2fb; }
+    .bay .big { font-size: 40px; font-weight: 800; text-align: center; line-height: 1; font-variant-numeric: tabular-nums; }
+    .bay .big small { display: block; font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-top: 2px; }
+    .bay .ord { font-family: var(--mono); font-size: 13px; letter-spacing: -0.02em; font-weight: 800; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bay .line { font-size: 12px; color: var(--text-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bay .from { font-family: var(--mono); font-size: 13px; font-weight: 700; color: #9ec5f4; text-align: center; white-space: normal; line-height: 1.25; }
+    .bay .empty { margin: auto 0; text-align: center; font-size: 13px; color: var(--text-muted); }
+    .bay .lvl { font-size: 12px; font-weight: 800; text-align: center; }
+    .bay .lvl.warning { color: var(--warning); } .bay .lvl.overdue { color: var(--serious); } .bay .lvl.overweek { color: #f3a5a5; }
+    .apron { margin: 10px 4px 0; border-radius: 10px; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0 10px, transparent 10px 20px); }
+    .panel { background: var(--surface-1); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+    .panel h2 { font-size: 15px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; display: flex; justify-content: space-between; }
+    .panel h2 span { color: var(--text-muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
+    .orders { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: hidden; }
+    .orders { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; align-content: start; }
+    .order-row {
+        display: grid; grid-template-columns: 1fr auto; gap: 2px 10px;
+        padding: 8px 10px; border-radius: 10px; background: var(--surface-2);
+        border-left: 5px solid #5c5b55;
+    }
+    .order-row.at-dock { border-left-color: var(--accent); }
+    .order-row { padding: 6px 10px; }
+    .order-row .ono { font-family: var(--mono); font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .order-row .plts { font-size: 18px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+    .order-row .info { font-size: 14px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .order-row .dock { font-family: var(--mono); font-size: 14px; font-weight: 800; text-align: right; color: #9ec5f4; }
+    .order-row .dock.none { color: var(--text-muted); font-weight: 600; }
+    .more { font-size: 14px; color: var(--text-muted); padding: 4px 2px 0; }
+
+    .alert-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+    .alert-count { border-radius: 10px; background: var(--surface-2); padding: 8px 10px; }
+    .alert-count { padding: 6px 10px; }
+    .alert-count .n { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .alert-count .t { font-size: 13px; font-weight: 700; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; }
+    .alert-count.warning .t i { background: var(--warning); }
+    .alert-count.overdue .t i { background: var(--serious); }
+    .alert-count.overweek .t i { background: var(--critical); }
+    .alert-count .t i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    .alert-list { display: flex; flex-direction: column; gap: 5px; }
+    .alert-list { display: grid; grid-template-columns: 1fr; gap: 4px; }
+    .alert-item { display: grid; grid-template-columns: 22px 1fr auto auto; gap: 8px; align-items: center; font-size: 15px; padding: 5px 8px; border-radius: 8px; background: var(--surface-2); }
+    .alert-item .ico { font-size: 15px; text-align: center; }
+    .alert-item .slp { font-family: var(--mono); font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .alert-item .where { font-family: var(--mono); color: var(--text-secondary); }
+    .alert-item .age { font-weight: 800; font-variant-numeric: tabular-nums; }
+    .alert-item.overdue .age { color: var(--serious); }
+    .alert-item.overweek .age { color: #f3a5a5; }
+    .alert-item.warning .age { color: var(--warning); }
+    .none-msg { font-size: 16px; color: var(--text-muted); padding: 6px 2px; }
+
+    .today { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .today .box { background: var(--surface-2); border-radius: 10px; padding: 8px 12px; }
+    .today .n { font-size: 32px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .today .t { font-size: 13px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+    .other-lanes { margin-top: 10px; font-size: 14px; color: var(--text-secondary); }
+    .other-lanes b { font-family: var(--mono); color: var(--text-primary); }
+
+    /* Banners & sign-in */
+    #banner {
+        position: absolute; left: 50%; top: 120px; transform: translateX(-50%);
+        padding: 10px 22px; border-radius: 12px; font-size: 18px; font-weight: 700;
+        background: rgba(250,178,25,0.95); color: #1a1a19; display: none; z-index: 5;
+    }
+    #signin {
+        position: fixed; inset: 0; z-index: 10; display: none;
+        align-items: center; justify-content: center; background: rgba(0,0,0,0.75);
+    }
+    #signin form {
+        width: 520px; background: var(--surface-1); border: 1px solid var(--line); border-radius: 18px; padding: 28px;
+        display: flex; flex-direction: column; gap: 14px;
+    }
+    #signin h2 { font-size: 26px; }
+    #signin p { font-size: 16px; color: var(--text-secondary); line-height: 1.4; }
+    #signin input {
+        font-size: 22px; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--line);
+        background: var(--surface-2); color: var(--text-primary); font-family: var(--mono);
+    }
+    #signin input:focus { outline: none; border-color: var(--accent); }
+    #signin button {
+        font-size: 18px; font-weight: 800; padding: 12px; border-radius: 12px; border: none; cursor: pointer;
+        background: var(--accent); color: #fff;
+    }
+    #signin button:disabled { opacity: 0.6; }
+    #signin .err { color: #f3a5a5; font-weight: 700; font-size: 16px; min-height: 20px; }
+</style>
+</head>
+<body>
+<div id="stage">
+    <header>
+        <div class="brand">
+            <h1>Outbound Staging — Live</h1>
+            <div class="sub"><span class="wh-chip" id="wh-chip">ONUS-ONT</span><span>Staging area &amp; loading docks</span></div>
+        </div>
+        <div class="kpis" id="kpis"></div>
+        <div class="clock">
+            <div class="time" id="clock-time">--:--</div>
+            <div class="date" id="clock-date"></div>
+            <div class="sync" id="sync"><span class="dot"></span><span id="sync-text">Connecting…</span></div>
+        </div>
+    </header>
+    <main>
+        <section class="floor" aria-label="Staging floor plan">
+            <div class="floor-title">
+                <span></span>
+                <span class="legend">
+                    <span><i style="background:var(--accent)"></i>Dock assigned</span>
+                    <span><i style="background:#9085e9"></i>2x stacked</span>
+                    <span><i style="background:var(--warning)"></i>⚠ Aging</span>
+                    <span><i style="background:var(--serious)"></i>⏱ Overdue</span>
+                    <span><i style="background:var(--critical)"></i>⛔ Over a week</span>
+                </span>
+            </div>
+            <div class="row wall" id="doors-row"></div>
+            <div class="zone-labels" id="zone-labels"></div>
+            <div class="row lanes" id="lanes-row"></div>
+            <div class="row racks" id="racks-row"></div>
+            <div class="floor-foot">
+                <span><b>Loading docks</b> show what's assigned to each door · <b>Staging lanes</b>: 1 box = 1 floor spot (2x stacked pairs share a spot)</span>
+                <span id="floor-foot-right"></span>
+            </div>
+        </section>
+    </main>
+        <aside>
+            <div class="panel">
+                <h2>Orders on the floor <span id="orders-count"></span></h2>
+                <div class="orders" id="orders"></div>
+            </div>
+            <div class="panel" id="alerts-panel">
+                <h2>Dwell alerts <span id="alerts-thresholds"></span></h2>
+                <div class="alert-counts" id="alert-counts"></div>
+                <div class="alert-list" id="alert-list"></div>
+            </div>
+            <div class="panel">
+                <h2>Today</h2>
+                <div class="today" id="today"></div>
+                <div class="other-lanes" id="other-lanes"></div>
+            </div>
+        </aside>
+    <div id="banner"></div>
+</div>
+
+<div id="signin">
+    <form id="signin-form">
+        <h2>Enter access code</h2>
+        <p>The dashboard shows the board for the warehouse your code belongs to. It only reads data — nothing on the board can be changed from this screen.</p>
+        <input id="signin-code" type="password" autocomplete="off" placeholder="Access code" required>
+        <div class="err" id="signin-err"></div>
+        <button type="submit" id="signin-btn">Show dashboard</button>
+    </form>
+</div>
+
+<script>
+    // ===================================================================================
+    // Settings
+    // ===================================================================================
+
+    /** Same Apps Script web app the staging board uses. */
+    const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
+    const REFRESH_MS = 10000;
+    const STALE_AFTER_MS = 60000;
+
+    /**
+     * Floor layout, left → right along the north wall (from the warehouse plan).
+     * Each door has the staging lane in front of it. Groups are separated by people doors.
+     * Edit names here if your doors or lanes are numbered differently.
+     */
+    const FLOOR_LAYOUT = {
+        // West of the staging area: the 9 loading docks used for shipments (groups of 5 and 4 on the plan).
+        loadingDocks: [
+            ['DOCK-01', 'DOCK-02', 'DOCK-03', 'DOCK-04', 'DOCK-05'],
+            ['DOCK-06', 'DOCK-07', 'DOCK-08', 'DOCK-09']
+        ],
+        // Staging area (red box): the lane in front of each door on that wall (groups of 2, 4 and 6).
+        stagingLanes: [
+            ['S51', 'S52'],
+            ['S53', 'S54', 'S55', 'S56'],
+            ['S57', 'S58', 'S59', 'S60', 'S61', 'S62']
+        ],
+        // Relative widths: a loading dock vs a staging lane, and the wall between door groups (people doors)
+        dockWidth: 1.12,
+        laneWidth: 1,
+        loadingGroupGap: 0.35,
+        zoneGap: 0.45,
+        stagingGroupGaps: [0.55, 0.3],
+        // Racking behind the staging lanes, in feet (104′ block, 16′ aisle, 88′ block, 4′, 72′ block)
+        racks: [
+            { rack: 'Racking 104′', ft: 104 }, { aisle: '16′ aisle', ft: 16 },
+            { rack: 'Racking 88′', ft: 88 }, { aisle: '', ft: 4 }, { rack: 'Racking 72′', ft: 72 }
+        ]
+    };
+
+    // Shared with the staging app (same site → same saved code and warehouse on this device)
+    const WAREHOUSES = {
+        ONT: { name: 'ONUS-ONT', suffix: '' },
+        CHINO: { name: 'ONUS-CHINO', suffix: '_chino' },
+        TEST: { name: 'ONUS-TEST', suffix: '_test', noCode: true }
+    };
+    const ACTIVE_WAREHOUSE_KEY = 'outbound_active_warehouse';
+    const codeKey = wh => 'outbound_access_code_v2' + WAREHOUSES[wh].suffix;
+    const DAY = 86400000;
+
+    // ===================================================================================
+    // Storage helpers
+    // ===================================================================================
+    const store = {
+        get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
+        set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } }
+    };
+
+    function currentWarehouse() {
+        let fromUrl = '';
+        try { fromUrl = String(new URLSearchParams(location.search).get('wh') || '').toUpperCase(); } catch (e) { /* none */ }
+        if (WAREHOUSES[fromUrl]) {
+            store.set(ACTIVE_WAREHOUSE_KEY, fromUrl);
+            return fromUrl;
+        }
+        const saved = store.get(ACTIVE_WAREHOUSE_KEY).toUpperCase();
+        return WAREHOUSES[saved] ? saved : 'ONT';
+    }
+
+    let WH = currentWarehouse();
+    let board = null;            // last board read from the sheet
+    let lastOkAt = 0;            // when it was read
+    let lastError = '';
+
+    // ===================================================================================
+    // Cloud (read-only)
+    // ===================================================================================
+    async function cloud(fn, key, warehouse) {
+        const res = await fetch(CLOUD_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // no CORS preflight
+            body: JSON.stringify({ fn, args: [], key, warehouse })
+        });
+        return res.json();
+    }
+
+    /** Which warehouse does a code open? Uses the server lookup, else tries each warehouse. */
+    async function findWarehouseForCode(code) {
+        const r = await cloud('resolveWarehouse', code, WH);
+        if (r && r.ok && WAREHOUSES[r.warehouse]) return r.warehouse;
+        // No clear answer (e.g. an older server without the lookup rejects it as a wrong ONT code):
+        // try opening each warehouse with this code
+        for (const wh of ['ONT', 'CHINO']) {
+            const t = await cloud('loadBoardState', code, wh);
+            if (t && t.ok) return wh;
+        }
+        return null;
+    }
+
+    async function refresh() {
+        const key = WAREHOUSES[WH].noCode ? 'test-mode' : store.get(codeKey(WH));
+        if (!key) { showSignIn(); return; }
+        try {
+            const r = await cloud('loadBoardState', key, WH);
+            if (r && r.unauthorized) { showSignIn('That access code no longer works. Please enter it again.'); return; }
+            if (!r || !r.ok) throw new Error((r && r.error) || 'No answer');
+            board = parseBoard(r.stateJson);
+            lastOkAt = Date.now();
+            lastError = '';
+        } catch (e) {
+            lastError = String(e.message || e);
+        }
+        render();
+    }
+
+    function parseBoard(json) {
+        let raw = {};
+        try { raw = json ? JSON.parse(json) : {}; } catch (e) { raw = {}; }
+        const arr = v => (Array.isArray(v) ? v : []);
+        return {
+            columns: arr(raw.columns).filter(c => c && c.id),
+            pallets: arr(raw.pallets).filter(p => p && p.id),
+            shippedPallets: arr(raw.shippedPallets),
+            dwellSettings: raw.dwellSettings || {}
+        };
+    }
+
+    // ===================================================================================
+    // Same rules as the staging app
+    // ===================================================================================
+    const norm = s => String(s || '').trim().toUpperCase();
+
+    function floorSpotsUsed(list) {
+        const doubles = list.filter(p => p.doubleStacked).length;
+        return list.length - doubles + Math.ceil(doubles / 2);
+    }
+
+    function dwellThresholds() {
+        const ds = (board && board.dwellSettings) || {};
+        const warningDays = Math.max(0.5, parseFloat(ds.warningDays) || 1);
+        const overdueDays = Math.max(warningDays + 0.5, parseFloat(ds.overdueDays) || 2);
+        const overWeekDays = Math.max(overdueDays, parseFloat(ds.overWeekDays) || 7);
+        return { enabled: ds.enabled !== false, warningDays, overdueDays, overWeekDays };
+    }
+
+    function dwellLevel(p) {
+        const cfg = dwellThresholds();
+        const ageDays = Math.max(0, Date.now() - (Number(p.createdAt) || Date.now())) / DAY;
+        if (!cfg.enabled || (p.snoozedUntil && Date.now() < p.snoozedUntil)) return 'normal';
+        if (ageDays >= cfg.overWeekDays) return 'overweek';
+        if (ageDays >= cfg.overdueDays) return 'overdue';
+        if (ageDays >= cfg.warningDays) return 'warning';
+        return 'normal';
+    }
+
+    function age(ts) {
+        const mins = Math.floor(Math.max(0, Date.now() - Number(ts || Date.now())) / 60000);
+        if (mins < 60) return `${mins}m`;
+        const h = Math.floor(mins / 60);
+        if (h < 24) return `${h}h`;
+        return `${Math.floor(h / 24)}d ${h % 24}h`;
+    }
+
+    /** Floor spots for one lane, in scan order: singles take a spot, 2x pallets pair up (BTM + TOP). */
+    function laneSpots(pallets) {
+        const spots = [];
+        let openPair = null;
+        pallets.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach(p => {
+            if (p.doubleStacked) {
+                if (openPair) { openPair.push(p); openPair = null; }
+                else { openPair = [p]; spots.push(openPair); }
+            } else {
+                spots.push([p]);
+            }
+        });
+        return spots;
+    }
+
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const LEVEL_ICON = { warning: '⚠', overdue: '⏱', overweek: '⛔' };
+
+    // ===================================================================================
+    // Render
+    // ===================================================================================
+    function render() {
+        renderSync();
+        if (!board) return;
+        const cols = board.columns;
+        const pallets = board.pallets;
+        const colByName = new Map(cols.map(c => [norm(c.name), c]));
+        const colById = new Map(cols.map(c => [c.id, c]));
+        const palletsIn = colId => pallets.filter(p => p.columnId === colId);
+
+        // ---- KPIs ----
+        const totalSpots = cols.reduce((s, c) => s + (Number(c.capacity) || 0), 0);
+        const usedSpots = cols.reduce((s, c) => s + floorSpotsUsed(palletsIn(c.id)), 0);
+        const orders = new Map();
+        pallets.forEach(p => {
+            const o = norm(p.orderNumber) || 'NO ORDER';
+            if (!orders.has(o)) orders.set(o, []);
+            orders.get(o).push(p);
+        });
+        const levels = { warning: [], overdue: [], overweek: [] };
+        pallets.forEach(p => { const l = dwellLevel(p); if (levels[l]) levels[l].push(p); });
+        const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+        const shippedToday = board.shippedPallets.filter(s => Number(s.shippedAt) >= startOfDay.getTime());
+        const stagedToday = pallets.filter(p => Number(p.createdAt) >= startOfDay.getTime()).length + shippedToday.filter(s => Number(s.stagedAt) >= startOfDay.getTime()).length;
+        const atDockOrders = [...orders.values()].filter(list => list.some(p => p.dockNumber)).length;
+        const pct = totalSpots ? Math.round((usedSpots / totalSpots) * 100) : 0;
+        const alertsTotal = levels.overdue.length + levels.overweek.length;
+
+        document.getElementById('kpis').innerHTML = `
+            <div class="kpi"><div class="label">Pallets staged</div><div class="value">${pallets.length}</div></div>
+            <div class="kpi"><div class="label">Floor spots used</div><div class="value">${usedSpots}<small> / ${totalSpots}</small></div>
+                <div class="meter"><i style="width:${Math.min(100, pct)}%"></i></div></div>
+            <div class="kpi"><div class="label">Open orders</div><div class="value">${orders.size}</div></div>
+            <div class="kpi"><div class="label">Orders at dock</div><div class="value">${atDockOrders}</div></div>
+            <div class="kpi${alertsTotal ? ' alert' : ''}"><div class="label">Overdue pallets</div><div class="value">${alertsTotal}</div></div>
+            <div class="kpi"><div class="label">Shipped today</div><div class="value">${shippedToday.length}</div></div>`;
+
+        // ---- North wall, west → east: loading docks, then the staging area ----
+        const L = FLOOR_LAYOUT;
+        const items = [];   // { kind: 'dock'|'lane'|'gap'|'zone', w, ... }
+        L.loadingDocks.forEach((group, gi) => {
+            if (gi > 0) items.push({ kind: 'gap', w: L.loadingGroupGap, people: true });
+            group.forEach(door => items.push({ kind: 'dock', w: L.dockWidth, door }));
+        });
+        items.push({ kind: 'zone', w: L.zoneGap });
+        L.stagingLanes.forEach((group, gi) => {
+            if (gi > 0) items.push({ kind: 'gap', w: L.stagingGroupGaps[gi - 1] || 0.4, people: true });
+            group.forEach(lane => items.push({ kind: 'lane', w: L.laneWidth, lane }));
+        });
+        const units = items.reduce((t, it) => t + it.w, 0);
+        const pctOf = u => `${(u / units) * 100}%`;
+        const loadingDoorSet = new Set(L.loadingDocks.flat().map(norm));
+        const mappedColIds = new Set();
+        let doorsHtml = '';
+        let lanesHtml = '';
+        let offset = 0;
+        let stagingStart = 0;
+        let stagingEnd = 0;
+        items.forEach(it => {
+            if (it.kind === 'gap') {
+                doorsHtml += `<div class="gap${it.people ? ' people-door' : ''}" style="width:${pctOf(it.w)}"></div>`;
+                lanesHtml += `<div class="gap" style="width:${pctOf(it.w)}"></div>`;
+            } else if (it.kind === 'zone') {
+                stagingStart = offset + it.w / 2;
+                doorsHtml += `<div class="gap people-door" style="width:${pctOf(it.w)}"></div>`;
+                lanesHtml += `<div class="gap" style="width:${pctOf(it.w)}"></div>`;
+            } else if (it.kind === 'dock') {
+                const atDoor = pallets.filter(p => norm(p.dockNumber) === norm(it.door));
+                doorsHtml += `<div class="slot door loading-door${atDoor.length ? ' active' : ''}" style="width:calc(${pctOf(it.w)} - 8px)">
+                    <div class="name">${esc(String(it.door).replace(/^DOCK-0?/, 'D'))}</div>
+                    <div class="state">${atDoor.length ? 'Loading' : 'Open'}</div></div>`;
+                lanesHtml += renderBay(atDoor, pctOf(it.w), colById);
+            } else {
+                const col = colByName.get(norm(it.lane));
+                if (col) mappedColIds.add(col.id);
+                doorsHtml += `<div class="slot door minor" style="width:calc(${pctOf(it.w)} - 8px)"><div class="name">door</div></div>`;
+                lanesHtml += renderLane(it.lane, col, col ? palletsIn(col.id) : [], pctOf(it.w));
+                stagingEnd = offset + it.w;
+            }
+            offset += it.w;
+        });
+        document.getElementById('doors-row').innerHTML = doorsHtml;
+        document.getElementById('lanes-row').innerHTML = lanesHtml;
+        document.getElementById('zone-labels').innerHTML = `
+            <span class="zone-tag loading" style="left:0">◀ Loading docks · ${loadingDoorSet.size} doors</span>
+            <span class="zone-tag staging" style="left:${(stagingStart / units) * 100}%; padding-left: 12px">Staging area · ${L.stagingLanes.flat().length} lanes ▶</span>
+            <span class="zone-divider" style="left:${(stagingStart / units) * 100}%"></span>`;
+
+        // Racking sits behind the staging lanes only
+        const rackFt = L.racks.reduce((t, r) => t + r.ft, 0);
+        const rackLeft = (stagingStart / units) * 100;
+        const rackWidth = ((stagingEnd - stagingStart) / units) * 100;
+        document.getElementById('racks-row').innerHTML =
+            `<div class="gap" style="width:${rackLeft}%"></div><div class="row" style="width:${rackWidth}%">` +
+            L.racks.map(r => r.rack
+                ? `<div class="slot rack" style="width:${(r.ft / rackFt) * 100}%">${esc(r.rack)}</div>`
+                : `<div class="gap aisle" style="width:${(r.ft / rackFt) * 100}%">${esc(r.aisle)}</div>`).join('') + '</div>';
+
+        document.getElementById('floor-foot-right').innerHTML =
+            `updated <b>${new Date(lastOkAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>`;
+
+        // ---- Alerts ----
+        const t = dwellThresholds();
+        document.getElementById('alerts-thresholds').textContent = `aging ${t.warningDays}d · overdue ${t.overdueDays}d · ${t.overWeekDays}d+`;
+        document.getElementById('alert-counts').innerHTML = ['warning', 'overdue', 'overweek'].map(l => `
+            <div class="alert-count ${l}"><div class="n">${levels[l].length}</div>
+            <div class="t"><i></i>${{ warning: '⚠ Aging', overdue: '⏱ Overdue', overweek: '⛔ Over a week' }[l]}</div></div>`).join('');
+        const worst = [...levels.overweek, ...levels.overdue, ...levels.warning]
+            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).slice(0, 4);
+        document.getElementById('alert-list').innerHTML = worst.length
+            ? worst.map(p => {
+                const l = dwellLevel(p);
+                const col = colById.get(p.columnId);
+                return `<div class="alert-item ${l}"><span class="ico">${LEVEL_ICON[l]}</span><span class="slp">${esc(p.slp)}</span>
+                    <span class="where">${esc(col ? col.name : '—')}</span><span class="age">${age(p.createdAt)}</span></div>`;
+            }).join('')
+            : '<div class="none-msg">✓ No aging pallets</div>';
+
+        // ---- Orders ----
+        const orderRows = [...orders.entries()].map(([ono, list]) => {
+            const docks = [...new Set(list.map(p => norm(p.dockNumber)).filter(Boolean))];
+            const lanes = [...new Set(list.map(p => (colById.get(p.columnId) || {}).name).filter(Boolean))];
+            const carriers = [...new Set(list.map(p => p.carrier).filter(Boolean))];
+            const oldest = Math.min(...list.map(p => Number(p.createdAt) || Date.now()));
+            return { ono, list, docks, lanes, carrier: carriers[0] || '', oldest };
+        }).sort((a, b) => (b.docks.length > 0) - (a.docks.length > 0) || a.oldest - b.oldest);
+        document.getElementById('orders-count').textContent = `${orderRows.length} order${orderRows.length === 1 ? '' : 's'}`;
+        const MAX_ORDERS = 6;
+        document.getElementById('orders').innerHTML = orderRows.length
+            ? orderRows.slice(0, MAX_ORDERS).map(o => `
+                <div class="order-row${o.docks.length ? ' at-dock' : ''}">
+                    <div class="ono">${esc(o.ono)}</div>
+                    <div class="plts">${o.list.length} plt${o.list.length === 1 ? '' : 's'}</div>
+                    <div class="info">${esc(o.carrier || 'No carrier')} · ${esc(o.lanes.join(', ') || '—')} · ${age(o.oldest)}</div>
+                    <div class="dock${o.docks.length ? '' : ' none'}">${o.docks.length ? esc(o.docks.join(', ')) : 'No dock'}</div>
+                </div>`).join('') + (orderRows.length > MAX_ORDERS ? `<div class="more">+ ${orderRows.length - MAX_ORDERS} more order(s)</div>` : '')
+            : '<div class="none-msg">No orders on the floor</div>';
+
+        // ---- Today + lanes not on the plan ----
+        document.getElementById('today').innerHTML = `
+            <div class="box"><div class="n">${stagedToday}</div><div class="t">Staged today</div></div>
+            <div class="box"><div class="n">${shippedToday.length}</div><div class="t">Shipped today</div></div>`;
+        const others = cols.filter(c => !mappedColIds.has(c.id));
+        const otherDocks = [...new Set(pallets.map(p => norm(p.dockNumber)).filter(d => d && !loadingDoorSet.has(d)))];
+        document.getElementById('other-lanes').innerHTML = [
+            others.length ? 'Other locations: ' + others.map(c => `<b>${esc(c.name)}</b> ${floorSpotsUsed(palletsIn(c.id))}/${Number(c.capacity) || 0}`).join(' · ') : '',
+            otherDocks.length ? 'Other docks in use: ' + otherDocks.map(d => `<b>${esc(d)}</b> ${pallets.filter(p => norm(p.dockNumber) === d).length} plts`).join(' · ') : ''
+        ].filter(Boolean).join('<br>');
+    }
+
+    /** Floor in front of a loading dock: what's being loaded there. */
+    function renderBay(atDoor, width, colById) {
+        if (!atDoor.length) {
+            return `<div class="slot bay" style="width:calc(${width} - 8px)"><div class="empty">Open</div></div>`;
+        }
+        const orders = [...new Set(atDoor.map(p => norm(p.orderNumber)))];
+        const carriers = [...new Set(atDoor.map(p => p.carrier).filter(Boolean))];
+        const lanes = [...new Set(atDoor.map(p => (colById.get(p.columnId) || {}).name).filter(Boolean))];
+        const oldest = atDoor.reduce((m, p) => Math.min(m, Number(p.createdAt) || Date.now()), Date.now());
+        const worst = ['overweek', 'overdue', 'warning'].find(l => atDoor.some(p => dwellLevel(p) === l));
+        return `<div class="slot bay active" style="width:calc(${width} - 8px)">
+            <div class="status">Loading</div>
+            <div class="ord">${esc(orders[0])}</div>
+            ${orders.length > 1 ? `<div class="line">+${orders.length - 1} more order${orders.length > 2 ? 's' : ''}</div>` : ''}
+            <div class="line">${esc(carriers[0] || 'No carrier')}</div>
+            <div class="big">${atDoor.length}<small>pallet${atDoor.length === 1 ? '' : 's'}</small></div>
+            <div class="line">staged in</div>
+            <div class="from">${esc(lanes.join(' '))}</div>
+            <div class="line">oldest ${age(oldest)}</div>
+            ${worst ? `<div class="lvl ${worst}">${LEVEL_ICON[worst]} ${{ warning: 'Aging', overdue: 'Overdue', overweek: 'Over a week' }[worst]}</div>` : ''}
+        </div>`;
+    }
+
+    function renderLane(laneName, col, inLane, width) {
+        if (!col) {
+            return `<div class="slot lane missing" style="width:calc(${width} - 8px)">
+                <div class="lane-head"><div class="top"><span class="lname">${esc(laneName)}</span><span class="count">—</span></div></div>
+                <div class="spots"><div class="none-msg" style="font-size:13px">Lane not set up</div></div></div>`;
+        }
+        const capacity = Number(col.capacity) || 0;
+        const spots = laneSpots(inLane);
+        const used = spots.length;
+        const over = capacity > 0 && used > capacity;
+        const rows = Math.max(capacity, used, 1);
+        let spotsHtml = '';
+        for (let i = 0; i < rows; i++) {
+            const s = spots[i];
+            if (!s) { spotsHtml += '<div class="spot"></div>'; continue; }
+            // A 2x pair shows TOP above BTM in the same floor spot
+            const ordered = s.length === 2 ? [s[1], s[0]] : s;
+            spotsHtml += `<div class="spot filled${i >= capacity ? ' extra' : ''}">${ordered.map(p => {
+                const lvl = dwellLevel(p);
+                const tier = p.doubleStacked ? (p === s[0] ? 'BTM' : 'TOP') : '';
+                const docked = p.dockNumber ? ' dock-match' : '';
+                const code = esc(String(p.slp).replace(/^SLP-/i, ''));
+                const icon = lvl !== 'normal' ? LEVEL_ICON[lvl] + ' ' : '';
+                if (s.length === 2) {
+                    return `<div class="tile half stack lvl-${lvl}${docked}" title="${esc(p.slp)}">
+                        <span class="slp">${code}</span><span class="tier">${icon || tier}</span></div>`;
+                }
+                return `<div class="tile${p.doubleStacked ? ' stack' : ''} lvl-${lvl}${docked}" title="${esc(p.slp)} · ${esc(norm(p.orderNumber))} · ${age(p.createdAt)}">
+                    <div class="slp">${code}</div>
+                    <div class="meta"><span class="ord">${icon}${tier ? `<span class="tier">${tier}</span> ` : ''}${esc(norm(p.orderNumber).replace(/^SO-/, ''))}</span></div>
+                </div>`;
+            }).join('')}</div>`;
+        }
+        const fill = capacity ? Math.min(100, (used / capacity) * 100) : 0;
+        return `<div class="slot lane${over ? ' over' : ''}" style="width:calc(${width} - 8px)">
+            <div class="lane-head">
+                <div class="top"><span class="lname">${esc(col.name)}</span><span class="count">${used}/${capacity}${over ? ' ⚠' : ''}</span></div>
+                <div class="bar"><i style="width:${fill}%"></i></div>
+            </div>
+            <div class="spots">${spotsHtml}</div>
+        </div>`;
+    }
+
+    function renderSync() {
+        const el = document.getElementById('sync');
+        const txt = document.getElementById('sync-text');
+        const banner = document.getElementById('banner');
+        const stale = lastOkAt && Date.now() - lastOkAt > STALE_AFTER_MS;
+        el.className = 'sync' + (!lastOkAt && lastError ? ' error' : stale ? ' stale' : '');
+        if (!lastOkAt) {
+            txt.textContent = lastError ? 'Cannot reach Google Sheets' : 'Connecting…';
+        } else {
+            const secs = Math.round((Date.now() - lastOkAt) / 1000);
+            txt.textContent = stale ? `Last update ${Math.round(secs / 60)} min ago` : `Live · updated ${secs}s ago`;
+        }
+        if (stale) {
+            banner.textContent = `⚠ Connection lost — showing the board from ${new Date(lastOkAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            banner.style.display = 'block';
+        } else {
+            banner.style.display = 'none';
+        }
+    }
+
+    function renderChrome() {
+        const chip = document.getElementById('wh-chip');
+        chip.textContent = WAREHOUSES[WH].name;
+        chip.className = 'wh-chip' + (WH === 'CHINO' ? ' chino' : WH === 'TEST' ? ' test' : '');
+        document.title = `${WAREHOUSES[WH].name} · Outbound Staging — Live`;
+        const now = new Date();
+        document.getElementById('clock-time').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        document.getElementById('clock-date').textContent = now.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+    }
+
+    // ===================================================================================
+    // Sign-in (same code as the app; the code picks the warehouse)
+    // ===================================================================================
+    function showSignIn(message = '') {
+        document.getElementById('signin').style.display = 'flex';
+        document.getElementById('signin-err').textContent = message;
+        setTimeout(() => document.getElementById('signin-code').focus(), 50);
+    }
+
+    document.getElementById('signin-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const code = document.getElementById('signin-code').value.trim();
+        if (!code) return;
+        const btn = document.getElementById('signin-btn');
+        btn.disabled = true; btn.textContent = 'Checking…';
+        document.getElementById('signin-err').textContent = '';
+        try {
+            const wh = await findWarehouseForCode(code);
+            if (!wh) {
+                document.getElementById('signin-err').textContent = 'Access code not recognized.';
+            } else {
+                store.set(codeKey(wh), code);
+                store.set(ACTIVE_WAREHOUSE_KEY, wh);
+                WH = wh;
+                try { const u = new URL(location.href); u.searchParams.set('wh', wh); history.replaceState(null, '', u); } catch (err) { /* ignore */ }
+                document.getElementById('signin').style.display = 'none';
+                document.getElementById('signin-code').value = '';
+                renderChrome();
+                await refresh();
+            }
+        } catch (err) {
+            document.getElementById('signin-err').textContent = "Couldn't reach Google Sheets. Check the connection and try again.";
+        }
+        btn.disabled = false; btn.textContent = 'Show dashboard';
+    });
+
+    // ===================================================================================
+    // Fit to screen, clock, refresh loop
+    // ===================================================================================
+    function fit() {
+        const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+        document.getElementById('stage').style.transform = `translate(-50%, -50%) scale(${s})`;
+    }
+    window.addEventListener('resize', fit);
+    fit();
+
+    let idleTimer = null;
+    window.addEventListener('mousemove', () => {
+        document.body.classList.remove('idle');
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => document.body.classList.add('idle'), 3000);
+    });
+
+    renderChrome();
+    refresh();
+    setInterval(refresh, REFRESH_MS);
+    setInterval(() => { renderChrome(); renderSync(); }, 1000);
+</script>
+</body>
+</html>

@@ -20,7 +20,8 @@ Outbound pallet management app: ONUS-ONT Outbound Pallet Staging Manager (v2). A
 | `index.html` | The full app (HTML, Tailwind CSS, JavaScript) |
 | `Code.gs` | Apps Script backend: serves the page, stores board state in the `StateChunks` tab and writes the `Scan Log` tab |
 | `tests/board-sync.test.mjs` | Tests for sync, merge, scan log and handler escaping (`node --test`) |
-| `tests/e2e/` | Browser click-through tests (`npm test`) |
+| `dashboard.html` | Big-screen TV dashboard (read-only, auto-refresh) |
+| `tests/e2e/` | Browser click-through tests (`npm test`) and `dashboard_check.py` |
 
 ## One board on every link
 
@@ -52,6 +53,21 @@ Each warehouse has its own board, access code, Scan Log tab and saved data on ea
 6. Copy the web-app URL (ends in `/exec`), paste it into `const CLOUD_API_URL = '...';` in `index.html`, and commit. GitHub Pages republishes within a minute or two.
 
 Board state is saved to the `StateChunks` tab, split across rows to stay under the 50,000-character cell limit. Data from the old single-cell `State!A1` layout is read once if `StateChunks` is empty.
+
+## TV dashboard
+
+`https://xperia888.github.io/outbound-stage-manager/dashboard.html` is a full-screen live view for a big-screen TV:
+- **Layout:** it follows the warehouse plan along the north wall, west to east.
+  - **Loading docks:** the **9 loading docks** (D1–D9), each showing the order being loaded, its carrier, pallet count and the lanes it's staged in.
+  - **Staging area:** the **12 staging lanes** (S51–S62) in the staging area, with every pallet in its floor spot, 2x stacks, and dwell alerts (⚠ aging, ⏱ overdue, ⛔ over a week).
+  - **Racking:** shown behind the lanes.
+- **Top and bottom:** KPIs across the top; orders on the floor, dwell alerts and today's totals along the bottom.
+- **Updates:** it refreshes every 10 seconds and warns if the connection drops.
+- **Read-only:** it never changes the board.
+- **Sign in:** enter the access code once on the TV. The code picks the warehouse.
+- **Screen size:** it's designed for 1920×1080 and scales to fit any screen.
+
+To change which docks or lanes are shown, or their order, edit `FLOOR_LAYOUT` near the top of `dashboard.html`.
 
 ## Over-capacity warning
 
