@@ -5,8 +5,8 @@ Outbound pallet management app: ONUS-ONT Outbound Pallet Staging Manager (v2). A
 ## Features
 
 - Staging board for lanes S51–S62 (configurable), with floor-spot capacity and 2-high double-stack support (2 stacked pallets = 1 floor spot)
-- Quick scan, multi-SLP batch entry and camera QR/barcode scanning
-- Drag and drop SLPs or whole orders between lanes
+- Add a shipment by scanning or typing the order number and entering the number of pallets (no SLP barcodes)
+- Drag and drop pallets or whole orders between lanes
 - Orders overview, whole-order editing, loading dock assignment, ship order
 - Dwell-time alerts (warning / overdue / over a week) with snooze
 - Find Space finder and Smart Consolidate plan (no order blocking)
@@ -70,13 +70,22 @@ Board state is saved to the `StateChunks` tab, split across rows to stay under t
 
 To change the doors or their order, or to flip the lane direction (lowest number on the right), edit `FLOOR_LAYOUT` near the top of `dashboard.html`.
 
-## Over-capacity warning
+## Adding a shipment
 
-When a scan or move would put a lane over its floor-spot capacity (2x-stacked pairs count as one spot), the page warns first, for example "T2 would use 5 of 4 floor spots. Put it there anyway?".
-- **Put it anyway** places it.
-- **Cancel** leaves everything as it was.
-- Bulk scans warn once for the whole batch.
-- Camera scanning shows a warning message instead of stopping the camera.
+No SLP barcodes are needed. A shipment is an order number plus a number of pallets.
+- **Quick bar:** scan or type the order number and press Enter. The cursor jumps to **Pallets**; type the count and press Enter.
+- **Scan Order:** the same with the camera. Scanning the order barcode fills in the order number, then you enter the number of pallets. Carrier and destination can be added here.
+- **Pallet labels:** each pallet gets a label from the order number, e.g. `SO-41200-01`, `SO-41200-02`. Numbering carries on when more pallets are added to the same order later.
+- **Lane:** the lane box picks a lane automatically (same order first, then an empty lane), or choose one yourself.
+- **Edit order:** use **Add pallets** to add more to an existing order.
+
+## Lane capacity
+
+When a shipment doesn't fit in the chosen lane, the page offers to spread it over the next lanes in number order, for example "S52 has room for 8 of 12 pallets. Spread SO-41200 over S52 (8), S54 (4)?". It uses empty lanes, or lanes holding only that order, before lanes with other orders. 2x-stacked pairs count as one spot.
+- **Spread over lanes** places them.
+- **Cancel** adds nothing.
+- If there isn't room anywhere, it warns instead, for example "S52 would use 20 of 8 floor spots. Put it there anyway?". **Put it anyway** puts them all in that lane.
+- Moving pallets into a full lane gives the same over-capacity warning.
 
 ## Multi-device sync
 
