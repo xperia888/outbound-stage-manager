@@ -57,17 +57,18 @@ Board state is saved to the `StateChunks` tab, split across rows to stay under t
 ## TV dashboard
 
 `https://xperia888.github.io/outbound-stage-manager/dashboard.html` is a full-screen live view for a big-screen TV:
-- **Layout:** it follows the warehouse plan along the north wall, west to east.
-  - **Loading docks:** the **9 loading docks** (D1–D9), each showing the order being loaded, its carrier, pallet count and the lanes it's staged in.
-  - **Staging area:** the **12 staging lanes** (S51–S62) in the staging area, with every pallet in its floor spot, 2x stacks, and dwell alerts (⚠ aging, ⏱ overdue, ⛔ over a week).
-  - **Racking:** shown behind the lanes.
+- **Layout:** it follows the warehouse floor, left to right.
+  - **Loading doors:** D9 → D1, then the ramp. Each shows the order being loaded, its carrier, pallet count and the lanes it's coming from.
+  - **Staging lanes:** every lane named S + number (now S30–S80) in **one line**, as on the floor. Each lane is a column of floor spots, with every pallet in its spot, 2x stacks split in two, dwell alerts (⚠ aging, ⏱ overdue, ⛔ over a week), and the door it's assigned to underneath.
+  - **Order line:** a bracket under the lanes shows which order sits in which lanes.
+  - **New lanes:** lanes added in the app appear on the dashboard automatically.
 - **Top and bottom:** KPIs across the top; orders on the floor, dwell alerts and today's totals along the bottom.
 - **Updates:** it refreshes every 10 seconds and warns if the connection drops.
 - **Read-only:** it never changes the board.
 - **Sign in:** enter the access code once on the TV. The code picks the warehouse.
 - **Screen size:** it's designed for 1920×1080 and scales to fit any screen.
 
-To change which docks or lanes are shown, or their order, edit `FLOOR_LAYOUT` near the top of `dashboard.html`.
+To change the doors or their order, or to flip the lane direction (lowest number on the right), edit `FLOOR_LAYOUT` near the top of `dashboard.html`.
 
 ## Over-capacity warning
 

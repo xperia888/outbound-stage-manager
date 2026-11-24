@@ -8,11 +8,11 @@
   Big-screen (TV) dashboard for the outbound staging board.
   Read-only: it loads the same board the app saves to Google Sheets and refreshes itself.
   It never writes anything. Sign-in uses the same access code as the app; the code picks the warehouse.
-  Layout follows the warehouse plan along the north wall, west → east:
-    - 9 loading docks (groups of 5 and 4) where shipments are loaded,
-    - then the staging area (the red box on the plan): 12 lanes S51–S62 in front of that wall's
-      12 doors (groups of 2, 4 and 6), with racking behind.
-  Edit FLOOR_LAYOUT below if doors or lanes change.
+  Layout follows the warehouse floor, left → right:
+    - the loading doors along the wall (D9 … D1, then the ramp), showing what is being loaded at each,
+    - in front of them, every staging lane in one line (S30 … S80), one box per floor spot.
+  Lanes come from the board itself, so lanes added in the app show up here automatically.
+  Edit FLOOR_LAYOUT below if the doors or the lane direction change.
 -->
 <style>
     :root {
@@ -96,144 +96,94 @@
     .floor {
         position: relative;
         display: grid;
-        grid-template-rows: 30px 86px minmax(0, 1fr) 46px 22px;
+        grid-template-rows: 28px auto 26px minmax(0, 1fr) 26px 22px;
         grid-template-columns: minmax(0, 1fr);
         width: 100%; min-width: 0;
         background: var(--surface-1);
         border: 1px solid var(--line);
         border-radius: 16px;
-        padding: 10px 18px 12px;
+        padding: 8px 16px 10px;
         min-height: 0;
     }
     .floor-title { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
     .legend { display: flex; gap: 16px; text-transform: none; letter-spacing: 0; font-weight: 500; }
     .legend span { display: inline-flex; align-items: center; gap: 6px; }
     .legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+    .legend i.split { background: linear-gradient(180deg, #6b6a64 0 42%, transparent 42% 58%, #6b6a64 58%); }
+    .row-label { display: flex; align-items: flex-end; gap: 10px; font-size: 14px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; padding-bottom: 4px; }
+    .row-label.staging { color: #f3a5a5; }
+    .row-label span { color: var(--text-muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
 
-    .row { position: relative; display: flex; align-items: stretch; }
-    .slot { flex: 0 0 auto; }
-    .gap { flex: 0 0 auto; position: relative; }
-
-    /* North wall with dock doors */
-    .wall { border-top: 6px solid #6d6c66; padding-top: 0; }
-    .gap.people-door::after {
-        content: ''; position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
-        width: 22px; height: 16px; border: 2px solid #6d6c66; border-top: none; border-radius: 0 0 12px 12px;
-    }
+    /* Loading doors along the wall */
+    .doors { display: grid; gap: 8px; border-top: 6px solid #6d6c66; }
     .door {
-        margin: 0 4px; position: relative;
-        display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-        border: 2px dashed #5c5b55; border-top: none;
-        border-radius: 0 0 10px 10px;
-        background: var(--surface-2);
-        padding: 6px 4px 4px;
-        overflow: hidden;
+        height: 168px; min-width: 0; overflow: hidden;
+        display: flex; flex-direction: column; gap: 3px;
+        border: 2px dashed #4a4945; border-top: none; border-radius: 0 0 12px 12px;
+        background: #1c1c1a; padding: 6px 10px 8px;
     }
-    .door .name { font-family: var(--mono); font-size: 20px; font-weight: 800; color: var(--text-secondary); }
-    .door .state { margin-top: 4px; font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-    .door .order { margin-top: 2px; font-family: var(--mono); font-size: 14px; font-weight: 800; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-    .door.active { border: 2px solid var(--accent); border-top: none; background: var(--accent-soft); }
+    .door.active { border: 2px solid var(--accent); border-top: none; background: linear-gradient(180deg, rgba(57,135,229,0.24), rgba(57,135,229,0.06)); }
+    .door .head { display: flex; justify-content: space-between; align-items: baseline; }
+    .door .name { font-family: var(--mono); font-size: 26px; font-weight: 800; color: var(--text-secondary); }
     .door.active .name { color: #cde2fb; }
+    .door .state { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
     .door.active .state { color: #9ec5f4; }
+    .door .ord { font-family: var(--mono); font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .door .line { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .door .count { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
+    .door .count b { font-size: 34px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+    .door .count span { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .door .count .from { font-family: var(--mono); font-weight: 700; color: #9ec5f4; }
+    .door .lvl { font-size: 13px; font-weight: 800; }
+    .door .lvl.warning { color: var(--warning); } .door .lvl.overdue { color: var(--serious); } .door .lvl.overweek { color: #f3a5a5; }
+    .door .empty { margin: auto 0; text-align: center; font-size: 15px; color: var(--text-muted); }
 
-    /* Staging lanes */
-    .lanes { padding-top: 10px; min-height: 0; }
+    /* Staging lanes, all in one line */
+    .lane-line { display: grid; gap: 3px; min-height: 0; }
     .lane {
-        margin: 0 4px;
-        display: grid; grid-template-rows: 54px minmax(0, 1fr);
-        border-radius: 10px;
-        background: repeating-linear-gradient(0deg, transparent 0 calc(100% - 1px), rgba(255,255,255,0.0) 0);
-        border: 1px solid var(--line);
-        background-color: #1f1f1d;
-        min-height: 0; overflow: hidden;
+        min-width: 0; min-height: 0; overflow: hidden;
+        display: grid; grid-template-rows: 36px minmax(0, 1fr) 18px;
+        border-radius: 6px; border: 1px solid #34342f; background: #1b1b19;
     }
-    .lane.over { border: 2px solid var(--critical); box-shadow: 0 0 0 2px rgba(208,59,59,0.25); }
-    .lane.missing { border-style: dashed; opacity: 0.55; }
-    .lane-head { padding: 4px 8px 0; background: var(--surface-2); border-bottom: 1px solid var(--line); }
-    .lane-head .top { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
-    .lane-head .lname { font-family: var(--mono); font-size: 19px; font-weight: 800; }
-    .lane-head .count { font-size: 14px; font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .lane.used { border-color: #55544e; background: #20201e; }
+    .lane.over { border: 2px solid var(--critical); }
+    .lane-head { text-align: center; background: var(--surface-2); border-bottom: 1px solid var(--line); padding-top: 2px; line-height: 1.1; }
+    .lane-head .lname { display: block; font-family: var(--mono); font-size: 13px; font-weight: 800; color: var(--text-muted); letter-spacing: -0.03em; }
+    .lane.used .lane-head .lname, .lane.tens .lane-head .lname { color: var(--text-primary); }
+    .lane-head .count { display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .lane.used .lane-head .count { color: var(--text-secondary); }
     .lane.over .lane-head .count { color: #f3a5a5; }
-    .lane-head .bar { height: 5px; border-radius: 3px; background: var(--surface-3); margin-top: 4px; overflow: hidden; }
-    .lane-head .bar > i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
-    .lane.over .lane-head .bar > i { background: var(--critical); }
-    .spots { display: flex; flex-direction: column; gap: 4px; padding: 5px; min-height: 0; }
-    .spot {
-        flex: 1 1 0; min-height: 0;
-        border-radius: 6px;
-        border: 1px dashed #3a3a36;
-        display: flex; flex-direction: column; gap: 2px;
-    }
+    .spots { display: flex; flex-direction: column; gap: 3px; padding: 3px; min-height: 0; }
+    .spot { flex: 1 1 0; min-height: 0; border-radius: 4px; border: 1px dashed #33332f; display: flex; flex-direction: column; gap: 2px; }
     .spot.filled { border: none; }
+    .spot.extra .tile { box-shadow: inset 0 0 0 2px var(--critical); }
     .tile {
-        flex: 1 1 0; min-width: 0;
-        border-radius: 6px;
-        background: var(--surface-3);
-        border-left: 6px solid #6d6c66;
-        padding: 2px 5px 2px 6px;
-        display: flex; flex-direction: column; justify-content: center;
-        overflow: hidden;
-    }
-    .tile .slp { font-family: var(--mono); font-size: 14px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tile.half { flex-direction: row; align-items: center; justify-content: space-between; gap: 4px; padding-top: 0; padding-bottom: 0; }
-    .tile.half .slp { font-size: 13px; }
-    .tile .meta { display: flex; justify-content: space-between; gap: 4px; font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
-    .tile .meta .ord { overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); }
-    .tile .meta .age { font-weight: 700; font-variant-numeric: tabular-nums; }
-    .tile.stack { border-left-color: #9085e9; }
-    .tile .tier { font-size: 10px; font-weight: 800; color: #b9b2f2; letter-spacing: 0.04em; }
-    .tile.lvl-warning { border-left-color: var(--warning); }
-    .tile.lvl-overdue { border-left-color: var(--serious); background: rgba(236,131,90,0.16); }
-    .tile.lvl-overweek { border-left-color: var(--critical); background: rgba(208,59,59,0.22); animation: pulse 2.4s ease-in-out infinite; }
-    .tile.lvl-warning .age { color: var(--warning); }
-    .tile.lvl-overdue .age { color: var(--serious); }
-    .tile.lvl-overweek .age { color: #f3a5a5; }
-    .tile.dock-match { box-shadow: inset 0 0 0 2px rgba(57,135,229,0.75); }
-    @keyframes pulse { 0%, 100% { background: rgba(208,59,59,0.22); } 50% { background: rgba(208,59,59,0.42); } }
-    .spot.extra { border-color: var(--critical); }
-
-    /* Racking behind the staging floor */
-    .racks { padding-top: 10px; }
-    .rack {
-        border: 1px solid #44433f; border-radius: 6px;
-        background:
-            repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 14px),
-            repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 14px),
-            #191918;
+        flex: 1 1 0; min-height: 0; border-radius: 4px; background: #6b6a64;
         display: flex; align-items: center; justify-content: center;
-        color: var(--text-muted); font-size: 14px; font-weight: 700; letter-spacing: 0.06em;
+        font-size: 13px; line-height: 1; color: #1a1a19;
     }
-    .aisle { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 12px; writing-mode: vertical-rl; }
-    .floor-foot { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: var(--text-muted); padding-top: 4px; }
+    .tile.docked { background: var(--accent); }
+    .tile.lvl-warning { background: var(--warning); }
+    .tile.lvl-overdue { background: var(--serious); }
+    .tile.lvl-overweek { background: var(--critical); color: #fff; animation: pulse 2.4s ease-in-out infinite; }
+    .tile.docked.lvl-warning, .tile.docked.lvl-overdue, .tile.docked.lvl-overweek { box-shadow: inset 0 0 0 2px #9ec5f4; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    .lane-foot { text-align: center; font-family: var(--mono); font-size: 12px; font-weight: 800; color: #9ec5f4; white-space: nowrap; overflow: hidden; }
+
+    /* Which order sits in which lanes (brackets under the lane line) */
+    .order-line { display: grid; gap: 3px; padding-top: 4px; }
+    .order-span {
+        min-width: 0; border-top: 3px solid #6b6a64; border-radius: 2px;
+        text-align: center; font-family: var(--mono); font-size: 11px; letter-spacing: -0.05em; font-weight: 800; color: var(--text-secondary);
+        white-space: nowrap; overflow: hidden; text-overflow: clip; padding-top: 2px;
+    }
+    .order-span.at-dock { border-top-color: var(--accent); color: #cde2fb; }
+    .order-span.blank { border-top-color: transparent; }
+    .floor-foot { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: var(--text-muted); padding-top: 2px; }
     .floor-foot b { color: var(--text-secondary); }
 
     /* Side panels */
     aside { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 16px; min-height: 0; padding: 14px 24px 18px; }
-    .zone-labels { position: absolute; left: 18px; right: 18px; top: 12px; bottom: 34px; pointer-events: none; }
-    .zone-tag { position: absolute; top: 0; white-space: nowrap; font-size: 14px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
-    .zone-tag.loading { color: #9ec5f4; }
-    .zone-tag.staging { color: #f3a5a5; }
-    .zone-divider { position: absolute; top: 26px; bottom: 0; border-left: 3px dashed rgba(208,59,59,0.6); }
-    .door.minor { border-color: #45443f; background: #1d1d1b; }
-    .door.minor .name { font-size: 13px; color: var(--text-muted); }
-    .door.loading-door { border: 2px solid #5c5b55; border-top: none; }
-    /* Loading bays (floor in front of each loading dock) */
-    .bay {
-        margin: 10px 4px 0; border-radius: 10px; border: 1px dashed #4a4945; background: #1c1c1a;
-        display: flex; flex-direction: column; align-items: stretch; padding: 8px 3px; gap: 6px; overflow: hidden;
-    }
-    .bay.active { border: 2px solid var(--accent); background: linear-gradient(180deg, rgba(57,135,229,0.22), rgba(57,135,229,0.06)); }
-    .bay .status { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); text-align: center; }
-    .bay.active .status { color: #cde2fb; }
-    .bay .big { font-size: 40px; font-weight: 800; text-align: center; line-height: 1; font-variant-numeric: tabular-nums; }
-    .bay .big small { display: block; font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-top: 2px; }
-    .bay .ord { font-family: var(--mono); font-size: 13px; letter-spacing: -0.02em; font-weight: 800; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .bay .line { font-size: 12px; color: var(--text-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .bay .from { font-family: var(--mono); font-size: 13px; font-weight: 700; color: #9ec5f4; text-align: center; white-space: normal; line-height: 1.25; }
-    .bay .empty { margin: auto 0; text-align: center; font-size: 13px; color: var(--text-muted); }
-    .bay .lvl { font-size: 12px; font-weight: 800; text-align: center; }
-    .bay .lvl.warning { color: var(--warning); } .bay .lvl.overdue { color: var(--serious); } .bay .lvl.overweek { color: #f3a5a5; }
-    .apron { margin: 10px 4px 0; border-radius: 10px; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0 10px, transparent 10px 20px); }
     .panel { background: var(--surface-1); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
     .panel h2 { font-size: 15px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; display: flex; justify-content: space-between; }
     .panel h2 span { color: var(--text-muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
@@ -327,21 +277,22 @@
     <main>
         <section class="floor" aria-label="Staging floor plan">
             <div class="floor-title">
-                <span></span>
+                <span>Loading doors</span>
                 <span class="legend">
+                    <span><i style="background:#6b6a64"></i>Staged</span>
                     <span><i style="background:var(--accent)"></i>Dock assigned</span>
-                    <span><i style="background:#9085e9"></i>2x stacked</span>
+                    <span><i class="split"></i>2x stacked (2 per spot)</span>
                     <span><i style="background:var(--warning)"></i>⚠ Aging</span>
                     <span><i style="background:var(--serious)"></i>⏱ Overdue</span>
                     <span><i style="background:var(--critical)"></i>⛔ Over a week</span>
                 </span>
             </div>
-            <div class="row wall" id="doors-row"></div>
-            <div class="zone-labels" id="zone-labels"></div>
-            <div class="row lanes" id="lanes-row"></div>
-            <div class="row racks" id="racks-row"></div>
+            <div class="doors" id="docks-row"></div>
+            <div class="row-label staging" id="lanes-label"></div>
+            <div class="lane-line" id="lanes-row"></div>
+            <div class="order-line" id="order-line"></div>
             <div class="floor-foot">
-                <span><b>Loading docks</b> show what's assigned to each door · <b>Staging lanes</b>: 1 box = 1 floor spot (2x stacked pairs share a spot)</span>
+                <span><b>Doors</b> show what's being loaded · <b>Lanes</b>: 1 box = 1 floor spot · the line under the lanes shows which order is in them</span>
                 <span id="floor-foot-right"></span>
             </div>
         </section>
@@ -386,33 +337,16 @@
     const STALE_AFTER_MS = 60000;
 
     /**
-     * Floor layout, left → right along the north wall (from the warehouse plan).
-     * Each door has the staging lane in front of it. Groups are separated by people doors.
-     * Edit names here if your doors or lanes are numbered differently.
+     * Floor layout, left → right as you face the loading wall.
+     * loadingDocks: the doors, in order. Names must match the docks in the app (Settings → Docks).
+     * stagingLanes: null = every lane on the board named S + number, in one line, sorted by number;
+     *               or list the lane names in floor order yourself, e.g. ['S80', 'S79', …].
+     * laneDirection: 'ascending' puts the lowest lane number on the left, 'descending' on the right.
      */
     const FLOOR_LAYOUT = {
-        // West of the staging area: the 9 loading docks used for shipments (groups of 5 and 4 on the plan).
-        loadingDocks: [
-            ['DOCK-01', 'DOCK-02', 'DOCK-03', 'DOCK-04', 'DOCK-05'],
-            ['DOCK-06', 'DOCK-07', 'DOCK-08', 'DOCK-09']
-        ],
-        // Staging area (red box): the lane in front of each door on that wall (groups of 2, 4 and 6).
-        stagingLanes: [
-            ['S51', 'S52'],
-            ['S53', 'S54', 'S55', 'S56'],
-            ['S57', 'S58', 'S59', 'S60', 'S61', 'S62']
-        ],
-        // Relative widths: a loading dock vs a staging lane, and the wall between door groups (people doors)
-        dockWidth: 1.12,
-        laneWidth: 1,
-        loadingGroupGap: 0.35,
-        zoneGap: 0.45,
-        stagingGroupGaps: [0.55, 0.3],
-        // Racking behind the staging lanes, in feet (104′ block, 16′ aisle, 88′ block, 4′, 72′ block)
-        racks: [
-            { rack: 'Racking 104′', ft: 104 }, { aisle: '16′ aisle', ft: 16 },
-            { rack: 'Racking 88′', ft: 88 }, { aisle: '', ft: 4 }, { rack: 'Racking 72′', ft: 72 }
-        ]
+        loadingDocks: ['DOCK-09', 'DOCK-08', 'DOCK-07', 'DOCK-06', 'DOCK-05', 'DOCK-04', 'DOCK-03', 'DOCK-02', 'DOCK-01', 'RAMP'],
+        stagingLanes: null,
+        laneDirection: 'ascending'
     };
 
     // Shared with the staging app (same site → same saved code and warehouse on this device)
@@ -595,66 +529,49 @@
             <div class="kpi${alertsTotal ? ' alert' : ''}"><div class="label">Overdue pallets</div><div class="value">${alertsTotal}</div></div>
             <div class="kpi"><div class="label">Shipped today</div><div class="value">${shippedToday.length}</div></div>`;
 
-        // ---- North wall, west → east: loading docks, then the staging area ----
+        // ---- Loading doors, left → right ----
         const L = FLOOR_LAYOUT;
-        const items = [];   // { kind: 'dock'|'lane'|'gap'|'zone', w, ... }
-        L.loadingDocks.forEach((group, gi) => {
-            if (gi > 0) items.push({ kind: 'gap', w: L.loadingGroupGap, people: true });
-            group.forEach(door => items.push({ kind: 'dock', w: L.dockWidth, door }));
-        });
-        items.push({ kind: 'zone', w: L.zoneGap });
-        L.stagingLanes.forEach((group, gi) => {
-            if (gi > 0) items.push({ kind: 'gap', w: L.stagingGroupGaps[gi - 1] || 0.4, people: true });
-            group.forEach(lane => items.push({ kind: 'lane', w: L.laneWidth, lane }));
-        });
-        const units = items.reduce((t, it) => t + it.w, 0);
-        const pctOf = u => `${(u / units) * 100}%`;
-        const loadingDoorSet = new Set(L.loadingDocks.flat().map(norm));
-        const mappedColIds = new Set();
-        let doorsHtml = '';
-        let lanesHtml = '';
-        let offset = 0;
-        let stagingStart = 0;
-        let stagingEnd = 0;
-        items.forEach(it => {
-            if (it.kind === 'gap') {
-                doorsHtml += `<div class="gap${it.people ? ' people-door' : ''}" style="width:${pctOf(it.w)}"></div>`;
-                lanesHtml += `<div class="gap" style="width:${pctOf(it.w)}"></div>`;
-            } else if (it.kind === 'zone') {
-                stagingStart = offset + it.w / 2;
-                doorsHtml += `<div class="gap people-door" style="width:${pctOf(it.w)}"></div>`;
-                lanesHtml += `<div class="gap" style="width:${pctOf(it.w)}"></div>`;
-            } else if (it.kind === 'dock') {
-                const atDoor = pallets.filter(p => norm(p.dockNumber) === norm(it.door));
-                doorsHtml += `<div class="slot door loading-door${atDoor.length ? ' active' : ''}" style="width:calc(${pctOf(it.w)} - 8px)">
-                    <div class="name">${esc(String(it.door).replace(/^DOCK-0?/, 'D'))}</div>
-                    <div class="state">${atDoor.length ? 'Loading' : 'Open'}</div></div>`;
-                lanesHtml += renderBay(atDoor, pctOf(it.w), colById);
-            } else {
-                const col = colByName.get(norm(it.lane));
-                if (col) mappedColIds.add(col.id);
-                doorsHtml += `<div class="slot door minor" style="width:calc(${pctOf(it.w)} - 8px)"><div class="name">door</div></div>`;
-                lanesHtml += renderLane(it.lane, col, col ? palletsIn(col.id) : [], pctOf(it.w));
-                stagingEnd = offset + it.w;
-            }
-            offset += it.w;
-        });
-        document.getElementById('doors-row').innerHTML = doorsHtml;
-        document.getElementById('lanes-row').innerHTML = lanesHtml;
-        document.getElementById('zone-labels').innerHTML = `
-            <span class="zone-tag loading" style="left:0">◀ Loading docks · ${loadingDoorSet.size} doors</span>
-            <span class="zone-tag staging" style="left:${(stagingStart / units) * 100}%; padding-left: 12px">Staging area · ${L.stagingLanes.flat().length} lanes ▶</span>
-            <span class="zone-divider" style="left:${(stagingStart / units) * 100}%"></span>`;
+        const loadingDoorSet = new Set(L.loadingDocks.map(norm));
+        const docksRow = document.getElementById('docks-row');
+        docksRow.style.gridTemplateColumns = `repeat(${L.loadingDocks.length}, minmax(0, 1fr))`;
+        docksRow.innerHTML = L.loadingDocks.map(door =>
+            renderDock(door, pallets.filter(p => norm(p.dockNumber) === norm(door)), colById)).join('');
 
-        // Racking sits behind the staging lanes only
-        const rackFt = L.racks.reduce((t, r) => t + r.ft, 0);
-        const rackLeft = (stagingStart / units) * 100;
-        const rackWidth = ((stagingEnd - stagingStart) / units) * 100;
-        document.getElementById('racks-row').innerHTML =
-            `<div class="gap" style="width:${rackLeft}%"></div><div class="row" style="width:${rackWidth}%">` +
-            L.racks.map(r => r.rack
-                ? `<div class="slot rack" style="width:${(r.ft / rackFt) * 100}%">${esc(r.rack)}</div>`
-                : `<div class="gap aisle" style="width:${(r.ft / rackFt) * 100}%">${esc(r.aisle)}</div>`).join('') + '</div>';
+        // ---- Staging lanes, one line ----
+        const laneCols = stagingLaneColumns(cols);
+        const mappedColIds = new Set(laneCols.filter(Boolean).map(c => c.id));
+        const gridCols = `repeat(${Math.max(1, laneCols.length)}, minmax(0, 1fr))`;
+        const lanesRow = document.getElementById('lanes-row');
+        lanesRow.style.gridTemplateColumns = gridCols;
+        lanesRow.innerHTML = laneCols.map((col, i) => renderLane(col, col ? palletsIn(col.id) : [], laneNames[i])).join('');
+        const usedLanes = laneCols.filter(c => c && palletsIn(c.id).length).length;
+        const first = laneNames[0] || '', last = laneNames[laneNames.length - 1] || '';
+        document.getElementById('lanes-label').innerHTML =
+            `Staging lanes ${esc(first)} → ${esc(last)} <span>${laneNames.length} lanes · ${usedLanes} in use</span>`;
+
+        // Order brackets: neighbouring lanes holding the same order share one bracket
+        const spans = [];
+        laneCols.forEach(col => {
+            const inLane = col ? palletsIn(col.id) : [];
+            const count = {};
+            inLane.forEach(p => { const o = norm(p.orderNumber) || 'NO ORDER'; count[o] = (count[o] || 0) + 1; });
+            const top = Object.keys(count).sort((a, b) => count[b] - count[a])[0] || '';
+            const label = top + (Object.keys(count).length > 1 ? '+' : '');
+            const docked = inLane.some(p => p.dockNumber);
+            const prev = spans[spans.length - 1];
+            if (prev && prev.label === label) { prev.n++; prev.docked = prev.docked || docked; }
+            else spans.push({ label, n: 1, docked });
+        });
+        const orderLine = document.getElementById('order-line');
+        orderLine.style.gridTemplateColumns = gridCols;
+        orderLine.innerHTML = spans.map(sp => {
+            if (!sp.label) return `<div class="order-span blank" style="grid-column: span ${sp.n}"></div>`;
+            // A one-lane bracket only has room for the last digits of the order number
+            const plus = sp.label.endsWith('+') ? '+' : '';
+            const digits = sp.label.replace(/\+$/, '').replace(/^[^0-9]*/, '') || sp.label;
+            const text = sp.n >= 3 ? sp.label : sp.n === 2 ? digits + plus : digits.slice(plus ? -4 : -5) + plus;
+            return `<div class="order-span${sp.docked ? ' at-dock' : ''}" style="grid-column: span ${sp.n}" title="${esc(sp.label)}">${esc(text)}</div>`;
+        }).join('');
 
         document.getElementById('floor-foot-right').innerHTML =
             `updated <b>${new Date(lastOkAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>`;
@@ -708,34 +625,53 @@
         ].filter(Boolean).join('<br>');
     }
 
-    /** Floor in front of a loading dock: what's being loaded there. */
-    function renderBay(atDoor, width, colById) {
-        if (!atDoor.length) {
-            return `<div class="slot bay" style="width:calc(${width} - 8px)"><div class="empty">Open</div></div>`;
+    /** Lanes in floor order. Fills laneNames (same order) so missing lanes can still be labelled. */
+    let laneNames = [];
+    function stagingLaneColumns(cols) {
+        const byName = new Map(cols.map(c => [norm(c.name), c]));
+        if (Array.isArray(FLOOR_LAYOUT.stagingLanes)) {
+            laneNames = FLOOR_LAYOUT.stagingLanes.map(n => String(n));
+            return laneNames.map(n => byName.get(norm(n)) || null);
         }
-        const orders = [...new Set(atDoor.map(p => norm(p.orderNumber)))];
+        const dir = FLOOR_LAYOUT.laneDirection === 'descending' ? -1 : 1;
+        const lanes = cols
+            .map(c => ({ c, m: /^S\s*-?\s*(\d+)$/i.exec(String(c.name || '').trim()) }))
+            .filter(x => x.m)
+            .sort((a, b) => dir * (Number(a.m[1]) - Number(b.m[1])))
+            .map(x => x.c);
+        laneNames = lanes.map(c => c.name);
+        return lanes;
+    }
+
+    const dockLabel = d => String(d).replace(/^DOCK-?0*(?=\d)/i, 'D').replace(/^RAMP$/i, 'Ramp');
+
+    /** A loading door and what's being loaded there. */
+    function renderDock(door, atDoor, colById) {
+        const name = esc(dockLabel(door));
+        if (!atDoor.length) {
+            return `<div class="door"><div class="head"><span class="name">${name}</span><span class="state">Open</span></div><div class="empty">—</div></div>`;
+        }
+        const orders = [...new Set(atDoor.map(p => norm(p.orderNumber) || 'NO ORDER'))];
         const carriers = [...new Set(atDoor.map(p => p.carrier).filter(Boolean))];
         const lanes = [...new Set(atDoor.map(p => (colById.get(p.columnId) || {}).name).filter(Boolean))];
         const oldest = atDoor.reduce((m, p) => Math.min(m, Number(p.createdAt) || Date.now()), Date.now());
         const worst = ['overweek', 'overdue', 'warning'].find(l => atDoor.some(p => dwellLevel(p) === l));
-        return `<div class="slot bay active" style="width:calc(${width} - 8px)">
-            <div class="status">Loading</div>
-            <div class="ord">${esc(orders[0])}</div>
-            ${orders.length > 1 ? `<div class="line">+${orders.length - 1} more order${orders.length > 2 ? 's' : ''}</div>` : ''}
+        return `<div class="door active">
+            <div class="head"><span class="name">${name}</span><span class="state">Loading</span></div>
+            <div class="ord">${esc(orders[0])}${orders.length > 1 ? ` <small>+${orders.length - 1}</small>` : ''}</div>
             <div class="line">${esc(carriers[0] || 'No carrier')}</div>
-            <div class="big">${atDoor.length}<small>pallet${atDoor.length === 1 ? '' : 's'}</small></div>
-            <div class="line">staged in</div>
-            <div class="from">${esc(lanes.join(' '))}</div>
-            <div class="line">oldest ${age(oldest)}</div>
-            ${worst ? `<div class="lvl ${worst}">${LEVEL_ICON[worst]} ${{ warning: 'Aging', overdue: 'Overdue', overweek: 'Over a week' }[worst]}</div>` : ''}
+            <div class="count"><b>${atDoor.length}</b><span>plt${atDoor.length === 1 ? '' : 's'} from <span class="from">${esc(lanes.join(' ') || '—')}</span></span></div>
+            ${worst
+                ? `<div class="lvl ${worst}">${LEVEL_ICON[worst]} ${{ warning: 'Aging', overdue: 'Overdue', overweek: 'Over a week' }[worst]} · ${age(oldest)}</div>`
+                : `<div class="line">oldest ${age(oldest)}</div>`}
         </div>`;
     }
 
-    function renderLane(laneName, col, inLane, width) {
+    function renderLane(col, inLane, laneName) {
+        const num = parseInt(String(laneName).replace(/\D/g, ''), 10);
+        const tens = num % 10 === 0 ? ' tens' : '';
         if (!col) {
-            return `<div class="slot lane missing" style="width:calc(${width} - 8px)">
-                <div class="lane-head"><div class="top"><span class="lname">${esc(laneName)}</span><span class="count">—</span></div></div>
-                <div class="spots"><div class="none-msg" style="font-size:13px">Lane not set up</div></div></div>`;
+            return `<div class="lane${tens}" style="opacity:0.45"><div class="lane-head"><span class="lname">${esc(laneName)}</span><span class="count">—</span></div><div class="spots"></div><div class="lane-foot"></div></div>`;
         }
         const capacity = Number(col.capacity) || 0;
         const spots = laneSpots(inLane);
@@ -746,31 +682,19 @@
         for (let i = 0; i < rows; i++) {
             const s = spots[i];
             if (!s) { spotsHtml += '<div class="spot"></div>'; continue; }
-            // A 2x pair shows TOP above BTM in the same floor spot
-            const ordered = s.length === 2 ? [s[1], s[0]] : s;
+            const ordered = s.length === 2 ? [s[1], s[0]] : s; // a 2x pair shows TOP above BTM
             spotsHtml += `<div class="spot filled${i >= capacity ? ' extra' : ''}">${ordered.map(p => {
                 const lvl = dwellLevel(p);
-                const tier = p.doubleStacked ? (p === s[0] ? 'BTM' : 'TOP') : '';
-                const docked = p.dockNumber ? ' dock-match' : '';
-                const code = esc(String(p.slp).replace(/^SLP-/i, ''));
-                const icon = lvl !== 'normal' ? LEVEL_ICON[lvl] + ' ' : '';
-                if (s.length === 2) {
-                    return `<div class="tile half stack lvl-${lvl}${docked}" title="${esc(p.slp)}">
-                        <span class="slp">${code}</span><span class="tier">${icon || tier}</span></div>`;
-                }
-                return `<div class="tile${p.doubleStacked ? ' stack' : ''} lvl-${lvl}${docked}" title="${esc(p.slp)} · ${esc(norm(p.orderNumber))} · ${age(p.createdAt)}">
-                    <div class="slp">${code}</div>
-                    <div class="meta"><span class="ord">${icon}${tier ? `<span class="tier">${tier}</span> ` : ''}${esc(norm(p.orderNumber).replace(/^SO-/, ''))}</span></div>
-                </div>`;
+                const tier = p.doubleStacked ? (p === s[0] ? ' · BTM' : ' · TOP') : '';
+                const tip = `${p.slp} · ${norm(p.orderNumber) || 'no order'}${p.dockNumber ? ' · ' + p.dockNumber : ''} · ${age(p.createdAt)}${tier}`;
+                return `<div class="tile lvl-${lvl}${p.dockNumber ? ' docked' : ''}" title="${esc(tip)}">${lvl !== 'normal' ? LEVEL_ICON[lvl] : ''}</div>`;
             }).join('')}</div>`;
         }
-        const fill = capacity ? Math.min(100, (used / capacity) * 100) : 0;
-        return `<div class="slot lane${over ? ' over' : ''}" style="width:calc(${width} - 8px)">
-            <div class="lane-head">
-                <div class="top"><span class="lname">${esc(col.name)}</span><span class="count">${used}/${capacity}${over ? ' ⚠' : ''}</span></div>
-                <div class="bar"><i style="width:${fill}%"></i></div>
-            </div>
+        const docks = [...new Set(inLane.map(p => norm(p.dockNumber)).filter(Boolean))];
+        return `<div class="lane${used ? ' used' : ''}${over ? ' over' : ''}${tens}">
+            <div class="lane-head"><span class="lname">${esc(col.name)}</span><span class="count">${used}/${capacity}</span></div>
             <div class="spots">${spotsHtml}</div>
+            <div class="lane-foot" title="${esc(docks.join(', '))}">${esc(docks.length ? dockLabel(docks[0]) + (docks.length > 1 ? '+' : '') : '')}</div>
         </div>`;
     }
 
