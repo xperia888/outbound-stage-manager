@@ -1894,6 +1894,11 @@
             return cols;
         }
 
+        /** The three sample pallets older versions created on first start (ids plt-demo-1…3). */
+        function isBuiltInDemoPallet(p) {
+            return Boolean(p) && /^plt-demo-\d+$/.test(String(p.id || ''));
+        }
+
         function createInitialDemoState() {
             const now = Date.now();
             return {
@@ -1910,47 +1915,8 @@
                     overWeekDays: DEFAULT_DWELL_OVERWEEK_DAYS
                 },
                 columns: createDefaultS51ToS62Columns(),
-                pallets: [
-                    {
-                        id: 'plt-demo-1',
-                        slp: 'SLP-884101',
-                        orderNumber: 'SO-40118',
-                        columnId: 'col-s51',
-                        carrier: 'FedEx Freight',
-                        destination: 'Chicago Hub',
-                        notes: 'BOL #84101',
-                        dockNumber: 'DOCK-03',
-                        doubleStacked: true,
-                        createdAt: now - (3 * 3600000),
-                        history: [{ time: now - (3 * 3600000), text: 'Scanned into S51 under Order SO-40118 (SLP #1 • 2x Stacked)' }]
-                    },
-                    {
-                        id: 'plt-demo-2',
-                        slp: 'SLP-884102',
-                        orderNumber: 'SO-40118',
-                        columnId: 'col-s51',
-                        carrier: 'FedEx Freight',
-                        destination: 'Chicago Hub',
-                        notes: 'BOL #84101',
-                        dockNumber: 'DOCK-03',
-                        doubleStacked: true,
-                        createdAt: now - (2.8 * 3600000),
-                        history: [{ time: now - (2.8 * 3600000), text: 'Scanned into S51 under Order SO-40118 (SLP #2 • 2x Stacked)' }]
-                    },
-                    {
-                        id: 'plt-demo-3',
-                        slp: 'SLP-884205',
-                        orderNumber: 'SO-40122',
-                        columnId: 'col-s53',
-                        carrier: 'Old Dominion Freight Line',
-                        destination: 'Dallas DC',
-                        notes: 'Priority LTL',
-                        dockNumber: '',
-                        doubleStacked: false,
-                        createdAt: now - (1.4 * MS_PER_DAY),
-                        history: [{ time: now - (1.4 * MS_PER_DAY), text: 'Scanned into S53 under Order SO-40122 (SLP #1)' }]
-                    }
-                ],
+                // New devices start empty; the real board comes from the cloud
+                pallets: [],
                 shippedPallets: []
             };
         }
@@ -2034,6 +2000,7 @@
                     return createInitialDemoState();
                 }
                 if (!Array.isArray(parsed.pallets)) parsed.pallets = [];
+                parsed.pallets = parsed.pallets.filter(p => !isBuiltInDemoPallet(p));
                 if (typeof parsed.autoResize !== 'boolean') parsed.autoResize = true;
                 if (!parsed.layoutMode) parsed.layoutMode = 'grid';
                 if (!parsed.columnWidth) parsed.columnWidth = 205;
@@ -2565,7 +2532,8 @@
             ).sort((x, y) => (Number(y.shippedAt) || 0) - (Number(x.shippedAt) || 0));
 
             merged.pallets = resolveDuplicatePalletLabels(
-                mergeRecordsById(b.pallets, local.pallets, remote.pallets, p => p.id),
+                mergeRecordsById(b.pallets, local.pallets, remote.pallets, p => p.id)
+                    .filter(p => !isBuiltInDemoPallet(p)),
                 merged.shippedPallets
             );
 

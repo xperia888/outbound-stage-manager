@@ -50,6 +50,13 @@ async def main():
             info=await pg.evaluate("() => ({docks:[...document.querySelectorAll('.door .name')].map(e=>e.textContent), lanes:document.querySelectorAll('.lane').length, first:document.querySelector('.lane .lname').textContent, laneW:Math.round(document.querySelector('.lane').getBoundingClientRect().width), spans:[...document.querySelectorAll('.order-span:not(.blank)')].map(e=>e.textContent), other:document.getElementById('other-lanes').textContent})")
             print('   ',info)
             await pg.screenshot(path=f'{E2E}/out/dashboard_{w}x{h}.png')
+            # Theme button switches to dark and back
+            await pg.click('#theme-btn'); await pg.wait_for_timeout(300)
+            dark=await pg.evaluate("document.body.classList.contains('dark')")
+            await pg.screenshot(path=f'{E2E}/out/dashboard_{w}x{h}_dark.png')
+            await pg.keyboard.press('t'); await pg.wait_for_timeout(200)
+            light=not await pg.evaluate("document.body.classList.contains('dark')")
+            print(f'    theme switch: dark={dark} back_to_light={light}')
             await ctx.close()
         await b.close()
 os.makedirs(os.path.join(E2E, 'out'), exist_ok=True)

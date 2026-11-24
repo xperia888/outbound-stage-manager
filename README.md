@@ -68,6 +68,8 @@ Board state is saved to the `StateChunks` tab, split across rows to stay under t
 - **Sign in:** enter the access code once on the TV. The code picks the warehouse.
 - **Screen size:** it's designed for 1920×1080 and scales to fit any screen.
 
+- **Theme:** the **Dark theme / Light theme** button in the header switches the look, and each screen remembers its choice. You can also press **T** or open `dashboard.html?theme=dark`.
+
 To change the doors or their order, or to flip the lane direction (lowest number on the right), edit `FLOOR_LAYOUT` near the top of `dashboard.html`.
 
 ## Adding a shipment
