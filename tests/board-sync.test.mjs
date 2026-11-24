@@ -647,6 +647,25 @@ test('board: lanes in number order; search shows only lanes with a match', () =>
     assert.match(board.innerHTML, /No lane has a pallet matching/);
 });
 
+test('delete order: asks first, then removes only that order (not shipped) and logs REMOVE', () => {
+    const { run } = loadApp();
+    run(`appState.columns = [{ id: 'c51', name: 'S51', capacity: 8 }, { id: 'c52', name: 'S52', capacity: 8 }];
+         appState.pallets = [${JSON.stringify(pallet('a', 'SO-1-01', { columnId: 'c51', orderNumber: 'SO-1' }))},
+                             ${JSON.stringify(pallet('b', 'SO-1-02', { columnId: 'c52', orderNumber: 'SO-1' }))},
+                             ${JSON.stringify(pallet('c', 'SO-2-01', { columnId: 'c51', orderNumber: 'SO-2' }))}];
+         appState.shippedPallets = [];
+         globalThis.__logged = []; logScanEvent = (action, p) => __logged.push(action + ':' + p.slp);
+         openConfirmModal = (title, message, onConfirm, okLabel) => { globalThis.__confirm = { title, message, onConfirm, okLabel }; };`);
+    run(`confirmDeleteWholeOrder('so-1')`);
+    assert.equal(run('__confirm.title'), 'Delete Order SO-1?');
+    assert.match(run('__confirm.message'), /all 2 pallet\(s\) of SO-1 from S51, S52/);
+    assert.equal(run('appState.pallets.length'), 3, 'nothing removed before confirming');
+    run('__confirm.onConfirm()');
+    assert.deepEqual(JSON.parse(run('JSON.stringify(appState.pallets.map(p => p.slp))')), ['SO-2-01']);
+    assert.equal(run('appState.shippedPallets.length'), 0, 'not logged as shipped');
+    assert.deepEqual(JSON.parse(run('JSON.stringify(__logged)')), ['REMOVE:SO-1-01', 'REMOVE:SO-1-02']);
+});
+
 test('Code.gs resolveWarehouse: the code says which warehouse it opens', () => {
     const { ctx } = loadCodeGs({ accessCode: 'ont-code', chinoCode: 'chino-code', testMode: 'on' });
     const r = key => JSON.parse(JSON.stringify(ctx.api({ fn: 'resolveWarehouse', key })));
