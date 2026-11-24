@@ -403,8 +403,12 @@ async def run_round(browser, wh, rnd, devices):
     record(wh, rnd, 'Carrier search shows only lanes holding that carrier', lanes_ok)
     await click_fn(A, 'clearSearch')
     names = await A.evaluate("[...document.querySelectorAll('#staging-board [id^=lane-card-]')].map(e => appState.columns.find(c => 'lane-card-' + c.id === e.id).name)")
-    nums = [int(''.join(ch for ch in n if ch.isdigit())) if any(ch.isdigit() for ch in n) else 10**9 for n in names]
-    record(wh, rnd, 'Board lists lanes in number order', nums == sorted(nums), names)
+    import re as _re
+    s_part = [n for n in names if _re.fullmatch(r'S\d+', n)]
+    rest = names[len(s_part):]
+    ok_order = names[:len(s_part)] == s_part and [int(n[1:]) for n in s_part] == sorted(int(n[1:]) for n in s_part) \
+        and not any(_re.fullmatch(r'S\d+', n) for n in rest)
+    record(wh, rnd, 'Board lists S lanes by number first, then other locations', ok_order, names)
 
     # Find Space with 2x pallets: 2 per floor spot, and the choice carries to the quick bar
     await A.click('button:has-text("Find Space")'); await A.wait_for_timeout(300)
