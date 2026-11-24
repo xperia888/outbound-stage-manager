@@ -470,6 +470,25 @@ async def run_round(browser, wh, rnd, devices):
     await close_open_modals(A)
     record(wh, rnd, 'Remove pallet (confirm dialog)', f'{border}-03' not in await slps(A))
 
+    # Delete order from the Orders window: confirm dialog, gone on both devices, not shipped
+    del_order = f'SO-{tag}-DEL'
+    await A.fill('#quick-order-input', del_order)
+    await A.fill('#quick-pallet-count', '3')
+    await A.press('#quick-pallet-count', 'Enter')
+    await accept_capacity_warning(A)
+    await A.wait_for_timeout(300)
+    ok_b = await wait_for(B, f"appState.pallets.filter(p => p.orderNumber === '{del_order}').length === 3", 20000)
+    await A.click('button:has-text("Orders")'); await A.wait_for_timeout(300)
+    await A.click(f'#orders-summary-list button[onclick*="confirmDeleteWholeOrder"][onclick*="{del_order}"]'); await A.wait_for_timeout(300)
+    title = (await A.text_content('#confirm-modal-title') or '').strip()
+    still = await state(A, f"appState.pallets.filter(p => p.orderNumber === '{del_order}').length")
+    await A.click('#confirm-modal-ok-btn'); await A.wait_for_timeout(400)
+    await close_open_modals(A)
+    gone_a = await state(A, f"!appState.pallets.some(p => p.orderNumber === '{del_order}') && !appState.shippedPallets.some(s => s.orderNumber === '{del_order}')")
+    gone_b = await wait_for(B, f"!appState.pallets.some(p => p.orderNumber === '{del_order}')", 20000)
+    record(wh, rnd, 'Delete order: asks first (nothing removed before confirming)', ok_b and title == f'Delete Order {del_order}?' and still == 3, title)
+    record(wh, rnd, 'Delete order: removed on both devices, not logged as shipped', gone_a and gone_b)
+
     # --- EOD report + CSV export, Backup export ---------------------------------------------------------
     await A.click('button:has-text("EOD Report")')
     await A.wait_for_timeout(400)
