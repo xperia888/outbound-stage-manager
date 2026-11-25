@@ -383,6 +383,23 @@ async def main():
         st = req({'fn': 'loadBoardState', 'key': 'ont-e2e', 'warehouse': 'ONT'})
         record('staging board unchanged by intake', json.loads(st['stateJson']) == board)
 
+        # --- Every screen size, phone to ultra-wide ---------------------------------------------
+        sizes = [(360, 780), (768, 1024), (1024, 768), (1440, 900), (1920, 1080), (2560, 1440), (3440, 1440)]
+        views = [('orders', "showView('orders')"), ('form', "openForm(null)"), ('import', "showView('import')"),
+                 ('eod', "showView('reports'); setReportKind('eod')"), ('life', "showView('reports'); setReportKind('life')")]
+        bad = []
+        for w, h in sizes:
+            await pg.set_viewport_size({'width': w, 'height': h})
+            for name, js in views:
+                await pg.evaluate(js); await pg.wait_for_timeout(900 if name in ('eod', 'life') else 150)
+                over = await pg.evaluate("document.documentElement.scrollWidth - innerWidth")
+                if over > 0: bad.append((w, name, over))
+                if w in (360, 1024, 2560, 3440):
+                    await pg.screenshot(path=f'{OUT}/size_{w}_{name}.png', full_page=False)
+        record('no sideways scrolling on any view, 360px to 3440px', not bad, bad)
+        await pg.set_viewport_size({'width': 1440, 'height': 900})
+        await pg.evaluate("showView('orders')")
+
         await pg.click('#signout-btn'); await pg.wait_for_timeout(150); await pg.click('#confirm-yes'); await pg.wait_for_timeout(300)
         record('sign out clears the name for the next person', await pg.is_visible('#signin') and await pg.input_value('#signin-name') == '')
         record('no page errors', not errs, errs)
