@@ -21,6 +21,7 @@ Outbound pallet management app: ONUS-ONT Outbound Pallet Staging Manager (v2). A
 | `Code.gs` | Apps Script backend: serves the page, stores board state in the `StateChunks` tab and writes the `Scan Log` tab |
 | `tests/board-sync.test.mjs` | Tests for sync, merge, scan log and handler escaping (`node --test`) |
 | `dashboard.html` | Big-screen TV dashboard (read-only, auto-refresh) |
+| `intake.html` | Order Intake portal for customer service: new orders, WMS import, API connector |
 | `tests/e2e/` | Browser click-through tests (`npm test`) and `dashboard_check.py` |
 
 ## One board on every link
@@ -73,6 +74,40 @@ Board state is saved to the `StateChunks` tab, split across rows to stay under t
 
 To change the doors or their order, or to flip the lane direction (lowest number on the right), edit `FLOOR_LAYOUT` near the top of `dashboard.html`.
 
+## Order Intake portal (`intake.html`)
+
+Customer service releases orders to the warehouse here: https://xperia888.github.io/outbound-stage-manager/intake.html
+
+- **Separate from staging:** each order is one row in an **Orders** tab per warehouse (`Orders`, `Orders CHINO`, `Orders TEST`). The staging board, app and dashboard are not changed.
+- **Fields:**
+  - Order # (must match what the floor scans)
+  - Customer
+  - Released-to-warehouse time (defaults to now)
+  - Cartons and expected pallets
+  - Reference type + reference (ARN#, Repack, PO#…)
+  - Order type
+  - Carrier, SCAC, PRO/BOL, ship/appointment date
+  - Destination, notes
+  - Status, source, entered by, created/updated (kept by the server)
+- **Order list:** shows each order's floor progress, read from the staging board (read only): waiting, partly staged, staged, at dock, or shipped, with lanes and counts. You can search, filter and export to CSV.
+- **Cancel:** marks the row Cancelled. Rows are never deleted, so there's always a history, and a cancelled order can be restored.
+- **Import from WMS:** load a CSV/TSV or Excel export.
+  - Columns are matched to fields from their names, and you can change any match. The matching is remembered for the next file.
+  - **Default** sets a value for orders whose cell is empty (e.g. Reference type = ARN#).
+  - Rows are checked before importing: new, update, skip, or problem.
+  - Existing orders are updated by Order #. Blank cells never wipe what was already entered.
+- **API connector:** a WMS or a small script can POST orders as JSON. The **API Connector** tab has the exact request format.
+
+**Access (Script Properties):**
+
+| Property | Who | Can do |
+|---|---|---|
+| `ACCESS_CODE` / `ACCESS_CODE_CHINO` | Floor leads | Everything, including the portal |
+| `CS_CODE` / `CS_CODE_CHINO` | Customer service | Orders only; cannot read or change the staging board |
+| `WMS_API_KEY` / `WMS_API_KEY_CHINO` | The WMS connection | `upsertOrders` and `listOrders` only; not a sign-in code |
+
+**Setup:** update `Code.gs` in Apps Script, add the properties you need, then use **Deploy → Manage deployments → Edit → New version**. The `Orders` tab is created on the first save.
+
 ## Adding a shipment
 
 No SLP barcodes are needed. A shipment is an order number plus a number of pallets.
@@ -124,4 +159,5 @@ Browser click-through tests (two devices per warehouse, real `Code.gs` against a
 
 ```bash
 cd tests/e2e && npm install && npm test     # needs Python 3 + Playwright and Google Chrome
+python3 tests/e2e/intake_check.py           # Order Intake portal (also needs openpyxl)
 ```

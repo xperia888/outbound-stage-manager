@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order Intake — ONUS Outbound</title>
+<!--
+  Order Intake portal (customer service → warehouse).
+  - New order form, order list with the floor's progress (read from the staging board, read only),
+    WMS file import (CSV / Excel) with column mapping, and the API connector details for the WMS.
+  - Orders are stored one row per order in the warehouse's "Orders" tab of the same Google Sheet,
+    through the same Apps Script web app as the staging board. The staging board itself is not changed.
+-->
+<style>
+    :root {
+        --page: #eef1f5;
+        --surface: #ffffff;
+        --surface-2: #f4f6f9;
+        --line: #d7dde5;
+        --line-strong: #b9c3cf;
+        --text: #101828;
+        --text-2: #3d4a5c;
+        --muted: #667085;
+        --navy: #10294a;
+        --accent: #1f6fd1;
+        --accent-dark: #1559b0;
+        --accent-soft: #e6f0fd;
+        --good: #12804a;
+        --good-soft: #e3f4ea;
+        --warn: #8f5a00;
+        --warn-soft: #fff4d6;
+        --bad: #b42318;
+        --bad-soft: #fde8e7;
+        --teal: #1d7466;
+        --teal-soft: #e2f3ef;
+        --violet: #6449ad;
+        --violet-soft: #efeafb;
+        --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+        --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+        --mono: "JetBrains Mono", "Consolas", "SFMono-Regular", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--page); color: var(--text); font-family: var(--font); font-size: 14px; }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    .mono { font-family: var(--mono); }
+    .hidden { display: none !important; }
+
+    /* Header */
+    header {
+        background: var(--navy); color: #fff; border-bottom: 4px solid var(--accent);
+        padding: 12px 24px 0; position: sticky; top: 0; z-index: 20;
+    }
+    .top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .brand h1 { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+    .brand .sub { font-size: 12px; color: #c8d5e6; margin-top: 2px; }
+    .wh-chip { font-family: var(--mono); font-size: 12px; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: #1b3a62; border: 1px solid #2f5384; color: #cfe3ff; }
+    .wh-chip.chino { color: #ffe1a8; border-color: #7a5a1c; background: #3a2c10; }
+    .wh-chip.test { color: #ffc2c2; border-color: #7a2a2a; background: #3a1414; }
+    .top .spacer { flex: 1; }
+    .who { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #c8d5e6; }
+    .who button, .ghost-dark {
+        background: #1b3a62; border: 1px solid #2f5384; color: #fff; border-radius: 8px; padding: 5px 10px; font-size: 13px; font-weight: 600;
+    }
+    .who button:hover, .ghost-dark:hover { background: #24497a; }
+    nav.tabs { display: flex; gap: 4px; margin-top: 10px; overflow-x: auto; }
+    nav.tabs button {
+        background: transparent; border: none; color: #c8d5e6; font-weight: 700; font-size: 14px;
+        padding: 9px 14px; border-radius: 8px 8px 0 0; white-space: nowrap;
+    }
+    nav.tabs button:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+    nav.tabs button.active { background: var(--page); color: var(--navy); }
+
+    main { padding: 18px 24px 40px; max-width: 1500px; margin: 0 auto; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+    .card + .card { margin-top: 14px; }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .card-head h2 { font-size: 16px; font-weight: 800; }
+    .card-head p { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .card-body { padding: 16px; }
+
+    /* Buttons & inputs */
+    .btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+    .btn:hover { background: var(--surface-2); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: var(--accent-dark); }
+    .btn.danger { color: var(--bad); border-color: #f1b7b2; }
+    .btn.danger:hover { background: var(--bad-soft); }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .field label { display: block; font-size: 12px; font-weight: 700; color: var(--text-2); margin-bottom: 4px; }
+    .field label .req { color: var(--bad); }
+    .field .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    input[type=text], input[type=number], input[type=search], input[type=datetime-local], input[type=date], input[type=password], select, textarea {
+        width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; background: #fff; font-size: 14px;
+    }
+    input:focus, select:focus, textarea:focus { outline: 2px solid rgba(31, 111, 209, 0.35); border-color: var(--accent); }
+    input.invalid { border-color: var(--bad); background: #fffafa; }
+    textarea { min-height: 70px; resize: vertical; }
+
+    /* Summary tiles */
+    .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .tile { background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--line-strong); border-radius: 10px; padding: 10px 14px; box-shadow: var(--shadow); text-align: left; }
+    .tile .n { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .tile .t { font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+    .tile.waiting { border-left-color: var(--warn); }
+    .tile.floor { border-left-color: var(--teal); }
+    .tile.dock { border-left-color: var(--accent); }
+    .tile.shipped { border-left-color: var(--good); }
+    .tile.today { border-left-color: var(--violet); }
+    .tile.selected { outline: 2px solid var(--accent); }
+
+    /* Toolbar */
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .toolbar input[type=search] { width: 330px; }
+    .toolbar select { width: auto; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 800; padding: 9px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; }
+    td { padding: 9px 10px; border-bottom: 1px solid #eceff3; vertical-align: middle; white-space: nowrap; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #f7faff; }
+    tr.cancelled td { color: var(--muted); }
+    tr.cancelled td .ono { text-decoration: line-through; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .ono { font-family: var(--mono); font-weight: 800; }
+    .cust { font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+    .sub2 { font-size: 12px; color: var(--muted); }
+    .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
+
+    .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+    .chip.waiting { background: var(--warn-soft); color: var(--warn); }
+    .chip.partial, .chip.staged { background: var(--teal-soft); color: var(--teal); }
+    .chip.dock { background: var(--accent-soft); color: var(--accent-dark); }
+    .chip.shipped { background: var(--good-soft); color: var(--good); }
+    .chip.cancelled { background: #eef0f3; color: var(--muted); }
+    .chip.src { background: var(--surface-2); color: var(--text-2); font-weight: 700; }
+    .bar { width: 90px; height: 6px; background: #e7ebf0; border-radius: 3px; overflow: hidden; display: flex; margin-top: 4px; }
+    .bar i { display: block; height: 100%; }
+    .bar i.s { background: var(--good); }
+    .bar i.f { background: var(--teal); }
+
+    /* Form */
+    .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 16px; }
+    .form-grid .span2 { grid-column: span 2; }
+    .form-grid .span4 { grid-column: 1 / -1; }
+    .group-title { grid-column: 1 / -1; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-top: 6px; }
+    .form-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding: 14px 16px; border-top: 1px solid var(--line); background: var(--surface-2); border-radius: 0 0 12px 12px; }
+    .form-actions .left { margin-right: auto; display: flex; gap: 8px; }
+    .floor-box { display: flex; gap: 16px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+    .floor-box b { font-size: 16px; }
+
+    /* Import */
+    .drop { border: 2px dashed var(--line-strong); border-radius: 12px; padding: 28px; text-align: center; background: var(--surface-2); }
+    .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+    .drop p { color: var(--muted); margin-top: 6px; }
+    .steps { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+    .steps span { font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: #e7ebf0; color: var(--muted); }
+    .steps span.on { background: var(--accent); color: #fff; }
+    .map-grid { display: grid; grid-template-columns: 190px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; align-items: center; }
+    .map-grid .h { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .map-grid .lbl { font-weight: 700; }
+    .map-grid .sample { font-family: var(--mono); font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .counts { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+    .counts .chip { font-size: 13px; padding: 4px 12px; }
+    .err-text { color: var(--bad); font-size: 12px; font-weight: 600; }
+    .radio-row { display: flex; gap: 18px; flex-wrap: wrap; }
+    .radio-row label { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; }
+
+    /* API page */
+    pre { background: #0f1b2d; color: #dbe7f7; border-radius: 10px; padding: 14px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
+    .kv { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 8px 14px; }
+    .kv dt { font-weight: 700; color: var(--text-2); }
+    .note { background: var(--accent-soft); border: 1px solid #bcd6f7; border-radius: 10px; padding: 10px 14px; color: #123d74; font-size: 13px; }
+    .note.warn { background: var(--warn-soft); border-color: #f0d68a; color: #6b4300; }
+    .api-fields td, .api-fields th { white-space: normal; }
+
+    /* Modal, sign-in, toast */
+    .overlay { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+    .modal { background: #fff; border-radius: 14px; width: 440px; max-width: 100%; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25); padding: 20px; }
+    .modal h3 { font-size: 17px; font-weight: 800; margin-bottom: 8px; }
+    .modal p { color: var(--text-2); line-height: 1.5; }
+    .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    #signin .modal { width: 400px; }
+    #signin .field { margin-top: 12px; }
+    #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 10px 16px; border-radius: 10px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 60; max-width: 92vw; }
+    #toast.bad { background: var(--bad); }
+
+    @media (max-width: 900px) {
+        header { padding: 10px 12px 0; }
+        main { padding: 12px 10px 30px; }
+        .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .tiles .tile:last-child { grid-column: 1 / -1; }
+        .toolbar input[type=search] { width: 100%; }
+        .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .form-grid .span2 { grid-column: 1 / -1; }
+        .map-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+        .map-grid .sample, .map-grid .h.sample-h, .map-grid .h.def-h { display: none; }
+        .kv { grid-template-columns: 1fr; }
+        .who .name-label { display: none; }
+    }
+</style>
+</head>
+<body>
+<header>
+    <div class="top">
+        <div class="brand">
+            <h1>Order Intake</h1>
+            <div class="sub">Customer service → warehouse release</div>
+        </div>
+        <span class="wh-chip" id="wh-chip">—</span>
+        <span class="spacer"></span>
+        <div class="who">
+            <span class="name-label">Entered by</span>
+            <button type="button" id="user-btn" title="Change your name">—</button>
+            <button type="button" id="signout-btn" title="Forget the code on this device">Sign out</button>
+        </div>
+    </div>
+    <nav class="tabs" id="tabs">
+        <button type="button" data-view="orders" class="active">Orders</button>
+        <button type="button" data-view="form">+ New Order</button>
+        <button type="button" data-view="import">Import from WMS</button>
+        <button type="button" data-view="api">API Connector</button>
+    </nav>
+</header>
+
+<main>
+    <!-- ============================== ORDERS ============================== -->
+    <section id="view-orders">
+        <div class="tiles" id="tiles"></div>
+        <div class="card">
+            <div class="card-head">
+                <div class="toolbar">
+                    <input type="search" id="search" placeholder="Search order #, customer, reference, carrier…">
+                    <select id="status-filter" aria-label="Status">
+                        <option value="open">Open (not shipped)</option>
+                        <option value="waiting">Waiting for floor</option>
+                        <option value="floor">On the floor</option>
+                        <option value="dock">At dock</option>
+                        <option value="shipped">Shipped</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="all">All</option>
+                    </select>
+                    <select id="days-filter" aria-label="Released">
+                        <option value="1">Released today</option>
+                        <option value="7">Last 7 days</option>
+                        <option value="30" selected>Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                        <option value="0">All time</option>
+                    </select>
+                </div>
+                <div class="toolbar">
+                    <span class="sub2" id="list-updated"></span>
+                    <button type="button" class="btn" id="refresh-btn">↻ Refresh</button>
+                    <button type="button" class="btn" id="export-btn">Export CSV</button>
+                    <button type="button" class="btn primary" id="new-btn">+ New Order</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Released</th><th>Order #</th><th>Customer</th><th>Type</th><th>Reference</th>
+                            <th class="num">Cartons</th><th class="num">Pallets</th><th>Floor</th><th>Carrier</th><th>Ship / Appt</th><th>Source</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-body"></tbody>
+                </table>
+            </div>
+            <div class="card-body sub2" id="list-foot"></div>
+        </div>
+    </section>
+
+    <!-- ============================== NEW / EDIT ============================== -->
+    <section id="view-form" class="hidden">
+        <form class="card" id="order-form" novalidate autocomplete="off">
+            <div class="card-head">
+                <div>
+                    <h2 id="form-title">New order</h2>
+                    <p id="form-sub">Release an order to the warehouse. Order # must match what the floor scans.</p>
+                </div>
+                <span id="form-status"></span>
+            </div>
+            <div class="card-body">
+                <div class="floor-box hidden" id="form-floor"></div>
+                <div class="form-grid">
+                    <div class="group-title">Order</div>
+                    <div class="field">
+                        <label for="f-orderNumber">Order # <span class="req">*</span></label>
+                        <input type="text" id="f-orderNumber" class="mono" placeholder="e.g. DN2611190307" required>
+                    </div>
+                    <div class="field span2">
+                        <label for="f-customer">Customer name <span class="req">*</span></label>
+                        <input type="text" id="f-customer" list="customer-list" placeholder="Customer" required>
+                    </div>
+                    <div class="field">
+                        <label for="f-releasedAt">Released to warehouse</label>
+                        <input type="datetime-local" id="f-releasedAt">
+                        <div class="hint">When CS handed the order out</div>
+                    </div>
+                    <div class="field">
+                        <label for="f-orderType">Order type</label>
+                        <select id="f-orderType">
+                            <option value="">—</option>
+                            <option>LTL</option><option>FTL</option><option>Parcel</option><option>Will Call</option>
+                            <option>Container</option><option>Transfer</option><option>Other</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="f-cartons">Number of cartons</label>
+                        <input type="number" id="f-cartons" min="0" step="1" inputmode="numeric">
+                    </div>
+                    <div class="field">
+                        <label for="f-pallets">Number of pallets</label>
+                        <input type="number" id="f-pallets" min="0" step="1" inputmode="numeric">
+                        <div class="hint">Expected; the floor's count shows against it</div>
+                    </div>
+                    <div class="field"></div>
+
+                    <div class="group-title">Reference</div>
+                    <div class="field">
+                        <label for="f-refType">Reference type</label>
+                        <select id="f-refType">
+                            <option value="">—</option>
+                            <option>ARN#</option><option>Repack</option><option>PO#</option><option>Other</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="f-reference">Reference</label>
+                        <input type="text" id="f-reference" class="mono" placeholder="e.g. ARN number">
+                    </div>
+                    <div class="field span2"></div>
+
+                    <div class="group-title">Carrier</div>
+                    <div class="field">
+                        <label for="f-carrier">Carrier</label>
+                        <input type="text" id="f-carrier" list="carrier-list" placeholder="e.g. Saia">
+                    </div>
+                    <div class="field">
+                        <label for="f-scac">SCAC</label>
+                        <input type="text" id="f-scac" class="mono" maxlength="4" placeholder="SAIA">
+                    </div>
+                    <div class="field">
+                        <label for="f-proBol">PRO / BOL #</label>
+                        <input type="text" id="f-proBol" class="mono">
+                    </div>
+                    <div class="field">
+                        <label for="f-shipDate">Ship / appointment date</label>
+                        <input type="date" id="f-shipDate">
+                    </div>
+                    <div class="field span2">
+                        <label for="f-destination">Destination</label>
+                        <input type="text" id="f-destination" placeholder="City, state or ship-to">
+                    </div>
+                    <div class="field span2">
+                        <label for="f-notes">Notes</label>
+                        <input type="text" id="f-notes" placeholder="Anything the floor should know">
+                    </div>
+                </div>
+                <div class="err-text" id="form-error" style="margin-top:12px"></div>
+            </div>
+            <div class="form-actions">
+                <div class="left">
+                    <button type="button" class="btn danger hidden" id="cancel-order-btn">Cancel order</button>
+                    <button type="button" class="btn hidden" id="restore-order-btn">Restore order</button>
+                </div>
+                <button type="button" class="btn" id="form-close-btn">Back to list</button>
+                <button type="button" class="btn hidden" id="save-new-btn">Save &amp; add another</button>
+                <button type="submit" class="btn primary" id="save-btn">Release order</button>
+            </div>
+        </form>
+        <datalist id="customer-list"></datalist>
+        <datalist id="carrier-list"></datalist>
+    </section>
+
+    <!-- ============================== IMPORT ============================== -->
+    <section id="view-import" class="hidden">
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <h2>Import orders from the WMS</h2>
+                    <p>Export orders from the WMS as CSV or Excel, then load the file here. New orders are added; orders already in the portal are updated.</p>
+                </div>
+                <button type="button" class="btn" id="template-btn">Download template</button>
+            </div>
+            <div class="card-body">
+                <div class="steps"><span id="st-1" class="on">1 · Choose file</span><span id="st-2">2 · Match columns</span><span id="st-3">3 · Check &amp; import</span></div>
+
+                <div id="imp-step1">
+                    <label class="drop" id="drop">
+                        <input type="file" id="imp-file" accept=".csv,.txt,.tsv,.xlsx,.xls" hidden>
+                        <strong>Drop the WMS export here, or click to choose a file</strong>
+                        <p>CSV, TSV or Excel (.xlsx / .xls). The first row must be the column names.</p>
+                    </label>
+                </div>
+
+                <div id="imp-step2" class="hidden">
+                    <p style="margin-bottom:10px"><b id="imp-file-name"></b> · <span id="imp-row-count"></span> · <a href="#" id="imp-change-file">choose another file</a></p>
+                    <div class="note" style="margin-bottom:12px">Match each portal field to a column in the file. Matches are guessed from the column names and remembered for next time. Use <b>Default</b> for a value every order should get when the file has none (e.g. Reference type = ARN#).</div>
+                    <div class="map-grid" id="map-grid"></div>
+                    <div style="margin-top:16px" class="radio-row">
+                        <label><input type="radio" name="imp-mode" value="upsert" checked> Add new orders and update existing ones</label>
+                        <label><input type="radio" name="imp-mode" value="insertOnly"> Only add new orders (skip existing)</label>
+                    </div>
+                    <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end">
+                        <button type="button" class="btn primary" id="imp-preview-btn">Check rows →</button>
+                    </div>
+                </div>
+
+                <div id="imp-step3" class="hidden">
+                    <div class="counts" id="imp-counts"></div>
+                    <div class="table-wrap" style="max-height:420px; overflow:auto; border:1px solid var(--line); border-radius:10px">
+                        <table>
+                            <thead><tr><th>Row</th><th>Result</th><th>Order #</th><th>Customer</th><th class="num">Cartons</th><th class="num">Pallets</th><th>Reference</th><th>Type</th><th>Carrier</th><th>Released</th></tr></thead>
+                            <tbody id="imp-preview-body"></tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end; align-items:center">
+                        <span class="sub2" id="imp-progress"></span>
+                        <button type="button" class="btn" id="imp-back-btn">← Change matching</button>
+                        <button type="button" class="btn primary" id="imp-go-btn">Import</button>
+                    </div>
+                    <div id="imp-result" style="margin-top:14px"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================== API ============================== -->
+    <section id="view-api" class="hidden">
+        <div class="card">
+            <div class="card-head">
+                <div>
+                    <h2>API connector</h2>
+                    <p>For the WMS (or a small script next to it) to send orders here automatically, instead of exporting files.</p>
+                </div>
+                <span id="api-status"></span>
+            </div>
+            <div class="card-body" id="api-body"></div>
+        </div>
+    </section>
+</main>
+
+<!-- Sign-in -->
+<div class="overlay hidden" id="signin">
+    <form class="modal" id="signin-form" autocomplete="off">
+        <h3>Order Intake sign-in</h3>
+        <p>Enter your customer-service (or warehouse) access code. The code picks the warehouse.</p>
+        <div class="field">
+            <label for="signin-code">Access code</label>
+            <input type="password" id="signin-code" autocomplete="off" required>
+        </div>
+        <div class="field">
+            <label for="signin-name">Your name</label>
+            <input type="text" id="signin-name" placeholder="Shown as “Entered by” on orders">
+        </div>
+        <div class="err-text" id="signin-error" style="margin-top:10px"></div>
+        <div class="actions"><button type="submit" class="btn primary" id="signin-btn">Sign in</button></div>
+    </form>
+</div>
+
+<!-- Confirm -->
+<div class="overlay hidden" id="confirm">
+    <div class="modal">
+        <h3 id="confirm-title"></h3>
+        <p id="confirm-text"></p>
+        <div class="actions">
+            <button type="button" class="btn" id="confirm-no">Cancel</button>
+            <button type="button" class="btn primary" id="confirm-yes">OK</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script>
+    // ===================================================================================
+    // Settings
+    // ===================================================================================
+    /** Same Apps Script web app as the staging board. */
+    const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
+    const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    const WAREHOUSES = {
+        ONT: { name: 'ONUS-ONT', suffix: '', chip: '' },
+        CHINO: { name: 'ONUS-CHINO', suffix: '_chino', chip: 'chino' },
+        TEST: { name: 'ONUS-TEST', suffix: '_test', chip: 'test', noCode: true }
+    };
+    const INTAKE_WH_KEY = 'outbound_intake_warehouse';
+    const INTAKE_USER_KEY = 'outbound_intake_user';
+    const intakeCodeKey = wh => 'outbound_intake_code_v1' + WAREHOUSES[wh].suffix;
+    const floorCodeKey = wh => 'outbound_access_code_v2' + WAREHOUSES[wh].suffix; // the staging app's saved code
+    const mappingKey = wh => 'outbound_intake_import_map_v1' + WAREHOUSES[wh].suffix;
+    const REFRESH_MS = 60000;
+    const IMPORT_BATCH = 500;
+    const DAY = 86400000;
+
+    /**
+     * Portal fields. `synonyms` guess the matching column in a WMS export (compared without spaces,
+     * punctuation or case). `type` drives checks: text, int, datetime, date, status.
+     */
+    const FIELDS = [
+        { key: 'orderNumber', label: 'Order #', type: 'text', required: true, synonyms: ['order', 'ordernumber', 'orderno', 'ordernum', 'order#', 'dn', 'dnnumber', 'deliverynumber', 'delivery', 'so', 'sonumber', 'salesorder', 'shipmentnumber', 'shipment', 'outboundorder', 'pickticket', 'pickticketnumber'] },
+        { key: 'customer', label: 'Customer', type: 'text', required: true, synonyms: ['customer', 'customername', 'client', 'clientname', 'account', 'accountname', 'shipto', 'shiptoname', 'consignee', 'soldto'] },
+        { key: 'releasedAt', label: 'Released to warehouse', type: 'datetime', synonyms: ['released', 'releasedat', 'releasedate', 'releasetime', 'releasedatetime', 'createddate', 'orderdate', 'ordertime', 'handoff', 'handout', 'cstime'] },
+        { key: 'cartons', label: 'Cartons', type: 'int', synonyms: ['cartons', 'carton', 'ctns', 'ctn', 'cartonqty', 'cartoncount', 'boxes', 'cases', 'casecount', 'qtycartons'] },
+        { key: 'pallets', label: 'Pallets', type: 'int', synonyms: ['pallets', 'pallet', 'plts', 'plt', 'palletqty', 'palletcount', 'skids', 'lpn', 'lpncount'] },
+        { key: 'refType', label: 'Reference type', type: 'text', synonyms: ['referencetype', 'reftype'] },
+        { key: 'reference', label: 'Reference', type: 'text', synonyms: ['reference', 'ref', 'refnumber', 'arn', 'arnnumber', 'arn#', 'asn', 'po', 'ponumber', 'customerpo', 'customerref'] },
+        { key: 'orderType', label: 'Order type', type: 'text', synonyms: ['ordertype', 'type', 'shipmenttype', 'servicetype', 'mode', 'shipmode', 'service'] },
+        { key: 'carrier', label: 'Carrier', type: 'text', synonyms: ['carrier', 'carriername', 'shipvia', 'via', 'trucker', 'scacname'] },
+        { key: 'scac', label: 'SCAC', type: 'text', synonyms: ['scac', 'scaccode', 'carriercode'] },
+        { key: 'proBol', label: 'PRO / BOL', type: 'text', synonyms: ['pro', 'pronumber', 'bol', 'bolnumber', 'billoflading', 'probol', 'tracking', 'trackingnumber'] },
+        { key: 'shipDate', label: 'Ship / appt date', type: 'date', synonyms: ['shipdate', 'appointment', 'appt', 'apptdate', 'appointmentdate', 'pickupdate', 'scheduledship', 'mustship', 'shipby'] },
+        { key: 'destination', label: 'Destination', type: 'text', synonyms: ['destination', 'dest', 'shiptocity', 'city', 'shiptoaddress', 'address', 'deliverto'] },
+        { key: 'notes', label: 'Notes', type: 'text', synonyms: ['notes', 'note', 'comments', 'comment', 'remarks', 'instructions', 'specialinstructions'] },
+        { key: 'status', label: 'Status (Released / Cancelled)', type: 'status', synonyms: ['status', 'orderstatus'] }
+    ];
+
+    // ===================================================================================
+    // Small helpers
+    // ===================================================================================
+    const $ = id => document.getElementById(id);
+    const store = {
+        get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
+        set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } },
+        del(k) { try { localStorage.removeItem(k); } catch (e) { /* blocked */ } }
+    };
+    const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const norm = v => String(v == null ? '' : v).trim().toUpperCase();
+    const headerKey = v => String(v == null ? '' : v).toLowerCase().replace(/#/g, 'number').replace(/[^a-z0-9]/g, '');
+    const pad = n => String(n).padStart(2, '0');
+
+    function fmtDateTime(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return '';
+        const today = new Date();
+        const sameDay = d.toDateString() === today.toDateString();
+        const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        return sameDay ? `Today ${time}` : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
+    }
+    function toLocalInput(iso) {
+        const d = iso ? new Date(iso) : new Date();
+        if (isNaN(d)) return '';
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    function ago(ms) {
+        const m = Math.round((Date.now() - ms) / 60000);
+        if (m < 1) return 'just now';
+        if (m < 60) return `${m}m ago`;
+        const h = Math.floor(m / 60);
+        return h < 24 ? `${h}h ${m % 60}m ago` : `${Math.floor(h / 24)}d ago`;
+    }
+
+    let toastTimer = null;
+    function toast(msg, bad = false) {
+        const t = $('toast');
+        t.textContent = msg;
+        t.className = bad ? 'bad' : '';
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.add('hidden'), 3800);
+    }
+
+    function confirmBox(title, text, okLabel = 'OK', danger = false) {
+        return new Promise(resolve => {
+            $('confirm-title').textContent = title;
+            $('confirm-text').textContent = text;
+            const yes = $('confirm-yes');
+            yes.textContent = okLabel;
+            yes.className = danger ? 'btn danger' : 'btn primary';
+            $('confirm').classList.remove('hidden');
+            const done = v => { $('confirm').classList.add('hidden'); yes.onclick = null; $('confirm-no').onclick = null; resolve(v); };
+            yes.onclick = () => done(true);
+            $('confirm-no').onclick = () => done(false);
+        });
+    }
+
+    // ===================================================================================
+    // Warehouse, code and cloud
+    // ===================================================================================
+    function initialWarehouse() {
+        let fromUrl = '';
+        try { fromUrl = String(new URLSearchParams(location.search).get('wh') || '').toUpperCase(); } catch (e) { /* none */ }
+        if (WAREHOUSES[fromUrl]) return fromUrl;
+        const saved = store.get(INTAKE_WH_KEY).toUpperCase();
+        return WAREHOUSES[saved] ? saved : 'ONT';
+    }
+    let WH = initialWarehouse();
+    let userName = store.get(INTAKE_USER_KEY);
+
+    function currentKey() {
+        if (WAREHOUSES[WH].noCode) return 'test-mode';
+        return store.get(intakeCodeKey(WH)) || store.get(floorCodeKey(WH));
+    }
+
+    const CLOUD_TIMEOUT_MS = 30000;
+    async function cloud(fn, args = [], { key = null, warehouse = null } = {}) {
+        const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+        const timer = setTimeout(() => ctrl && ctrl.abort(), CLOUD_TIMEOUT_MS);
+        try {
+            const res = await fetch(CLOUD_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // no CORS preflight
+                body: JSON.stringify({ fn, args, key: key == null ? currentKey() : key, warehouse: warehouse || WH }),
+                signal: ctrl ? ctrl.signal : undefined
+            });
+            const r = await res.json();
+            if (r && r.error && /Unknown request/.test(r.error)) {
+                r.error = 'The Apps Script backend is an older version. Update Code.gs and deploy a new version.';
+            }
+            if (r && r.unauthorized && key == null && !r.forbidden) showSignIn('That code no longer works. Please sign in again.');
+            return r || { ok: false, error: 'No answer' };
+        } catch (e) {
+            return { ok: false, error: e && e.name === 'AbortError' ? 'The server took too long to answer' : 'Could not reach the server' };
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    function applyWarehouseLabel() {
+        const chip = $('wh-chip');
+        chip.textContent = WAREHOUSES[WH].name;
+        chip.className = 'wh-chip ' + WAREHOUSES[WH].chip;
+        $('user-btn').textContent = userName || 'Set name';
+        document.title = `Order Intake — ${WAREHOUSES[WH].name}`;
+    }
+
+    function showSignIn(message = '') {
+        $('signin').classList.remove('hidden');
+        $('signin-error').textContent = message;
+        $('signin-name').value = userName;
+        setTimeout(() => $('signin-code').focus(), 50);
+    }
+
+    $('signin-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const code = $('signin-code').value.trim();
+        const name = $('signin-name').value.trim();
+        if (!code) return;
+        const btn = $('signin-btn');
+        btn.disabled = true; btn.textContent = 'Checking…';
+        const r = await cloud('resolveWarehouse', [], { key: code });
+        btn.disabled = false; btn.textContent = 'Sign in';
+        if (!r.ok || !WAREHOUSES[r.warehouse]) {
+            $('signin-error').textContent = r.unauthorized ? 'That code was not recognized.' : (r.error || 'Could not sign in');
+            return;
+        }
+        WH = r.warehouse;
+        store.set(INTAKE_WH_KEY, WH);
+        store.set(intakeCodeKey(WH), code);
+        if (name) { userName = name; store.set(INTAKE_USER_KEY, name); }
+        $('signin-code').value = '';
+        $('signin').classList.add('hidden');
+        applyWarehouseLabel();
+        loadOrders();
+        loadApiStatus();
+    });
+
+    $('signout-btn').addEventListener('click', async () => {
+        if (!(await confirmBox('Sign out?', 'The access code will be removed from this device.', 'Sign out'))) return;
+        store.del(intakeCodeKey(WH));
+        orders = []; progress = {};
+        renderOrders();
+        showSignIn();
+    });
+    $('user-btn').addEventListener('click', () => {
+        const name = prompt('Your name (shown as “Entered by” on orders you save):', userName || '');
+        if (name == null) return;
+        userName = name.trim();
+        store.set(INTAKE_USER_KEY, userName);
+        applyWarehouseLabel();
+    });
+
+    // ===================================================================================
+    // Tabs
+    // ===================================================================================
+    let currentView = 'orders';
+    function showView(view) {
+        currentView = view;
+        ['orders', 'form', 'import', 'api'].forEach(v => $('view-' + v).classList.toggle('hidden', v !== view));
+        document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+        window.scrollTo(0, 0);
+    }
+    $('tabs').addEventListener('click', e => {
+        const b = e.target.closest('button[data-view]');
+        if (!b) return;
+        if (b.dataset.view === 'form') openForm(null);
+        else showView(b.dataset.view);
+    });
+
+    // ===================================================================================
+    // Orders list
+    // ===================================================================================
+    let orders = [];
+    let progress = {};
+    let lastLoadedAt = 0;
+    let tileFilter = '';
+
+    /** Floor status of an order, from the staging board's progress. */
+    function floorState(o) {
+        if (o.status === 'Cancelled') return { key: 'cancelled', label: 'Cancelled' };
+        const p = progress[norm(o.orderNumber)] || {};
+        const staged = p.staged || 0, shipped = p.shipped || 0, atDock = p.atDock || 0;
+        const expected = Number(o.pallets) || 0;
+        if (shipped > 0 && staged === 0) return { key: 'shipped', label: 'Shipped' };
+        if (atDock > 0) return { key: 'dock', label: `At ${String((p.docks || [])[0] || 'dock').replace(/^DOCK-?0*/i, 'D')}` };
+        if (staged > 0 && (!expected || staged + shipped >= expected)) return { key: 'staged', label: shipped ? 'Part shipped' : 'Staged' };
+        if (staged > 0) return { key: 'partial', label: 'Partly staged' };
+        return { key: 'waiting', label: 'Waiting' };
+    }
+    const FILTER_KEYS = {
+        open: ['waiting', 'partial', 'staged', 'dock'],
+        waiting: ['waiting'],
+        floor: ['partial', 'staged', 'dock'],
+        dock: ['dock'],
+        shipped: ['shipped'],
+        cancelled: ['cancelled'],
+        all: null
+    };
+
+    async function loadOrders() {
+        if (!currentKey()) { showSignIn(); return; }
+        $('refresh-btn').disabled = true;
+        const days = Number($('days-filter').value);
+        const [list, prog] = await Promise.all([cloud('listOrders', [{ days }]), cloud('orderProgress')]);
+        $('refresh-btn').disabled = false;
+        if (!list.ok) {
+            $('list-foot').innerHTML = `<span class="err-text">${esc(list.error || 'Could not load orders')}</span>`;
+            return;
+        }
+        orders = list.orders || [];
+        progress = (prog && prog.ok && prog.progress) || {};
+        lastLoadedAt = Date.now();
+        refreshDatalists();
+        renderOrders();
+    }
+
+    function renderTiles() {
+        const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+        const counts = { today: 0, waiting: 0, floor: 0, dock: 0, shipped: 0 };
+        orders.forEach(o => {
+            const st = floorState(o).key;
+            if (Date.parse(o.releasedAt) >= startOfDay.getTime() && o.status !== 'Cancelled') counts.today++;
+            if (st === 'waiting') counts.waiting++;
+            if (st === 'partial' || st === 'staged') counts.floor++;
+            if (st === 'dock') counts.dock++;
+            if (st === 'shipped') counts.shipped++;
+        });
+        const tile = (k, n, t) => `<button type="button" class="tile ${k}${tileFilter === k ? ' selected' : ''}" data-tile="${k}"><div class="n">${n}</div><div class="t">${t}</div></button>`;
+        $('tiles').innerHTML = tile('today', counts.today, 'Released today') + tile('waiting', counts.waiting, 'Waiting for floor')
+            + tile('floor', counts.floor, 'Staged on floor') + tile('dock', counts.dock, 'At dock') + tile('shipped', counts.shipped, 'Shipped');
+    }
+    $('tiles').addEventListener('click', e => {
+        const t = e.target.closest('[data-tile]');
+        if (!t) return;
+        const k = t.dataset.tile;
+        if (k === 'today') { $('days-filter').value = '1'; $('status-filter').value = 'all'; loadOrders(); tileFilter = ''; return; }
+        $('status-filter').value = k;
+        renderOrders();
+    });
+
+    function filteredOrders() {
+        const q = $('search').value.trim().toLowerCase();
+        const keys = FILTER_KEYS[$('status-filter').value];
+        return orders.filter(o => {
+            if (keys && !keys.includes(floorState(o).key)) return false;
+            if (!q) return true;
+            return [o.orderNumber, o.customer, o.reference, o.carrier, o.proBol, o.destination, o.orderType]
+                .some(v => String(v || '').toLowerCase().includes(q));
+        });
+    }
+
+    function renderOrders() {
+        renderTiles();
+        const list = filteredOrders();
+        const body = $('orders-body');
+        if (!list.length) {
+            body.innerHTML = `<tr><td colspan="11" class="empty">${orders.length ? 'No orders match these filters.' : 'No orders yet. Use “+ New Order” or “Import from WMS”.'}</td></tr>`;
+        } else {
+            body.innerHTML = list.map(o => {
+                const st = floorState(o);
+                const p = progress[norm(o.orderNumber)] || {};
+                const expected = Number(o.pallets) || 0;
+                const staged = p.staged || 0, shipped = p.shipped || 0;
+                const total = Math.max(expected, staged + shipped, 1);
+                const bar = (staged || shipped)
+                    ? `<div class="bar" title="${shipped} shipped · ${staged} on floor"><i class="s" style="width:${shipped / total * 100}%"></i><i class="f" style="width:${staged / total * 100}%"></i></div>`
+                    : '';
+                const floorText = o.status === 'Cancelled' ? '' : (staged || shipped)
+                    ? `<div class="sub2">${staged + shipped}${expected ? '/' + expected : ''} plt${shipped ? ` · ${shipped} shipped` : ''}${p.lanes && p.lanes.length ? ' · ' + esc(p.lanes.slice(0, 3).join(', ')) + (p.lanes.length > 3 ? '…' : '') : ''}</div>`
+                    : '';
+                return `<tr data-order="${esc(o.orderNumber)}" class="${o.status === 'Cancelled' ? 'cancelled' : ''}">
+                    <td>${esc(fmtDateTime(o.releasedAt))}<div class="sub2">${esc(o.enteredBy || '')}</div></td>
+                    <td><span class="ono">${esc(o.orderNumber)}</span></td>
+                    <td><div class="cust" title="${esc(o.customer)}">${esc(o.customer)}</div>${o.destination ? `<div class="sub2">${esc(o.destination)}</div>` : ''}</td>
+                    <td>${esc(o.orderType || '')}</td>
+                    <td>${o.reference ? `<span class="sub2">${esc(o.refType || '')}</span> <span class="mono">${esc(o.reference)}</span>` : (o.refType ? esc(o.refType) : '')}</td>
+                    <td class="num">${o.cartons == null ? '' : o.cartons}</td>
+                    <td class="num">${o.pallets == null ? '' : o.pallets}</td>
+                    <td><span class="chip ${st.key}">${esc(st.label)}</span>${bar}${floorText}</td>
+                    <td>${esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}</td>
+                    <td>${esc(o.shipDate || '')}</td>
+                    <td><span class="chip src">${esc(o.source || '')}</span></td>
+                </tr>`;
+            }).join('');
+        }
+        $('list-foot').textContent = `${list.length} of ${orders.length} order(s) shown. Floor progress comes from the staging board.`;
+        $('list-updated').textContent = lastLoadedAt ? `Updated ${new Date(lastLoadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : '';
+    }
+
+    $('orders-body').addEventListener('click', e => {
+        const tr = e.target.closest('tr[data-order]');
+        if (!tr) return;
+        const o = orders.find(x => x.orderNumber === tr.dataset.order);
+        if (o) openForm(o);
+    });
+    $('search').addEventListener('input', renderOrders);
+    $('status-filter').addEventListener('change', renderOrders);
+    $('days-filter').addEventListener('change', loadOrders);
+    $('refresh-btn').addEventListener('click', loadOrders);
+    $('new-btn').addEventListener('click', () => openForm(null));
+
+    function refreshDatalists() {
+        const uniq = key => [...new Set(orders.map(o => String(o[key] || '').trim()).filter(Boolean))].sort().slice(0, 300);
+        const common = ['Saia', 'Estes Express', 'Old Dominion', 'XPO Logistics', 'FedEx Freight', 'R+L Carriers', 'ABF Freight', 'TForce Freight', 'Southeastern', 'UPS', 'FedEx'];
+        $('customer-list').innerHTML = uniq('customer').map(v => `<option value="${esc(v)}">`).join('');
+        $('carrier-list').innerHTML = [...new Set([...uniq('carrier'), ...common])].map(v => `<option value="${esc(v)}">`).join('');
+    }
+
+    $('export-btn').addEventListener('click', () => {
+        const cols = ['orderNumber', 'customer', 'releasedAt', 'cartons', 'pallets', 'refType', 'reference', 'orderType', 'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes', 'status', 'source', 'enteredBy'];
+        const labels = cols.map(k => (FIELDS.find(f => f.key === k) || { label: k === 'source' ? 'Source' : 'Entered by' }).label);
+        const cell = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+        const list = filteredOrders();
+        const lines = [[...labels, 'Floor status', 'Pallets on floor', 'Pallets shipped'].map(cell).join(',')].concat(list.map(o => {
+            const p = progress[norm(o.orderNumber)] || {};
+            return [...cols.map(k => o[k]), floorState(o).label, p.staged || 0, p.shipped || 0].map(cell).join(',');
+        }));
+        downloadText(`orders-${WAREHOUSES[WH].name}-${new Date().toISOString().slice(0, 10)}.csv`, lines.join('\r\n'));
+    });
+
+    function downloadText(name, text) {
+        const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    }
+
+    // ===================================================================================
+    // New / edit form
+    // ===================================================================================
+    const FORM_KEYS = ['orderNumber', 'customer', 'releasedAt', 'orderType', 'cartons', 'pallets', 'refType', 'reference', 'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes'];
+    let editing = null; // the order being edited, or null for a new one
+
+    function openForm(order) {
+        editing = order;
+        const isNew = !order;
+        $('form-title').textContent = isNew ? 'New order' : `Order ${order.orderNumber}`;
+        $('form-sub').textContent = isNew
+            ? 'Release an order to the warehouse. Order # must match what the floor scans.'
+            : `${order.source ? order.source + ' · ' : ''}created ${fmtDateTime(order.createdAt)}${order.updatedAt && order.updatedAt !== order.createdAt ? ' · updated ' + fmtDateTime(order.updatedAt) : ''}${order.enteredBy ? ' · by ' + order.enteredBy : ''}`;
+        FORM_KEYS.forEach(k => {
+            const el = $('f-' + k);
+            const v = order ? order[k] : '';
+            if (k === 'releasedAt') el.value = toLocalInput(order ? order.releasedAt : null);
+            else if (el.tagName === 'SELECT') {
+                if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v));
+                el.value = v || '';
+            } else el.value = v == null ? '' : v;
+            el.classList.remove('invalid');
+        });
+        $('f-orderNumber').readOnly = !isNew;
+        $('form-error').textContent = '';
+        $('save-btn').textContent = isNew ? 'Release order' : 'Save changes';
+        $('save-new-btn').classList.toggle('hidden', !isNew);
+        $('cancel-order-btn').classList.toggle('hidden', isNew || order.status === 'Cancelled');
+        $('restore-order-btn').classList.toggle('hidden', isNew || order.status !== 'Cancelled');
+        const st = order ? floorState(order) : null;
+        $('form-status').innerHTML = st ? `<span class="chip ${st.key}">${esc(st.label)}</span>` : '';
+        const p = order ? (progress[norm(order.orderNumber)] || null) : null;
+        const fb = $('form-floor');
+        if (p && (p.staged || p.shipped)) {
+            fb.classList.remove('hidden');
+            fb.innerHTML = `<div><div class="sub2">On the floor</div><b>${p.staged}</b> plt</div>
+                <div><div class="sub2">At dock</div><b>${p.atDock}</b>${p.docks.length ? ' · ' + esc(p.docks.join(', ')) : ''}</div>
+                <div><div class="sub2">Shipped</div><b>${p.shipped}</b></div>
+                <div><div class="sub2">Lanes</div><b class="mono" style="font-size:14px">${esc(p.lanes.join(', ') || '—')}</b></div>
+                ${p.firstStagedAt ? `<div><div class="sub2">First staged</div><b style="font-size:14px">${esc(fmtDateTime(p.firstStagedAt))}</b></div>` : ''}`;
+        } else {
+            fb.classList.add('hidden');
+        }
+        showView('form');
+        setTimeout(() => (isNew ? $('f-orderNumber') : $('f-customer')).focus(), 30);
+    }
+
+    function readForm() {
+        const o = {};
+        FORM_KEYS.forEach(k => {
+            const v = $('f-' + k).value.trim();
+            if (k === 'releasedAt') o[k] = v ? new Date(v).toISOString() : '';
+            else if (k === 'orderNumber') o[k] = norm(v);
+            else if (k === 'scac') o[k] = v.toUpperCase();
+            else o[k] = v;
+        });
+        return o;
+    }
+
+    function validateForm(o) {
+        const bad = [];
+        if (!o.orderNumber) bad.push(['orderNumber', 'Order # is required']);
+        if (!o.customer) bad.push(['customer', 'Customer name is required']);
+        ['cartons', 'pallets'].forEach(k => {
+            if (o[k] !== '' && !/^\d+$/.test(o[k])) bad.push([k, `${k === 'cartons' ? 'Cartons' : 'Pallets'} must be a whole number`]);
+        });
+        FORM_KEYS.forEach(k => $('f-' + k).classList.toggle('invalid', bad.some(b => b[0] === k)));
+        return bad.map(b => b[1]);
+    }
+
+    async function saveForm(addAnother) {
+        const o = readForm();
+        const problems = validateForm(o);
+        $('form-error').textContent = problems.join(' · ');
+        if (problems.length) return;
+        const isNew = !editing;
+        if (isNew && orders.some(x => x.orderNumber === o.orderNumber)) {
+            const ok = await confirmBox(`Order ${o.orderNumber} is already in the portal`, 'Saving will update the existing order with these details.', 'Update it');
+            if (!ok) return;
+        }
+        o.enteredBy = userName || '';
+        $('save-btn').disabled = true; $('save-new-btn').disabled = true;
+        const r = await cloud('upsertOrders', [[o], { source: 'Manual' }]);
+        $('save-btn').disabled = false; $('save-new-btn').disabled = false;
+        if (!r.ok) { $('form-error').textContent = r.error || 'Could not save'; return; }
+        if (r.errors && r.errors.length) { $('form-error').textContent = r.errors.map(e => e.error).join(' · '); return; }
+        toast(r.inserted ? `Order ${o.orderNumber} released to the warehouse` : `Order ${o.orderNumber} updated`);
+        await loadOrders();
+        if (addAnother) openForm(null);
+        else showView('orders');
+    }
+
+    $('order-form').addEventListener('submit', e => { e.preventDefault(); saveForm(false); });
+    $('save-new-btn').addEventListener('click', () => saveForm(true));
+    $('form-close-btn').addEventListener('click', () => showView('orders'));
+    $('f-orderNumber').addEventListener('blur', () => {
+        const v = norm($('f-orderNumber').value);
+        $('f-orderNumber').value = v;
+        if (!editing && v && orders.some(x => x.orderNumber === v)) {
+            $('form-error').textContent = `Order ${v} is already in the portal — saving will update it.`;
+        }
+    });
+    $('f-scac').addEventListener('input', () => { $('f-scac').value = $('f-scac').value.toUpperCase(); });
+    $('order-form').addEventListener('input', e => {
+        if (e.target.classList.contains('invalid')) {
+            e.target.classList.remove('invalid');
+            if (!document.querySelector('#order-form .invalid')) $('form-error').textContent = '';
+        }
+    });
+
+    async function setStatus(status) {
+        if (!editing) return;
+        const cancel = status === 'Cancelled';
+        const ok = await confirmBox(cancel ? `Cancel order ${editing.orderNumber}?` : `Restore order ${editing.orderNumber}?`,
+            cancel ? 'The order stays in the sheet marked Cancelled. Pallets already on the floor are not changed — remove them in the staging app if needed.'
+                : 'The order goes back to Released.',
+            cancel ? 'Cancel order' : 'Restore', cancel);
+        if (!ok) return;
+        const r = await cloud('setOrderStatus', [editing.orderNumber, status, userName || '']);
+        if (!r.ok) { toast(r.error || 'Could not change the status', true); return; }
+        toast(cancel ? `Order ${editing.orderNumber} cancelled` : `Order ${editing.orderNumber} restored`);
+        await loadOrders();
+        showView('orders');
+    }
+    $('cancel-order-btn').addEventListener('click', () => setStatus('Cancelled'));
+    $('restore-order-btn').addEventListener('click', () => setStatus('Released'));
+
+    // ===================================================================================
+    // Import from WMS (CSV / Excel)
+    // ===================================================================================
+    const imp = { fileName: '', headers: [], rows: [], mapping: {}, defaults: {}, parsed: [] };
+
+    function setImportStep(n) {
+        [1, 2, 3].forEach(i => {
+            $('imp-step' + i).classList.toggle('hidden', i !== n);
+            $('st-' + i).classList.toggle('on', i <= n);
+        });
+    }
+
+    /** CSV / TSV / semicolon text → rows of cells. Handles quotes, "" escapes and line breaks in quotes. */
+    function parseDelimited(text) {
+        text = String(text).replace(/^﻿/, '');
+        const firstLine = text.split(/\r?\n/, 1)[0] || '';
+        const counts = { ',': 0, '\t': 0, ';': 0 };
+        let inQ = false;
+        for (const ch of firstLine) { if (ch === '"') inQ = !inQ; else if (!inQ && ch in counts) counts[ch]++; }
+        const delim = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+        const rows = [];
+        let row = [], cell = '', q = false;
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (q) {
+                if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+                else if (c === '"') q = false;
+                else cell += c;
+            } else if (c === '"') q = true;
+            else if (c === delim) { row.push(cell); cell = ''; }
+            else if (c === '\n' || c === '\r') {
+                if (c === '\r' && text[i + 1] === '\n') i++;
+                row.push(cell); rows.push(row); row = []; cell = '';
+            } else cell += c;
+        }
+        if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+        return rows;
+    }
+
+    function loadXlsxLib() {
+        if (window.XLSX) return Promise.resolve(window.XLSX);
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = XLSX_LIB_URL;
+            s.onload = () => (window.XLSX ? resolve(window.XLSX) : reject(new Error('Excel reader did not load')));
+            s.onerror = () => reject(new Error('Could not load the Excel reader. Save the file as CSV and try again.'));
+            document.head.appendChild(s);
+        });
+    }
+
+    async function readImportFile(file) {
+        imp.fileName = file.name;
+        let rows;
+        try {
+            if (/\.(xlsx|xls)$/i.test(file.name)) {
+                const XLSX = await loadXlsxLib();
+                const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+            } else {
+                rows = parseDelimited(await file.text());
+            }
+        } catch (e) {
+            toast(String(e.message || e), true);
+            return;
+        }
+        rows = rows.filter(r => r.some(c => String(c == null ? '' : c).trim() !== ''));
+        if (rows.length < 2) { toast('The file has no order rows under the header row.', true); return; }
+        imp.headers = rows[0].map((h, i) => String(h == null ? '' : h).trim() || `Column ${i + 1}`);
+        imp.rows = rows.slice(1);
+        guessMapping();
+        renderMapping();
+        $('imp-file-name').textContent = imp.fileName;
+        $('imp-row-count').textContent = `${imp.rows.length} row(s), ${imp.headers.length} column(s)`;
+        setImportStep(2);
+    }
+
+    function guessMapping() {
+        let saved = {};
+        try { saved = JSON.parse(store.get(mappingKey(WH)) || '{}'); } catch (e) { saved = {}; }
+        const savedMap = saved.mapping || {};
+        imp.defaults = Object.assign({}, saved.defaults || {});
+        imp.mapping = {};
+        const used = new Set();
+        const hk = imp.headers.map(headerKey);
+        FIELDS.forEach(f => {
+            // 1) the column picked last time (by name), 2) a name match, 3) a name that contains a synonym
+            let idx = savedMap[f.key] ? imp.headers.indexOf(savedMap[f.key]) : -1;
+            if (idx === -1) idx = hk.findIndex((h, i) => !used.has(i) && (h === headerKey(f.label) || f.synonyms.map(headerKey).includes(h)));
+            if (idx === -1) idx = hk.findIndex((h, i) => !used.has(i) && f.synonyms.some(s => s.length >= 4 && h.includes(headerKey(s))));
+            if (idx !== -1 && !used.has(idx)) { imp.mapping[f.key] = idx; used.add(idx); }
+        });
+    }
+
+    function renderMapping() {
+        const sampleOf = idx => {
+            const v = imp.rows.map(r => r[idx]).find(x => String(x == null ? '' : x).trim() !== '');
+            return v instanceof Date ? v.toLocaleString() : String(v == null ? '' : v);
+        };
+        const opts = sel => `<option value="">— not in file —</option>` + imp.headers.map((h, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${esc(h)}</option>`).join('');
+        $('map-grid').innerHTML = `<div class="h">Portal field</div><div class="h">Column in file</div><div class="h sample-h">Example</div><div class="h def-h">Default</div>` +
+            FIELDS.map(f => {
+                const idx = imp.mapping[f.key];
+                return `<div class="lbl">${esc(f.label)}${f.required ? ' <span class="err-text">*</span>' : ''}</div>
+                    <select data-map="${f.key}">${opts(idx == null ? null : idx)}</select>
+                    <div class="sample" data-sample="${f.key}">${idx == null ? '' : esc(sampleOf(idx))}</div>
+                    <input type="text" data-default="${f.key}" value="${esc(imp.defaults[f.key] || '')}" placeholder="${f.key === 'releasedAt' ? 'now' : f.required ? '' : 'none'}"${f.key === 'orderNumber' ? ' disabled' : ''}>`;
+            }).join('');
+    }
+    $('map-grid').addEventListener('change', e => {
+        const sel = e.target.closest('select[data-map]');
+        if (sel) {
+            const key = sel.dataset.map;
+            if (sel.value === '') delete imp.mapping[key];
+            else imp.mapping[key] = Number(sel.value);
+            const idx = imp.mapping[key];
+            const v = idx == null ? '' : imp.rows.map(r => r[idx]).find(x => String(x == null ? '' : x).trim() !== '');
+            document.querySelector(`[data-sample="${key}"]`).textContent = v instanceof Date ? v.toLocaleString() : String(v == null ? '' : v);
+        }
+    });
+    $('map-grid').addEventListener('input', e => {
+        const inp = e.target.closest('input[data-default]');
+        if (inp) imp.defaults[inp.dataset.default] = inp.value;
+    });
+
+    /** Accepts Date, ISO, "11/24/2026 2:05 PM", "2026-11-24 14:05", or an Excel serial day number. */
+    function parseWhen(v) {
+        if (v instanceof Date) return isNaN(v) ? null : v;
+        const s = String(v == null ? '' : v).trim();
+        if (!s) return null;
+        if (/^\d{5}(\.\d+)?$/.test(s)) {
+            const n = Number(s);
+            if (n > 20000 && n < 80000) return new Date(Math.round((n - 25569) * DAY) + new Date().getTimezoneOffset() * 60000);
+        }
+        let m = /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?$/.exec(s);
+        if (m) {
+            let [, mo, d, y, h = '0', mi = '0', sec = '0', ap] = m;
+            y = Number(y.length === 2 ? '20' + y : y);
+            let hh = Number(h);
+            if (ap) { const pm = /p/i.test(ap); if (pm && hh < 12) hh += 12; if (!pm && hh === 12) hh = 0; }
+            const dt = new Date(y, Number(mo) - 1, Number(d), hh, Number(mi), Number(sec));
+            return isNaN(dt) ? null : dt;
+        }
+        m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(s);
+        if (m) {
+            const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0));
+            return isNaN(dt) ? null : dt;
+        }
+        const t = Date.parse(s);
+        return isNaN(t) ? null : new Date(t);
+    }
+
+    /** Builds an order from one file row, using only mapped columns and defaults. */
+    function rowToOrder(row) {
+        const o = {};
+        const problems = [];
+        FIELDS.forEach(f => {
+            const idx = imp.mapping[f.key];
+            let raw = idx == null ? undefined : row[idx];
+            const blank = raw == null || String(raw).trim() === '';
+            const def = String(imp.defaults[f.key] || '').trim();
+            if (blank && def) raw = def;
+            // Not in the file, or a blank cell with no default → leave the field alone, so an export
+            // with empty cells never wipes what CS already entered
+            else if (blank) return;
+            if (f.type === 'int') {
+                const n = Number(String(raw).replace(/,/g, '').trim());
+                if (!isFinite(n) || n < 0 || Math.floor(n) !== n) problems.push(`${f.label} "${raw}" is not a whole number`);
+                else o[f.key] = n;
+            } else if (f.type === 'datetime') {
+                const d = parseWhen(raw);
+                if (!d) problems.push(`${f.label} "${raw}" is not a date/time`);
+                else o[f.key] = d.toISOString();
+            } else if (f.type === 'date') {
+                const d = parseWhen(raw);
+                o[f.key] = d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` : String(raw).trim();
+            } else if (f.type === 'status') {
+                const s = String(raw).trim().toLowerCase();
+                if (/cancel|void|delete/.test(s)) o.status = 'Cancelled';
+                else o.status = 'Released';
+            } else {
+                o[f.key] = String(raw instanceof Date ? raw.toLocaleDateString() : raw).trim();
+            }
+        });
+        if (o.orderNumber != null) o.orderNumber = norm(o.orderNumber);
+        if (o.scac) o.scac = o.scac.toUpperCase();
+        return { o, problems };
+    }
+
+    function buildPreview() {
+        if (imp.mapping.orderNumber == null) { toast('Pick the column that holds the Order #.', true); return false; }
+        const mode = document.querySelector('input[name=imp-mode]:checked').value;
+        const existing = new Set(orders.map(o => o.orderNumber));
+        const seen = new Map();
+        imp.parsed = imp.rows.map((row, i) => {
+            const { o, problems } = rowToOrder(row);
+            let result = '';
+            if (!o.orderNumber) problems.unshift('No Order #');
+            else if (seen.has(o.orderNumber)) problems.unshift(`Same Order # as row ${seen.get(o.orderNumber) + 2}`);
+            else seen.set(o.orderNumber, i);
+            const isExisting = o.orderNumber && existing.has(o.orderNumber);
+            if (!problems.length && !isExisting && !o.customer) problems.push('No customer');
+            if (problems.length) result = 'error';
+            else if (isExisting) result = mode === 'insertOnly' ? 'skip' : 'update';
+            else result = 'new';
+            return { line: i + 2, o, problems, result };
+        });
+        // Remember the matching (by column name) for the next file from this WMS
+        const savedMap = {};
+        Object.keys(imp.mapping).forEach(k => { savedMap[k] = imp.headers[imp.mapping[k]]; });
+        store.set(mappingKey(WH), JSON.stringify({ mapping: savedMap, defaults: imp.defaults }));
+        renderPreview();
+        return true;
+    }
+
+    function renderPreview() {
+        const c = { new: 0, update: 0, skip: 0, error: 0 };
+        imp.parsed.forEach(p => { c[p.result]++; });
+        $('imp-counts').innerHTML = `<span class="chip staged">${c.new} new</span><span class="chip dock">${c.update} update</span>`
+            + (c.skip ? `<span class="chip cancelled">${c.skip} skipped (already in portal)</span>` : '')
+            + (c.error ? `<span class="chip waiting" style="background:var(--bad-soft);color:var(--bad)">${c.error} with problems (not imported)</span>` : '');
+        const show = imp.parsed.slice().sort((a, b) => (a.result === 'error' ? -1 : 0) - (b.result === 'error' ? -1 : 0)).slice(0, 300);
+        const label = { new: '<span class="chip staged">New</span>', update: '<span class="chip dock">Update</span>', skip: '<span class="chip cancelled">Skip</span>' };
+        $('imp-preview-body').innerHTML = show.map(p => `<tr>
+            <td>${p.line}</td>
+            <td>${p.result === 'error' ? `<span class="err-text">${esc(p.problems.join('; '))}</span>` : label[p.result]}</td>
+            <td class="ono">${esc(p.o.orderNumber || '')}</td>
+            <td>${esc(p.o.customer == null ? '' : p.o.customer)}</td>
+            <td class="num">${p.o.cartons == null ? '' : esc(p.o.cartons)}</td>
+            <td class="num">${p.o.pallets == null ? '' : esc(p.o.pallets)}</td>
+            <td>${esc([p.o.refType, p.o.reference].filter(Boolean).join(' '))}</td>
+            <td>${esc(p.o.orderType || '')}</td>
+            <td>${esc(p.o.carrier || '')}</td>
+            <td>${p.o.releasedAt ? esc(fmtDateTime(p.o.releasedAt)) : ''}</td>
+        </tr>`).join('') + (imp.parsed.length > show.length ? `<tr><td colspan="10" class="sub2">…and ${imp.parsed.length - show.length} more row(s)</td></tr>` : '');
+        const n = c.new + c.update;
+        $('imp-go-btn').textContent = n ? `Import ${n} order(s)` : 'Nothing to import';
+        $('imp-go-btn').disabled = !n;
+        $('imp-result').innerHTML = '';
+        $('imp-progress').textContent = '';
+        setImportStep(3);
+    }
+
+    async function runImport() {
+        const mode = document.querySelector('input[name=imp-mode]:checked').value;
+        const todo = imp.parsed.filter(p => p.result === 'new' || p.result === 'update').map(p => Object.assign({ enteredBy: userName || '' }, p.o));
+        const source = ('WMS import').slice(0, 40);
+        const total = { inserted: 0, updated: 0, skipped: 0, errors: [] };
+        $('imp-go-btn').disabled = true; $('imp-back-btn').disabled = true;
+        for (let i = 0; i < todo.length; i += IMPORT_BATCH) {
+            $('imp-progress').textContent = `Sending ${Math.min(i + IMPORT_BATCH, todo.length)} of ${todo.length}…`;
+            const batch = todo.slice(i, i + IMPORT_BATCH);
+            const r = await cloud('upsertOrders', [batch, { mode, source }]);
+            if (!r.ok) {
+                total.errors.push({ orderNumber: `rows ${i + 1}–${i + batch.length}`, error: r.error || 'Not saved' });
+                continue;
+            }
+            total.inserted += r.inserted; total.updated += r.updated; total.skipped += r.skipped;
+            (r.errors || []).forEach(e => total.errors.push(e));
+        }
+        $('imp-back-btn').disabled = false;
+        $('imp-progress').textContent = '';
+        $('imp-result').innerHTML = `<div class="note${total.errors.length ? ' warn' : ''}"><b>Import finished:</b> ${total.inserted} added, ${total.updated} updated${total.skipped ? `, ${total.skipped} skipped` : ''}${total.errors.length ? `, ${total.errors.length} not saved` : ''}. Saved to the “${esc(WAREHOUSES[WH].name)}” Orders tab.
+            ${total.errors.length ? '<ul style="margin:6px 0 0 18px">' + total.errors.slice(0, 20).map(e => `<li><b class="mono">${esc(e.orderNumber || '')}</b> ${esc(e.error)}</li>`).join('') + '</ul>' : ''}</div>`;
+        $('imp-go-btn').textContent = 'Done';
+        toast(`Imported: ${total.inserted} added, ${total.updated} updated`);
+        await loadOrders();
+    }
+
+    $('imp-file').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) readImportFile(f); e.target.value = ''; });
+    const drop = $('drop');
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+    drop.addEventListener('drop', e => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) readImportFile(f); });
+    $('imp-change-file').addEventListener('click', e => { e.preventDefault(); setImportStep(1); });
+    $('imp-preview-btn').addEventListener('click', buildPreview);
+    $('imp-back-btn').addEventListener('click', () => setImportStep(2));
+    $('imp-go-btn').addEventListener('click', runImport);
+    $('template-btn').addEventListener('click', () => {
+        const head = FIELDS.map(f => f.label === 'Status (Released / Cancelled)' ? 'Status' : f.label);
+        const ex = ['DN2611190307', 'Acme Corp', '11/24/2026 2:05 PM', '1200', '16', 'ARN#', 'ARN-88921', 'LTL', 'Saia', 'SAIA', '', '11/26/2026', 'Phoenix, AZ', '', 'Released'];
+        const cell = v => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+        downloadText('order-import-template.csv', [head.map(cell).join(','), ex.map(cell).join(',')].join('\r\n'));
+    });
+
+    // ===================================================================================
+    // API connector page
+    // ===================================================================================
+    let apiStatus = null;
+    async function loadApiStatus() {
+        const r = await cloud('intakeStatus');
+        apiStatus = r && r.ok ? r : null;
+        renderApi();
+    }
+
+    function renderApi() {
+        const s = apiStatus;
+        $('api-status').innerHTML = !s ? '' : s.apiKeySet
+            ? '<span class="chip shipped">WMS key is set</span>'
+            : (s.apiKeyProperty ? '<span class="chip waiting">WMS key not set yet</span>' : '<span class="chip cancelled">Not available on the TEST board</span>');
+        const wh = WH;
+        const example = {
+            fn: 'upsertOrders',
+            warehouse: wh,
+            key: '<WMS key>',
+            args: [[{
+                orderNumber: 'DN2611190307', customer: 'Acme Corp', releasedAt: '2026-11-24T22:05:00Z',
+                cartons: 1200, pallets: 16, refType: 'ARN#', reference: 'ARN-88921', orderType: 'LTL',
+                carrier: 'Saia', scac: 'SAIA', proBol: '', shipDate: '2026-11-26', destination: 'Phoenix, AZ', notes: ''
+            }], { mode: 'upsert', source: 'WMS API' }]
+        };
+        const fieldRows = FIELDS.map(f => `<tr><td class="mono">${f.key}</td><td>${esc(f.label)}</td><td>${
+            { text: 'text', int: 'whole number', datetime: 'date-time (ISO 8601, e.g. 2026-11-24T22:05:00Z)', date: 'date (YYYY-MM-DD)', status: '"Released" or "Cancelled"' }[f.type]}${f.required ? ' · <b>required</b>' + (f.key === 'customer' ? ' for new orders' : '') : ''}</td></tr>`).join('');
+        $('api-body').innerHTML = `
+            <div class="note" style="margin-bottom:16px">The WMS (or a small scheduled script next to it) sends orders as JSON to the same web-app address the boards use. Orders are added or updated by <b>Order #</b>, exactly like a file import. Only fields that are sent are changed.</div>
+            <dl class="kv">
+                <dt>Address (POST)</dt><dd class="mono" style="word-break:break-all">${esc(CLOUD_API_URL)}</dd>
+                <dt>Content-Type</dt><dd class="mono">text/plain (JSON body)</dd>
+                <dt>Warehouse</dt><dd><span class="mono">"${esc(wh)}"</span> for ${esc(WAREHOUSES[wh].name)}${wh === 'ONT' ? ' · <span class="mono">"CHINO"</span> for ONUS-CHINO' : ''}</dd>
+                <dt>Key</dt><dd>Script Property <span class="mono">${esc((s && s.apiKeyProperty) || (wh === 'CHINO' ? 'WMS_API_KEY_CHINO' : 'WMS_API_KEY'))}</span> in Apps Script → Project Settings. ${s && s.apiKeySet ? 'It is set.' : 'Not set yet — add a long random value and give it only to whoever runs the WMS connection.'} The key can only add/update and list orders; it cannot change the staging board or sign in to the portal.</dd>
+                <dt>Limits</dt><dd>Up to 2,000 orders per request. Send changed orders every 5–15 minutes rather than every second.</dd>
+            </dl>
+            <h3 style="margin:18px 0 8px">Send orders</h3>
+            <pre>${esc(JSON.stringify(example, null, 2))}</pre>
+            <p class="sub2" style="margin-top:6px">Answer: <span class="mono">{"ok":true,"inserted":1,"updated":0,"skipped":0,"errors":[]}</span>. Each problem row is listed in <span class="mono">errors</span> with its <span class="mono">orderNumber</span> and the reason; the other rows are still saved.</p>
+            <h3 style="margin:18px 0 8px">Example with curl</h3>
+            <pre>curl -L -X POST '${esc(CLOUD_API_URL)}' \\
+  -H 'Content-Type: text/plain' \\
+  --data '{"fn":"upsertOrders","warehouse":"${esc(wh)}","key":"&lt;WMS key&gt;","args":[[{"orderNumber":"DN2611190307","customer":"Acme Corp","pallets":16}],{"source":"WMS API"}]}'</pre>
+            <p class="sub2" style="margin-top:6px">Google answers with a redirect, so the client must follow redirects (<span class="mono">-L</span> in curl).</p>
+            <h3 style="margin:18px 0 8px">Read orders back</h3>
+            <pre>${esc(JSON.stringify({ fn: 'listOrders', warehouse: wh, key: '<WMS key>', args: [{ since: '2026-11-24T00:00:00Z' }] }, null, 2))}</pre>
+            <p class="sub2" style="margin-top:6px"><span class="mono">since</span> returns orders changed after that time; <span class="mono">days</span> (default 30, 0 = all) limits by release date.</p>
+            <h3 style="margin:18px 0 8px">Fields</h3>
+            <div class="table-wrap"><table class="api-fields"><thead><tr><th>Field</th><th>Portal name</th><th>Format</th></tr></thead><tbody>${fieldRows}</tbody></table></div>
+            <h3 style="margin:18px 0 8px">Pulling from the WMS instead</h3>
+            <p style="line-height:1.55">If the WMS offers its own API, the Apps Script can fetch new orders on a timer (e.g. every 10 minutes) and save them the same way. That needs the WMS's API address, sign-in method and order fields — send those over and the scheduled pull can be added without changing this portal.</p>`;
+    }
+
+    // ===================================================================================
+    // Start
+    // ===================================================================================
+    applyWarehouseLabel();
+    if (currentKey()) { loadOrders(); loadApiStatus(); }
+    else showSignIn();
+    setInterval(() => { if (currentView === 'orders' && currentKey() && !document.hidden) loadOrders(); }, REFRESH_MS);
+</script>
+</body>
+</html>
