@@ -866,6 +866,28 @@ test('orders: Picker and VRID are saved; an older Orders tab gets the new header
     assert.equal(list.find(o => o.orderNumber === 'OLD-1').vrid, 'VR-9');
 });
 
+test('import templates: saved per warehouse, replaced by name, listed A→Z, deleted; WMS key cannot use them', () => {
+    const { ctx } = intakeGs();
+    const call = (fn, args, key = 'cs-1', warehouse) => JSON.parse(JSON.stringify(ctx.api({ fn, key, args, warehouse })));
+    const t1 = { mapping: { orderNumber: ['Delivery No'], destination: ['City', 'State'] }, defaults: { refType: 'ARN#' }, headerRow: 3, sheetName: 'Orders' };
+    assert.equal(call('saveImportTemplate', ['  Amazon   VRID report ', t1, 'Amy']).name, 'Amazon VRID report');
+    assert.equal(call('saveImportTemplate', ['Daily WMS', { mapping: { orderNumber: ['Order'] } }, 'Bo']).ok, true);
+    const again = call('saveImportTemplate', ['amazon vrid REPORT', Object.assign({}, t1, { headerRow: 1 }), 'Amy']);
+    assert.equal(again.replaced, true, 'same name (any case) replaces');
+    let list = call('listImportTemplates', []).templates;
+    assert.deepEqual(list.map(x => x.name), ['amazon vrid REPORT', 'Daily WMS']);
+    assert.equal(list[0].template.headerRow, 1);
+    assert.deepEqual(list[0].template.mapping.destination, ['City', 'State']);
+    assert.equal(list[0].updatedBy, 'Amy');
+    assert.equal(call('saveImportTemplate', ['', {}]).ok, false, 'name required');
+    assert.equal(call('listImportTemplates', [], 'cs-chino', 'CHINO').templates.length, 0, 'Chino has its own templates');
+    assert.equal(call('listImportTemplates', [], 'wms-key-1').unauthorized, true);
+    assert.equal(call('deleteImportTemplate', ['Daily wms']).ok, true);
+    list = call('listImportTemplates', []).templates;
+    assert.deepEqual(list.map(x => x.name), ['amazon vrid REPORT']);
+    assert.equal(call('deleteImportTemplate', ['nope']).ok, false);
+});
+
 test('orders: progress counts staged, at dock and shipped pallets per order from the board', () => {
     const { ctx } = intakeGs();
     const state = {
