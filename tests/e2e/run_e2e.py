@@ -123,6 +123,19 @@ async def close_open_modals(page):
     await page.wait_for_timeout(200)
 
 
+async def open_scan_window(page):
+    """The scan / type window now opens from the Select Order picker ("Order not listed?")."""
+    await page.click('button:has-text("Select Order")')
+    await page.wait_for_timeout(200)
+    await page.click('text=Order not listed? Scan / type it')
+
+
+def gas_call(body):
+    req = urllib.request.Request(f'http://127.0.0.1:{GAS_PORT}/exec', data=json.dumps(body).encode(), method='POST')
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+
 async def run_round(browser, wh, rnd, devices):
     code = CODES[wh]
     tag = f'{wh[:2]}{rnd}'
@@ -172,8 +185,38 @@ async def run_round(browser, wh, rnd, devices):
     record(wh, rnd, '2x Stack checkbox marks pallets double-stacked', ds is True)
     record(wh, rnd, 'Quick add clears the boxes for the next shipment', cleared)
 
+    # --- Select Order: released orders from Order Intake ----------------------------------------------
+    rel = f'DN-{tag}-REL'
+    seeded = gas_call({'fn': 'upsertOrders', 'warehouse': wh, 'key': code, 'args': [[
+        {'orderNumber': rel, 'customer': f'Customer {tag}', 'pallets': 5, 'cartons': 50, 'carrier': 'Saia', 'destination': 'Reno, NV', 'refType': 'ARN#', 'reference': f'ARN-{tag}'},
+        {'orderNumber': f'DN-{tag}-CXL', 'customer': 'Cancelled Co', 'pallets': 2, 'status': 'Cancelled'}], {'source': 'Manual'}]})
+    await A.click('button:has-text("Select Order")')
+    listed = await wait_for(A, f"[...document.querySelectorAll('#order-picker-list button')].some(b => b.textContent.includes('{rel}'))", 15000)
+    cxl_hidden = not await A.evaluate(f"[...document.querySelectorAll('#order-picker-list button')].some(b => b.textContent.includes('DN-{tag}-CXL'))")
+    record(wh, rnd, 'Select Order lists released intake orders (not cancelled)', seeded.get('ok') and listed and cxl_hidden, seeded)
+    # Scanning / typing the order number into the search box and pressing Enter picks it
+    await A.fill('#order-picker-search', rel.lower())
+    await A.press('#order-picker-search', 'Enter')
+    await A.wait_for_timeout(200)
+    prefilled = await A.input_value('#order-picker-count-input')
+    summary = await A.text_content('#order-picker-selected') or ''
+    record(wh, rnd, 'Picking an order shows customer and prefills pallets left', prefilled == '5' and f'Customer {tag}' in summary and 'ARN#' in summary, (prefilled, summary[:120]))
+    await A.fill('#order-picker-count-input', '3')
+    await A.click('#order-picker-add-step button[type=submit]')
+    await accept_capacity_warning(A)
+    await A.wait_for_timeout(400)
+    got = await state(A, f"appState.pallets.filter(p => p.orderNumber === '{rel}').map(p => p.carrier + '|' + p.destination)")
+    record(wh, rnd, 'Add from picker stages pallets with carrier + destination from intake',
+           len(got) == 3 and all(x == 'Saia|Reno, NV' for x in got) and not await A.is_visible('#order-picker-modal'), got)
+    await A.click('button:has-text("Select Order")'); await A.wait_for_timeout(300)
+    left = await A.evaluate(f"availableIntakeOrders().find(o => o.orderNumber === '{rel}')?.remaining")
+    record(wh, rnd, 'Picker shows the pallets still left (5 − 3 = 2)', left == 2, left)
+    await A.click('#order-picker-modal button[aria-label="Close"]')
+    ok_b = await wait_for(B, f"appState.pallets.filter(p => p.orderNumber === '{rel}').length === 3", 20000)
+    record(wh, rnd, 'Device B sees the picked order', ok_b)
+
     # --- Scan Order window: order + carrier/destination + number of pallets ---------------------------
-    await A.click('button:has-text("Scan Order")')
+    await open_scan_window(A)
     await A.wait_for_timeout(200)
     order_box = await A.locator('#scanner-order-input').bounding_box()
     count_box = await A.locator('#scanner-pallet-count').bounding_box()
@@ -344,7 +387,7 @@ async def run_round(browser, wh, rnd, devices):
 
         # Shipment bigger than all free space → over-capacity warning, "Put it anyway" puts all in the lane
         free_total = await state(A, "appState.columns.reduce((t, c) => t + Math.max(0, (Number(c.capacity) || 0) - computeFloorSpotsUsed(appState.pallets.filter(p => p.columnId === c.id))), 0)")
-        await A.click('button:has-text("Scan Order")')
+        await open_scan_window(A)
         await A.wait_for_timeout(300)
         await A.fill('#scanner-order-input', f'SO-{tag}-CAP')
         await A.select_option('#scanner-location-select', lane)

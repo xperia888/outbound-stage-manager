@@ -672,6 +672,32 @@ test('delete order: asks first, then removes only that order (not shipped) and l
     assert.deepEqual(JSON.parse(run('JSON.stringify(__logged)')), ['REMOVE:SO-1-01', 'REMOVE:SO-1-02']);
 });
 
+test('order picker: lists released intake orders with pallets left, oldest first; carrier comes from intake', () => {
+    const { run } = loadApp();
+    run(`appState.columns = [{ id: 'c51', name: 'S51', capacity: 8 }, { id: 'c52', name: 'S52', capacity: 8 }];
+         appState.pallets = [${JSON.stringify(pallet('a', 'DN1-01', { columnId: 'c51', orderNumber: 'DN1' }))},
+                             ${JSON.stringify(pallet('b', 'DN1-02', { columnId: 'c51', orderNumber: 'DN1' }))},
+                             ${JSON.stringify(pallet('c', 'DN3-01', { columnId: 'c52', orderNumber: 'DN3' }))}];
+         appState.shippedPallets = [{ id: 's', slp: 'DN1-03', orderNumber: 'DN1', shippedAt: 1 }];
+         intakeOrders = [
+            { orderNumber: 'dn1', customer: 'Acme', pallets: 6, carrier: 'Saia', destination: 'Phoenix', status: 'Released', releasedAt: '2026-11-24T10:00:00Z' },
+            { orderNumber: 'DN2', customer: 'Beta', pallets: 2, carrier: 'Estes Express', status: 'Released', releasedAt: '2026-11-24T08:00:00Z' },
+            { orderNumber: 'DN3', customer: 'Done', pallets: 1, status: 'Released', releasedAt: '2026-11-24T07:00:00Z' },
+            { orderNumber: 'DN4', customer: 'No count', pallets: null, status: 'Released', releasedAt: '2026-11-24T09:00:00Z' },
+            { orderNumber: 'DN5', customer: 'Gone', pallets: 3, status: 'Cancelled', releasedAt: '2026-11-24T06:00:00Z' }
+         ];
+         intakeOrdersLoadedAt = Date.now();`);
+    const list = JSON.parse(run('JSON.stringify(availableIntakeOrders().map(o => [o.orderNumber, o.remaining]))'));
+    assert.deepEqual(list, [['DN2', 2], ['DN4', null], ['DN1', 3]], 'fully staged and cancelled orders are left out');
+
+    run(`openConfirmModal = (t, m, ok) => ok();`);
+    run(`requestAddShipment({ orderNumber: 'DN2', count: '2', columnId: 'c52' })`);
+    assert.equal(run(`appState.pallets.filter(p => p.orderNumber === 'DN2' && p.carrier === 'Estes Express').length`), 2);
+    assert.deepEqual(JSON.parse(run('JSON.stringify(availableIntakeOrders().map(o => o.orderNumber))')), ['DN4', 'DN1'], 'DN2 drops off once staged');
+    run(`requestAddShipment({ orderNumber: 'DN1', count: '1', columnId: 'c51', carrier: 'Own carrier' })`);
+    assert.equal(run(`appState.pallets.filter(p => p.orderNumber === 'DN1').pop().carrier`), 'Own carrier', 'a carrier typed on the floor wins');
+});
+
 test('Code.gs resolveWarehouse: the code says which warehouse it opens', () => {
     const { ctx } = loadCodeGs({ accessCode: 'ont-code', chinoCode: 'chino-code', testMode: 'on' });
     const r = key => JSON.parse(JSON.stringify(ctx.api({ fn: 'resolveWarehouse', key })));
