@@ -859,7 +859,7 @@ test('orders: Picker and VRID are saved; an older Orders tab gets the new header
     const r = call('upsertOrders', [[{ orderNumber: 'NEW-1', customer: 'New Co', picker: 'Jose', vrid: '115XYZ7AB' }, { orderNumber: 'OLD-1', vrid: 'VR-9' }]]);
     assert.deepEqual([r.inserted, r.updated], [1, 1]);
     const rows = sheets.get('Orders').rows;
-    assert.deepEqual(rows[0].slice(-2), ['Picker', 'VRID']);
+    assert.deepEqual(rows[0].slice(19, 21), ['Picker', 'VRID']);
     assert.equal(rows[1][8], 'Saia', 'old row stays lined up');
     const list = call('listOrders', [{ days: 0 }]).orders;
     assert.equal(list.find(o => o.orderNumber === 'NEW-1').picker, 'Jose');
@@ -886,6 +886,43 @@ test('import templates: saved per warehouse, replaced by name, listed A→Z, del
     list = call('listImportTemplates', []).templates;
     assert.deepEqual(list.map(x => x.name), ['amazon vrid REPORT']);
     assert.equal(call('deleteImportTemplate', ['nope']).ok, false);
+});
+
+test('orders: stage lanes from the board are written into the Orders tab by Order #', () => {
+    const { ctx, sheets } = intakeGs();
+    const call = (fn, args, key = 'cs-1') => JSON.parse(JSON.stringify(ctx.api({ fn, key, args })));
+    const save = state => ctx.api({ fn: 'saveBoardState', key: 'secret-1', args: [JSON.stringify(state), null] });
+    // No Orders tab yet: saving the board must not create one
+    save({ columns: [], pallets: [] });
+    assert.equal(sheets.has('Orders'), false);
+
+    call('upsertOrders', [[{ orderNumber: 'DN1', customer: 'A' }, { orderNumber: 'DN2', customer: 'B' }]]);
+    const cols = [{ id: 'c52', name: 'S52' }, { id: 'c51', name: 'S51' }, { id: 'w', name: 'W05.90' }];
+    save({ columns: cols, pallets: [
+        { id: 'p1', orderNumber: 'dn1', columnId: 'c52', dockNumber: 'DOCK-03' },
+        { id: 'p2', orderNumber: 'DN1', columnId: 'c51', dockNumber: '' },
+        { id: 'p3', orderNumber: 'DN1', columnId: 'w', dockNumber: '' }
+    ], shippedPallets: [] });
+    let o = Object.fromEntries(call('listOrders', [{ days: 0 }]).orders.map(x => [x.orderNumber, x]));
+    assert.equal(o.DN1.stageLanes, 'S51, S52, W05.90');
+    assert.equal(o.DN1.dock, 'D3');
+    assert.equal(o.DN1.palletsOnFloor, 3);
+    assert.equal(o.DN1.palletsShipped, 0);
+    assert.ok(o.DN1.floorUpdatedAt);
+    assert.equal(o.DN2.stageLanes, '', 'not on the floor');
+    assert.equal(o.DN2.palletsOnFloor, null);
+
+    // Everything ships: lanes kept for history, counts updated
+    save({ columns: cols, pallets: [], shippedPallets: [{ id: 's1', orderNumber: 'DN1' }, { id: 's2', orderNumber: 'DN1' }, { id: 's3', orderNumber: 'DN1' }] });
+    o = Object.fromEntries(call('listOrders', [{ days: 0 }]).orders.map(x => [x.orderNumber, x]));
+    assert.deepEqual([o.DN1.stageLanes, o.DN1.dock, o.DN1.palletsOnFloor, o.DN1.palletsShipped], ['S51, S52, W05.90', '', 0, 3]);
+
+    // An order entered after the floor already staged it gets its lanes right away
+    save({ columns: cols, pallets: [{ id: 'p9', orderNumber: 'DN9', columnId: 'c51' }], shippedPallets: [] });
+    call('upsertOrders', [[{ orderNumber: 'DN9', customer: 'Late entry' }]]);
+    o = Object.fromEntries(call('listOrders', [{ days: 0 }]).orders.map(x => [x.orderNumber, x]));
+    assert.equal(o.DN9.stageLanes, 'S51');
+    assert.deepEqual(sheets.get('Orders').rows[0].slice(-5), ['Stage Lanes', 'Dock', 'Pallets On Floor', 'Pallets Shipped', 'Floor Updated']);
 });
 
 test('orders: progress counts staged, at dock and shipped pallets per order from the board', () => {

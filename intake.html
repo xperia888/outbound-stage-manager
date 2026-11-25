@@ -144,6 +144,9 @@
     .bar i { display: block; height: 100%; }
     .bar i.s { background: #10b981; }
     .bar i.f { background: #14b8a6; }
+    .lanes { display: flex; flex-wrap: wrap; gap: 3px; max-width: 220px; }
+    .lane-chip { font-family: var(--mono); font-size: 11px; font-weight: 800; background: var(--teal-soft); color: var(--teal); border-radius: 5px; padding: 1px 6px; }
+    .lane-chip.past { background: #e2e8f0; color: var(--muted); }
 
     /* Form */
     .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; }
@@ -335,7 +338,7 @@
         <div class="card">
             <div class="card-head">
                 <div class="toolbar">
-                    <input type="search" id="search" placeholder="Search order #, customer, reference, carrier…">
+                    <input type="search" id="search" placeholder="Search order #, customer, lane, carrier…">
                     <select id="status-filter" aria-label="Status">
                         <option value="open">Open (not shipped)</option>
                         <option value="waiting">Waiting for floor</option>
@@ -365,7 +368,7 @@
                     <thead>
                         <tr>
                             <th>Released</th><th>Order #</th><th>Customer</th><th>Type</th><th>Reference</th>
-                            <th class="num">Cartons</th><th class="num">Pallets</th><th>Floor</th><th>Picker</th><th>Carrier / VRID</th><th>Ship / Appt</th><th>Source</th>
+                            <th class="num">Cartons</th><th class="num">Pallets</th><th>Floor</th><th>Stage Lane</th><th>Picker</th><th>Carrier / VRID</th><th>Ship / Appt</th><th>Source</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body"></tbody>
@@ -872,6 +875,14 @@
         if (staged > 0) return { key: 'partial', label: 'Partly staged' };
         return { key: 'waiting', label: 'Waiting' };
     }
+    /** Stage lanes of an order: live from the board, else the last lanes saved in the sheet. */
+    function stageLanesOf(o) {
+        const p = progress[norm(o.orderNumber)];
+        if (p && p.lanes && p.lanes.length) return { lanes: p.lanes, live: true };
+        const saved = String(o.stageLanes || '').split(',').map(x => x.trim()).filter(Boolean);
+        return { lanes: saved, live: false };
+    }
+
     const FILTER_KEYS = {
         open: ['waiting', 'partial', 'staged', 'dock'],
         waiting: ['waiting'],
@@ -929,7 +940,7 @@
         return orders.filter(o => {
             if (keys && !keys.includes(floorState(o).key)) return false;
             if (!q) return true;
-            return [o.orderNumber, o.customer, o.reference, o.carrier, o.proBol, o.destination, o.orderType, o.picker, o.vrid]
+            return [o.orderNumber, o.customer, o.reference, o.carrier, o.proBol, o.destination, o.orderType, o.picker, o.vrid, stageLanesOf(o).lanes.join(' ')]
                 .some(v => String(v || '').toLowerCase().includes(q));
         });
     }
@@ -939,7 +950,7 @@
         const list = filteredOrders();
         const body = $('orders-body');
         if (!list.length) {
-            body.innerHTML = `<tr><td colspan="12" class="empty">${orders.length ? 'No orders match these filters.' : 'No orders yet. Use “+ New Order” or “Import from WMS”.'}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="13" class="empty">${orders.length ? 'No orders match these filters.' : 'No orders yet. Use “+ New Order” or “Import from WMS”.'}</td></tr>`;
         } else {
             body.innerHTML = list.map(o => {
                 const st = floorState(o);
@@ -951,8 +962,12 @@
                     ? `<div class="bar" title="${shipped} shipped · ${staged} on floor"><i class="s" style="width:${shipped / total * 100}%"></i><i class="f" style="width:${staged / total * 100}%"></i></div>`
                     : '';
                 const floorText = o.status === 'Cancelled' ? '' : (staged || shipped)
-                    ? `<div class="sub2">${staged + shipped}${expected ? '/' + expected : ''} plt${shipped ? ` · ${shipped} shipped` : ''}${p.lanes && p.lanes.length ? ' · ' + esc(p.lanes.slice(0, 3).join(', ')) + (p.lanes.length > 3 ? '…' : '') : ''}</div>`
+                    ? `<div class="sub2">${staged + shipped}${expected ? '/' + expected : ''} plt${shipped ? ` · ${shipped} shipped` : ''}</div>`
                     : '';
+                const sl = stageLanesOf(o);
+                const laneCell = sl.lanes.length
+                    ? `<div class="lanes" title="${sl.live ? 'On the floor now' : 'Last staged in (shipped / removed)'}">${sl.lanes.map(l => `<span class="lane-chip${sl.live ? '' : ' past'}">${esc(l)}</span>`).join('')}</div>`
+                    : '<span class="sub2">—</span>';
                 return `<tr data-order="${esc(o.orderNumber)}" class="${o.status === 'Cancelled' ? 'cancelled' : ''}">
                     <td>${esc(fmtDateTime(o.releasedAt))}<div class="sub2">${esc(o.enteredBy || '')}</div></td>
                     <td><span class="ono">${esc(o.orderNumber)}</span></td>
@@ -962,6 +977,7 @@
                     <td class="num">${o.cartons == null ? '' : o.cartons}</td>
                     <td class="num">${o.pallets == null ? '' : o.pallets}</td>
                     <td><span class="chip ${st.key}">${esc(st.label)}</span>${bar}${floorText}</td>
+                    <td>${laneCell}</td>
                     <td>${esc(o.picker || '')}</td>
                     <td>${esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}${o.vrid ? `<div class="sub2 mono">VRID ${esc(o.vrid)}</div>` : ''}</td>
                     <td>${esc(o.shipDate || '')}</td>
@@ -998,9 +1014,9 @@
         const labels = cols.map(k => (FIELDS.find(f => f.key === k) || { label: k === 'source' ? 'Source' : 'Entered by' }).label);
         const cell = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
         const list = filteredOrders();
-        const lines = [[...labels, 'Floor status', 'Pallets on floor', 'Pallets shipped'].map(cell).join(',')].concat(list.map(o => {
+        const lines = [[...labels, 'Floor status', 'Stage lanes', 'Pallets on floor', 'Pallets shipped'].map(cell).join(',')].concat(list.map(o => {
             const p = progress[norm(o.orderNumber)] || {};
-            return [...cols.map(k => o[k]), floorState(o).label, p.staged || 0, p.shipped || 0].map(cell).join(',');
+            return [...cols.map(k => o[k]), floorState(o).label, stageLanesOf(o).lanes.join(', '), p.staged || 0, p.shipped || 0].map(cell).join(',');
         }));
         downloadText(`orders-${WAREHOUSES[WH].name}-${new Date().toISOString().slice(0, 10)}.csv`, lines.join('\r\n'));
     });

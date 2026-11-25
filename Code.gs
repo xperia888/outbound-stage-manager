@@ -271,6 +271,7 @@ function saveBoardState_(stateJson, baseUpdatedAt) {
     sheet.getRange('B2').setNumberFormat('@');
     sheet.getRange('B2:C2').setValues([[now, chunks.length]]);
     SpreadsheetApp.flush();
+    try { syncFloorToOrders_(boardProgress_(JSON.parse(json))); } catch (err) { /* the board save itself succeeded */ }
     return { ok: true, updatedAt: now };
   } catch (err) {
     return { ok: false, error: String(err) };
@@ -379,7 +380,13 @@ const ORDER_FIELDS_ = [
   { key: 'updatedAt', header: 'Updated', type: 'datetime' },
   // Added later: kept at the end so rows already in the sheet stay lined up
   { key: 'picker', header: 'Picker', type: 'text' },
-  { key: 'vrid', header: 'VRID', type: 'text' }
+  { key: 'vrid', header: 'VRID', type: 'text' },
+  // Written by the server from the staging board (matched by Order #); not set by people or the WMS
+  { key: 'stageLanes', header: 'Stage Lanes', type: 'text' },
+  { key: 'dock', header: 'Dock', type: 'text' },
+  { key: 'palletsOnFloor', header: 'Pallets On Floor', type: 'int' },
+  { key: 'palletsShipped', header: 'Pallets Shipped', type: 'int' },
+  { key: 'floorUpdatedAt', header: 'Floor Updated', type: 'datetime' }
 ];
 /** Fields a person or the WMS may set (the rest are kept by the server). */
 const ORDER_INPUT_KEYS_ = ['customer', 'releasedAt', 'cartons', 'pallets', 'refType', 'reference', 'orderType',
@@ -545,6 +552,13 @@ function upsertOrders_(orders, options, role) {
       sheet.getRange(start, 1, added.length, ORDER_FIELDS_.length).setValues(added);
     }
     SpreadsheetApp.flush();
+    if (added.length) {
+      // Orders entered after the floor already staged them get their lanes right away
+      try {
+        const board = loadBoardState_();
+        if (board.ok && board.stateJson) syncFloorToOrders_(boardProgress_(JSON.parse(board.stateJson)));
+      } catch (err) { /* the orders are saved either way */ }
+    }
     return { ok: true, inserted: added.length, updated: updated, skipped: skipped, errors: errors };
   } catch (err) {
     return { ok: false, error: String(err) };
@@ -618,33 +632,92 @@ function orderProgress_() {
     if (!board.ok) return board;
     let state = {};
     try { state = board.stateJson ? JSON.parse(board.stateJson) : {}; } catch (e) { state = {}; }
-    const lanes = {};
-    (Array.isArray(state.columns) ? state.columns : []).forEach(c => { if (c && c.id) lanes[c.id] = c.name; });
-    const out = {};
-    const get = ord => (out[ord] = out[ord] || { staged: 0, atDock: 0, docks: [], lanes: [], shipped: 0, firstStagedAt: null, lastShippedAt: null });
-    (Array.isArray(state.pallets) ? state.pallets : []).forEach(p => {
-      const ord = normalizeOrderNumber_(p && p.orderNumber);
-      if (!ord) return;
-      const e = get(ord);
-      e.staged++;
-      if (p.dockNumber) { e.atDock++; if (e.docks.indexOf(p.dockNumber) === -1) e.docks.push(p.dockNumber); }
-      const lane = lanes[p.columnId];
-      if (lane && e.lanes.indexOf(lane) === -1) e.lanes.push(lane);
-      const t = Number(p.createdAt) || 0;
-      if (t && (!e.firstStagedAt || t < e.firstStagedAt)) e.firstStagedAt = t;
-    });
-    (Array.isArray(state.shippedPallets) ? state.shippedPallets : []).forEach(s => {
-      const ord = normalizeOrderNumber_(s && s.orderNumber);
-      if (!ord) return;
-      const e = get(ord);
-      e.shipped++;
-      const t = Number(s.shippedAt) || 0;
-      if (t && (!e.lastShippedAt || t > e.lastShippedAt)) e.lastShippedAt = t;
-    });
+    const out = boardProgress_(state);
+    // Keep the Orders tab's floor columns current too (skipped if another request is busy)
+    const lock = LockService.getScriptLock();
+    if (lock.tryLock(3000)) {
+      try { syncFloorToOrders_(out); } catch (err) { /* reading progress still works */ } finally { lock.releaseLock(); }
+    }
     return { ok: true, progress: out, boardUpdatedAt: board.updatedAt || null };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
+}
+
+/** Per order on a board: { ORDER: { staged, atDock, docks, lanes, shipped, firstStagedAt, lastShippedAt } } */
+function boardProgress_(state) {
+  const st = state || {};
+  const lanes = {};
+  (Array.isArray(st.columns) ? st.columns : []).forEach(c => { if (c && c.id) lanes[c.id] = c.name; });
+  const out = {};
+  const get = ord => (out[ord] = out[ord] || { staged: 0, atDock: 0, docks: [], lanes: [], shipped: 0, firstStagedAt: null, lastShippedAt: null });
+  (Array.isArray(st.pallets) ? st.pallets : []).forEach(p => {
+    const ord = normalizeOrderNumber_(p && p.orderNumber);
+    if (!ord) return;
+    const e = get(ord);
+    e.staged++;
+    if (p.dockNumber) { e.atDock++; if (e.docks.indexOf(p.dockNumber) === -1) e.docks.push(p.dockNumber); }
+    const lane = lanes[p.columnId];
+    if (lane && e.lanes.indexOf(lane) === -1) e.lanes.push(lane);
+    const t = Number(p.createdAt) || 0;
+    if (t && (!e.firstStagedAt || t < e.firstStagedAt)) e.firstStagedAt = t;
+  });
+  (Array.isArray(st.shippedPallets) ? st.shippedPallets : []).forEach(s => {
+    const ord = normalizeOrderNumber_(s && s.orderNumber);
+    if (!ord) return;
+    const e = get(ord);
+    e.shipped++;
+    const t = Number(s.shippedAt) || 0;
+    if (t && (!e.lastShippedAt || t > e.lastShippedAt)) e.lastShippedAt = t;
+  });
+  Object.keys(out).forEach(k => {
+    out[k].lanes.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+    out[k].docks.sort();
+  });
+  return out;
+}
+
+/**
+ * Writes where each order is on the floor into the Orders tab (Stage Lanes, Dock, Pallets On Floor,
+ * Pallets Shipped, Floor Updated), matching by Order #. Only runs if the warehouse has an Orders tab,
+ * and only writes when something changed. Once an order has fully shipped its last lanes are kept.
+ */
+function syncFloorToOrders_(progress) {
+  if (!ACTIVE_WH_.ordersSheet) return 0;
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ACTIVE_WH_.ordersSheet);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  getOrdersSheet_(); // adds the floor headers to an older tab
+  const rows = readOrderRows_(sheet);
+  const col = {};
+  ORDER_FIELDS_.forEach((f, i) => { col[f.key] = i; });
+  const first = col.stageLanes, width = col.floorUpdatedAt - col.stageLanes + 1;
+  const now = new Date();
+  let changed = 0;
+  const block = rows.map(r => {
+    const cur = r.slice(first, first + width);
+    const ord = normalizeOrderNumber_(r[0]);
+    const p = ord ? progress[ord] : null;
+    if (!p) {
+      // Not on the board (any more): clear live counts, keep the last lanes for history
+      const next = [cur[0], '', cur[2] === '' ? '' : 0, cur[3], cur[4]];
+      if (String(cur[1]) !== '' || (cur[2] !== '' && Number(cur[2]) !== 0)) { next[4] = now; changed++; return next; }
+      return cur;
+    }
+    const lanes = p.lanes.length ? p.lanes.join(', ') : String(cur[0] || '');
+    const dock = p.docks.map(d => String(d).replace(/^DOCK-?0*(?=\d)/i, 'D')).join(', ');
+    const next = [lanes, dock, p.staged, p.shipped, cur[4]];
+    const same = String(cur[0]) === lanes && String(cur[1]) === dock && Number(cur[2]) === p.staged && cur[2] !== ''
+      && Number(cur[3]) === p.shipped && cur[3] !== '';
+    if (same) return cur;
+    next[4] = now;
+    changed++;
+    return next;
+  });
+  if (changed) {
+    sheet.getRange(2, first + 1, block.length, width).setValues(block);
+    SpreadsheetApp.flush();
+  }
+  return changed;
 }
 
 /** For the portal's API page: is a WMS key / CS code set? (Never returns the values.) */
