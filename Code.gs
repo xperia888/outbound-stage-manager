@@ -13,6 +13,13 @@
  * A request only reaches the warehouse whose code it carries.
  * api({ fn: 'resolveWarehouse', key }) tells the page which warehouse a code opens.
  *
+ * Order intake (intake.html) keeps one row per order in an "Orders" tab per warehouse
+ * ("Orders", "Orders CHINO", "Orders TEST"). Who can reach it:
+ *   - the floor access code (everything),
+ *   - a customer-service code, CS_CODE / CS_CODE_CHINO (orders only, no board changes),
+ *   - a WMS key, WMS_API_KEY / WMS_API_KEY_CHINO, for a WMS or middleware pushing orders
+ *     (upsertOrders and listOrders only). See the README for the request format.
+ *
  * The board JSON is split across many cells (a single cell holds max 50,000
  * characters), so the board can grow without saves failing.
  *
@@ -26,6 +33,20 @@ const WAREHOUSES_ = {
   CHINO: { codeProperty: 'ACCESS_CODE_CHINO', stateSheet: 'StateChunks CHINO', scanLogSheet: 'Scan Log CHINO', legacySheet: null },
   // Test board: no access code, open only while TEST_MODE is "on". Delete TEST_MODE to close it.
   TEST: { codeProperty: null, stateSheet: 'StateChunks TEST', scanLogSheet: 'Scan Log TEST', legacySheet: null }
+};
+WAREHOUSES_.ONT.ordersSheet = 'Orders';
+WAREHOUSES_.ONT.csCodeProperty = 'CS_CODE';
+WAREHOUSES_.ONT.apiKeyProperty = 'WMS_API_KEY';
+WAREHOUSES_.CHINO.ordersSheet = 'Orders CHINO';
+WAREHOUSES_.CHINO.csCodeProperty = 'CS_CODE_CHINO';
+WAREHOUSES_.CHINO.apiKeyProperty = 'WMS_API_KEY_CHINO';
+WAREHOUSES_.TEST.ordersSheet = 'Orders TEST';
+
+/** What each kind of key may call. */
+const ROLE_FUNCTIONS_ = {
+  floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus'],
+  cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus'],
+  api: ['listOrders', 'upsertOrders']
 };
 let ACTIVE_WH_ = WAREHOUSES_.ONT; // set per request by api(); each request runs on its own
 const CHUNK_SIZE = 40000;            // safely under the 50,000-char cell limit
@@ -73,17 +94,35 @@ function api(request) {
   if (!ACTIVE_WH_.codeProperty) {
     const testMode = String(PropertiesService.getScriptProperties().getProperty('TEST_MODE') || '').toLowerCase();
     if (testMode !== 'on') return { ok: false, error: 'Test mode is off (set Script Property TEST_MODE to "on")' };
-    return runRequest_(req);
+    return runRequest_(req, 'floor');
   }
 
-  const expected = PropertiesService.getScriptProperties().getProperty(ACTIVE_WH_.codeProperty);
+  const props = PropertiesService.getScriptProperties();
+  const expected = props.getProperty(ACTIVE_WH_.codeProperty);
   if (!expected) {
     return { ok: false, error: 'Set ' + ACTIVE_WH_.codeProperty + ' in Apps Script → Project Settings → Script Properties' };
   }
-  if (String(req.key || '') !== String(expected)) {
-    return { ok: false, unauthorized: true, error: 'Wrong or missing access code' };
+  const role = roleForKey_(props, ACTIVE_WH_, req.key);
+  if (!role) return { ok: false, unauthorized: true, error: 'Wrong or missing access code' };
+  if (ROLE_FUNCTIONS_[role].indexOf(req.fn) === -1) {
+    return { ok: false, unauthorized: true, forbidden: true, error: 'This code cannot do ' + req.fn };
   }
-  return runRequest_(req);
+  return runRequest_(req, role);
+}
+
+/** floor / cs / api for a warehouse's floor code, CS code or WMS key; null if none match. */
+function roleForKey_(props, wh, key) {
+  const k = String(key || '');
+  if (!k) return null;
+  const match = prop => {
+    if (!prop) return false;
+    const v = props.getProperty(prop);
+    return Boolean(v) && String(v) === k;
+  };
+  if (match(wh.codeProperty)) return 'floor';
+  if (match(wh.csCodeProperty)) return 'cs';
+  if (match(wh.apiKeyProperty)) return 'api';
+  return null;
 }
 
 /** Returns the warehouse whose access code matches, or unauthorized. TEST is never matched by a code. */
@@ -93,20 +132,26 @@ function resolveWarehouse_(key) {
   const props = PropertiesService.getScriptProperties();
   const ids = Object.keys(WAREHOUSES_);
   for (let i = 0; i < ids.length; i++) {
-    const prop = WAREHOUSES_[ids[i]].codeProperty;
-    if (!prop) continue;
-    const expected = props.getProperty(prop);
-    if (expected && String(expected) === code) return { ok: true, warehouse: ids[i] };
+    const wh = WAREHOUSES_[ids[i]];
+    if (!wh.codeProperty) continue;
+    const role = roleForKey_(props, wh, code);
+    // The WMS key is for machines only and is never accepted as a sign-in code
+    if (role === 'floor' || role === 'cs') return { ok: true, warehouse: ids[i], role: role };
   }
   return { ok: false, unauthorized: true, error: 'Access code not recognized' };
 }
 
-function runRequest_(req) {
+function runRequest_(req, role) {
   const args = Array.isArray(req.args) ? req.args : [];
   switch (req.fn) {
     case 'loadBoardState': return loadBoardState_();
     case 'saveBoardState': return saveBoardState_(args[0], args[1]);
     case 'logScanEvents': return logScanEvents_(args[0]);
+    case 'listOrders': return listOrders_(args[0]);
+    case 'upsertOrders': return upsertOrders_(args[0], args[1], role);
+    case 'setOrderStatus': return setOrderStatus_(args[0], args[1], args[2]);
+    case 'orderProgress': return orderProgress_();
+    case 'intakeStatus': return intakeStatus_(role);
     default: return { ok: false, error: 'Unknown request: ' + req.fn };
   }
 }
@@ -296,4 +341,304 @@ function logScanEvents_(events) {
   } finally {
     lock.releaseLock();
   }
+}
+
+
+// =====================================================================================
+// Order intake: one row per order in the warehouse's "Orders" tab
+// =====================================================================================
+
+/** Sheet columns, in order. `key` is the field name used by the page and the API. */
+const ORDER_FIELDS_ = [
+  { key: 'orderNumber', header: 'Order #', type: 'text' },
+  { key: 'customer', header: 'Customer', type: 'text' },
+  { key: 'releasedAt', header: 'Released to Warehouse', type: 'datetime' },
+  { key: 'cartons', header: 'Cartons', type: 'int' },
+  { key: 'pallets', header: 'Pallets', type: 'int' },
+  { key: 'refType', header: 'Reference Type', type: 'text' },
+  { key: 'reference', header: 'Reference', type: 'text' },
+  { key: 'orderType', header: 'Order Type', type: 'text' },
+  { key: 'carrier', header: 'Carrier', type: 'text' },
+  { key: 'scac', header: 'SCAC', type: 'text' },
+  { key: 'proBol', header: 'PRO / BOL', type: 'text' },
+  { key: 'shipDate', header: 'Ship / Appt Date', type: 'text' },
+  { key: 'destination', header: 'Destination', type: 'text' },
+  { key: 'notes', header: 'Notes', type: 'text' },
+  { key: 'status', header: 'Status', type: 'text' },
+  { key: 'source', header: 'Source', type: 'text' },
+  { key: 'enteredBy', header: 'Entered By', type: 'text' },
+  { key: 'createdAt', header: 'Created', type: 'datetime' },
+  { key: 'updatedAt', header: 'Updated', type: 'datetime' }
+];
+/** Fields a person or the WMS may set (the rest are kept by the server). */
+const ORDER_INPUT_KEYS_ = ['customer', 'releasedAt', 'cartons', 'pallets', 'refType', 'reference', 'orderType',
+  'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes', 'enteredBy'];
+const ORDER_STATUSES_ = ['Released', 'Cancelled'];
+const ORDERS_MAX_BATCH_ = 2000;
+
+/** Same rule as the staging app: trimmed, upper case. */
+function normalizeOrderNumber_(raw) {
+  return String(raw == null ? '' : raw).trim().toUpperCase();
+}
+
+function getOrdersSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(ACTIVE_WH_.ordersSheet);
+  if (!sheet) {
+    sheet = ss.insertSheet(ACTIVE_WH_.ordersSheet);
+    sheet.getRange(1, 1, 1, ORDER_FIELDS_.length).setValues([ORDER_FIELDS_.map(f => f.header)]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function formatOrderColumns_(sheet, startRow, count) {
+  if (count <= 0) return;
+  ORDER_FIELDS_.forEach((f, i) => {
+    const fmt = f.type === 'datetime' ? 'yyyy-mm-dd hh:mm' : f.type === 'int' ? '0' : '@';
+    sheet.getRange(startRow, i + 1, count, 1).setNumberFormat(fmt);
+  });
+}
+
+function readOrderRows_(sheet) {
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  return sheet.getRange(2, 1, last - 1, ORDER_FIELDS_.length).getValues();
+}
+
+function rowToOrder_(row) {
+  const o = {};
+  ORDER_FIELDS_.forEach((f, i) => {
+    const v = row[i];
+    if (f.type === 'datetime') o[f.key] = v instanceof Date ? v.toISOString() : (v ? String(v) : '');
+    else if (f.type === 'int') o[f.key] = v === '' || v == null ? null : Number(v);
+    else o[f.key] = v == null ? '' : String(v);
+  });
+  return o;
+}
+
+/** Turns one incoming value into what is stored, or throws a readable message. */
+function cleanOrderValue_(field, value) {
+  if (value == null) return '';
+  if (field.type === 'int') {
+    if (String(value).trim() === '') return '';
+    const n = Number(String(value).replace(/,/g, '').trim());
+    if (!isFinite(n) || n < 0 || Math.floor(n) !== n) throw new Error(field.header + ' must be a whole number');
+    if (n > 100000) throw new Error(field.header + ' looks too large');
+    return n;
+  }
+  if (field.type === 'datetime') {
+    if (String(value).trim() === '') return '';
+    const d = value instanceof Date ? value : new Date(String(value));
+    if (isNaN(d.getTime())) throw new Error(field.header + ' is not a date/time');
+    return d;
+  }
+  return String(value).trim().slice(0, 500);
+}
+
+/**
+ * Adds or updates orders by Order #.
+ * orders: [{ orderNumber, customer, releasedAt, cartons, pallets, refType, reference, orderType,
+ *            carrier, scac, proBol, shipDate, destination, notes, enteredBy }]
+ * options.mode: 'upsert' (default) adds new orders and updates existing ones;
+ *               'insertOnly' skips orders that already exist.
+ * Only the fields present on an order are changed, so an import that has no Carrier
+ * column leaves carriers already entered alone. New orders default to Released, now.
+ */
+function upsertOrders_(orders, options, role) {
+  const list = Array.isArray(orders) ? orders : [];
+  if (list.length === 0) return { ok: true, inserted: 0, updated: 0, skipped: 0, errors: [] };
+  if (list.length > ORDERS_MAX_BATCH_) return { ok: false, error: 'Send at most ' + ORDERS_MAX_BATCH_ + ' orders per request' };
+  const opts = options || {};
+  const mode = opts.mode === 'insertOnly' ? 'insertOnly' : 'upsert';
+  const source = String(opts.source || (role === 'api' ? 'WMS API' : 'Manual')).slice(0, 40);
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { ok: false, error: 'Busy — try again' };
+  try {
+    const sheet = getOrdersSheet_();
+    const rows = readOrderRows_(sheet);
+    const index = {};
+    rows.forEach((r, i) => { const k = normalizeOrderNumber_(r[0]); if (k) index[k] = i; });
+    const col = {};
+    ORDER_FIELDS_.forEach((f, i) => { col[f.key] = i; });
+
+    const now = new Date();
+    const added = [];
+    const changedRows = {};
+    const errors = [];
+    let updated = 0, skipped = 0;
+    const seenInBatch = {};
+
+    list.forEach((input, n) => {
+      const o = input || {};
+      const orderNumber = normalizeOrderNumber_(o.orderNumber);
+      try {
+        if (!orderNumber) throw new Error('Order # is missing');
+        if (seenInBatch[orderNumber] != null) throw new Error('Order # appears twice in this batch (first at #' + (seenInBatch[orderNumber] + 1) + ')');
+        seenInBatch[orderNumber] = n;
+
+        const values = {};
+        ORDER_INPUT_KEYS_.forEach(key => {
+          if (!Object.prototype.hasOwnProperty.call(o, key) || o[key] === undefined) return;
+          values[key] = cleanOrderValue_(ORDER_FIELDS_[col[key]], o[key]);
+        });
+        if (o.status !== undefined && o.status !== '') {
+          const st = ORDER_STATUSES_.find(x => x.toLowerCase() === String(o.status).trim().toLowerCase());
+          if (!st) throw new Error('Status must be Released or Cancelled');
+          values.status = st;
+        }
+
+        const existing = index[orderNumber];
+        if (existing != null) {
+          if (mode === 'insertOnly') { skipped++; return; }
+          const row = rows[existing];
+          Object.keys(values).forEach(key => { row[col[key]] = values[key]; });
+          row[col.updatedAt] = now;
+          if (!row[col.source]) row[col.source] = source;
+          changedRows[existing] = true;
+          updated++;
+        } else {
+          if (!values.customer) throw new Error('Customer is missing');
+          const row = ORDER_FIELDS_.map(() => '');
+          Object.keys(values).forEach(key => { row[col[key]] = values[key]; });
+          row[col.orderNumber] = orderNumber;
+          if (!row[col.releasedAt]) row[col.releasedAt] = now;
+          if (!row[col.status]) row[col.status] = 'Released';
+          row[col.source] = source;
+          row[col.createdAt] = now;
+          row[col.updatedAt] = now;
+          index[orderNumber] = rows.length + added.length;
+          added.push(row);
+        }
+      } catch (err) {
+        errors.push({ index: n, orderNumber: orderNumber, error: String(err && err.message || err) });
+      }
+    });
+
+    // Rewrite changed rows (one write per row) and append new ones in a single write
+    Object.keys(changedRows).forEach(i => {
+      const r = Number(i);
+      sheet.getRange(r + 2, 1, 1, ORDER_FIELDS_.length).setValues([rows[r]]);
+    });
+    if (added.length) {
+      const start = Math.max(sheet.getLastRow(), 1) + 1;
+      formatOrderColumns_(sheet, start, added.length);
+      sheet.getRange(start, 1, added.length, ORDER_FIELDS_.length).setValues(added);
+    }
+    SpreadsheetApp.flush();
+    return { ok: true, inserted: added.length, updated: updated, skipped: skipped, errors: errors };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Orders, newest release first. options.days: only orders released in the last N days
+ * (default 30, 0 = all). options.since: ISO time, only orders updated after it (for the WMS).
+ */
+function listOrders_(options) {
+  try {
+    const opts = options || {};
+    const days = opts.days == null ? 30 : Number(opts.days) || 0;
+    const fromMs = days > 0 ? Date.now() - days * 86400000 : 0;
+    const sinceMs = opts.since ? Date.parse(String(opts.since)) : NaN;
+    const orders = readOrderRows_(getOrdersSheet_())
+      .filter(r => normalizeOrderNumber_(r[0]))
+      .map(rowToOrder_)
+      .filter(o => {
+        // Released, or changed, within the window
+        if (fromMs && !(Date.parse(o.releasedAt) >= fromMs) && !(Date.parse(o.updatedAt) >= fromMs)) return false;
+        if (!isNaN(sinceMs) && !(Date.parse(o.updatedAt) > sinceMs)) return false;
+        return true;
+      })
+      .sort((a, b) => (Date.parse(b.releasedAt) || 0) - (Date.parse(a.releasedAt) || 0));
+    return { ok: true, orders: orders.slice(0, 5000), total: orders.length };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+/** Cancel or re-release an order. Rows are never deleted, so the history stays. */
+function setOrderStatus_(orderNumber, status, enteredBy) {
+  const ord = normalizeOrderNumber_(orderNumber);
+  const st = ORDER_STATUSES_.find(x => x.toLowerCase() === String(status || '').toLowerCase());
+  if (!ord) return { ok: false, error: 'Order # is missing' };
+  if (!st) return { ok: false, error: 'Status must be Released or Cancelled' };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { ok: false, error: 'Busy — try again' };
+  try {
+    const sheet = getOrdersSheet_();
+    const rows = readOrderRows_(sheet);
+    const i = rows.findIndex(r => normalizeOrderNumber_(r[0]) === ord);
+    if (i === -1) return { ok: false, error: 'Order ' + ord + ' not found' };
+    const statusCol = ORDER_FIELDS_.findIndex(f => f.key === 'status');
+    const updatedCol = ORDER_FIELDS_.findIndex(f => f.key === 'updatedAt');
+    const byCol = ORDER_FIELDS_.findIndex(f => f.key === 'enteredBy');
+    rows[i][statusCol] = st;
+    rows[i][updatedCol] = new Date();
+    if (enteredBy) rows[i][byCol] = String(enteredBy).slice(0, 80);
+    sheet.getRange(i + 2, 1, 1, ORDER_FIELDS_.length).setValues([rows[i]]);
+    SpreadsheetApp.flush();
+    return { ok: true, order: rowToOrder_(rows[i]) };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * What the floor has done with each order, read from the staging board (read only):
+ * { ORDER: { staged, atDock, docks, lanes, shipped, firstStagedAt, lastShippedAt } }
+ */
+function orderProgress_() {
+  try {
+    const board = loadBoardState_();
+    if (!board.ok) return board;
+    let state = {};
+    try { state = board.stateJson ? JSON.parse(board.stateJson) : {}; } catch (e) { state = {}; }
+    const lanes = {};
+    (Array.isArray(state.columns) ? state.columns : []).forEach(c => { if (c && c.id) lanes[c.id] = c.name; });
+    const out = {};
+    const get = ord => (out[ord] = out[ord] || { staged: 0, atDock: 0, docks: [], lanes: [], shipped: 0, firstStagedAt: null, lastShippedAt: null });
+    (Array.isArray(state.pallets) ? state.pallets : []).forEach(p => {
+      const ord = normalizeOrderNumber_(p && p.orderNumber);
+      if (!ord) return;
+      const e = get(ord);
+      e.staged++;
+      if (p.dockNumber) { e.atDock++; if (e.docks.indexOf(p.dockNumber) === -1) e.docks.push(p.dockNumber); }
+      const lane = lanes[p.columnId];
+      if (lane && e.lanes.indexOf(lane) === -1) e.lanes.push(lane);
+      const t = Number(p.createdAt) || 0;
+      if (t && (!e.firstStagedAt || t < e.firstStagedAt)) e.firstStagedAt = t;
+    });
+    (Array.isArray(state.shippedPallets) ? state.shippedPallets : []).forEach(s => {
+      const ord = normalizeOrderNumber_(s && s.orderNumber);
+      if (!ord) return;
+      const e = get(ord);
+      e.shipped++;
+      const t = Number(s.shippedAt) || 0;
+      if (t && (!e.lastShippedAt || t > e.lastShippedAt)) e.lastShippedAt = t;
+    });
+    return { ok: true, progress: out, boardUpdatedAt: board.updatedAt || null };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+/** For the portal's API page: is a WMS key / CS code set? (Never returns the values.) */
+function intakeStatus_(role) {
+  const props = PropertiesService.getScriptProperties();
+  const has = p => Boolean(p && props.getProperty(p));
+  return {
+    ok: true,
+    role: role,
+    csCodeProperty: ACTIVE_WH_.csCodeProperty || null,
+    csCodeSet: has(ACTIVE_WH_.csCodeProperty),
+    apiKeyProperty: ACTIVE_WH_.apiKeyProperty || null,
+    apiKeySet: has(ACTIVE_WH_.apiKeyProperty)
+  };
 }

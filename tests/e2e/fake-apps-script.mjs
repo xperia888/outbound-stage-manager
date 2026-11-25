@@ -6,7 +6,7 @@ import vm from 'node:vm';
 
 const CODE_GS = process.argv[2] || new URL('../../Code.gs', import.meta.url).pathname;
 const PORT = Number(process.argv[3] || 8790);
-const PROPS = { ACCESS_CODE: 'ont-e2e', ACCESS_CODE_CHINO: 'chino-e2e', TEST_MODE: process.env.TEST_MODE || null };
+const PROPS = { ACCESS_CODE: 'ont-e2e', ACCESS_CODE_CHINO: 'chino-e2e', CS_CODE: 'cs-e2e', CS_CODE_CHINO: 'cs-chino-e2e', WMS_API_KEY: 'wms-e2e', TEST_MODE: process.env.TEST_MODE || null };
 
 const sheets = new Map(); // name -> rows[][]
 function makeSheet(name) {

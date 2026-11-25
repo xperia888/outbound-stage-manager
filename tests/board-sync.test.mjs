@@ -213,7 +213,7 @@ test('scan log: nothing is queued in Local Mode', () => {
     assert.equal(run('scanLogQueue.length'), 0);
 });
 
-function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null } = {}) {
+function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null, extraProps = {} } = {}) {
     const code = readFileSync(new URL('../Code.gs', import.meta.url), 'utf8');
     const sheets = new Map();
     const makeSheet = () => {
@@ -266,7 +266,7 @@ function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null
         Session: { getActiveUser: () => ({ getEmail: () => 'lead@example.com' }) },
         PropertiesService: {
             getScriptProperties: () => ({
-                getProperty: k => (k === 'ACCESS_CODE' ? accessCode : k === 'ACCESS_CODE_CHINO' ? chinoCode : k === 'TEST_MODE' ? testMode : null)
+                getProperty: k => (k in extraProps ? extraProps[k] : k === 'ACCESS_CODE' ? accessCode : k === 'ACCESS_CODE_CHINO' ? chinoCode : k === 'TEST_MODE' ? testMode : null)
             })
         },
         ContentService: {
@@ -675,8 +675,8 @@ test('delete order: asks first, then removes only that order (not shipped) and l
 test('Code.gs resolveWarehouse: the code says which warehouse it opens', () => {
     const { ctx } = loadCodeGs({ accessCode: 'ont-code', chinoCode: 'chino-code', testMode: 'on' });
     const r = key => JSON.parse(JSON.stringify(ctx.api({ fn: 'resolveWarehouse', key })));
-    assert.deepEqual(r('ont-code'), { ok: true, warehouse: 'ONT' });
-    assert.deepEqual(r('chino-code'), { ok: true, warehouse: 'CHINO' });
+    assert.deepEqual(r('ont-code'), { ok: true, warehouse: 'ONT', role: 'floor' });
+    assert.deepEqual(r('chino-code'), { ok: true, warehouse: 'CHINO', role: 'floor' });
     assert.equal(r('nope').unauthorized, true);
     assert.equal(r('').unauthorized, true);
     assert.equal(r('test-mode').unauthorized, true, 'TEST is never chosen by a code');
@@ -757,4 +757,82 @@ test('merge keeps docks and carriers added on either device', () => {
 
     const noBase = JSON.parse(run(`JSON.stringify(mergeBoardStates(null, ${JSON.stringify(local)}, ${JSON.stringify(remote)}))`));
     assert.ok(noBase.docks.includes('DOCK-13') && noBase.docks.includes('DOCK-14'), 'never-synced device: keep both sides');
+});
+
+
+// ---------------------------------------------------------------------------------------------
+// Order intake (Orders tab)
+// ---------------------------------------------------------------------------------------------
+function intakeGs() {
+    return loadCodeGs({ extraProps: { CS_CODE: 'cs-1', WMS_API_KEY: 'wms-key-1', CS_CODE_CHINO: 'cs-chino', ACCESS_CODE_CHINO: 'chino-1' } });
+}
+
+test('orders: CS code and WMS key reach only the order functions; WMS key is not a sign-in code', () => {
+    const { ctx } = intakeGs();
+    const call = (fn, key, args = [], warehouse) => ctx.api({ fn, key, args, warehouse });
+    assert.equal(call('listOrders', 'cs-1').ok, true);
+    assert.equal(call('loadBoardState', 'cs-1').unauthorized, true, 'CS code cannot read the board');
+    assert.equal(call('saveBoardState', 'cs-1', ['{}', null]).unauthorized, true);
+    assert.equal(call('orderProgress', 'cs-1').ok, true);
+    assert.equal(call('upsertOrders', 'wms-key-1', [[{ orderNumber: 'A1', customer: 'Acme' }]]).ok, true);
+    assert.equal(call('orderProgress', 'wms-key-1').unauthorized, true, 'WMS key only pushes/lists orders');
+    assert.equal(call('listOrders', 'cs-1', [], 'CHINO').unauthorized, true, 'ONT CS code does not open Chino');
+    assert.equal(call('listOrders', 'cs-chino', [], 'CHINO').ok, true);
+    assert.equal(call('listOrders', 'secret-1').ok, true, 'floor code can do everything');
+    const r = JSON.parse(JSON.stringify(ctx.api({ fn: 'resolveWarehouse', key: 'cs-chino' })));
+    assert.deepEqual(r, { ok: true, warehouse: 'CHINO', role: 'cs' });
+    assert.equal(ctx.api({ fn: 'resolveWarehouse', key: 'wms-key-1' }).ok, false);
+});
+
+test('orders: upsert adds, updates only the fields sent, validates, and keeps history on cancel', () => {
+    const { ctx, sheets } = intakeGs();
+    const call = (fn, args) => JSON.parse(JSON.stringify(ctx.api({ fn, key: 'cs-1', args })));
+    const first = call('upsertOrders', [[
+        { orderNumber: ' dn2611190307 ', customer: 'Acme Corp', cartons: '1,200', pallets: 16, refType: 'ARN#', reference: 'ARN-889', orderType: 'LTL', carrier: 'Saia', enteredBy: 'Amy' },
+        { orderNumber: 'DN2', customer: 'Beta', releasedAt: '2026-11-24T15:30:00Z', pallets: 'x' },
+        { orderNumber: '', customer: 'No number' },
+        { orderNumber: 'DN3', cartons: 5 }
+    ], { source: 'Manual' }]);
+    assert.equal(first.inserted, 1);
+    assert.deepEqual(first.errors.map(e => e.error), ['Pallets must be a whole number', 'Order # is missing', 'Customer is missing']);
+
+    // WMS import of the same order with only some columns: carrier stays, pallets updated
+    const second = call('upsertOrders', [[{ orderNumber: 'DN2611190307', pallets: 18, cartons: '' }], { source: 'WMS import' }]);
+    assert.deepEqual([second.inserted, second.updated], [0, 1]);
+    const skip = call('upsertOrders', [[{ orderNumber: 'DN2611190307', pallets: 1 }], { mode: 'insertOnly' }]);
+    assert.equal(skip.skipped, 1);
+
+    let o = call('listOrders', [{ days: 0 }]).orders[0];
+    assert.equal(o.orderNumber, 'DN2611190307');
+    assert.equal(o.pallets, 18);
+    assert.equal(o.cartons, null, 'blank sent → cleared');
+    assert.equal(o.carrier, 'Saia', 'not sent → kept');
+    assert.equal(o.status, 'Released');
+    assert.equal(o.source, 'Manual');
+    assert.ok(o.releasedAt, 'release time defaults to now');
+
+    assert.equal(call('setOrderStatus', ['dn2611190307', 'cancelled', 'Amy']).order.status, 'Cancelled');
+    o = call('listOrders', [{ days: 0 }]).orders[0];
+    assert.equal(o.status, 'Cancelled');
+    const rows = sheets.get('Orders').rows;
+    assert.equal(rows.length, 2, 'header + 1 order, nothing deleted');
+    assert.equal(rows[0][0], 'Order #');
+    assert.equal(call('upsertOrders', [[{ orderNumber: 'A', customer: 'x' }, { orderNumber: 'a', customer: 'y' }]]).errors[0].error.startsWith('Order # appears twice'), true);
+});
+
+test('orders: progress counts staged, at dock and shipped pallets per order from the board', () => {
+    const { ctx } = intakeGs();
+    const state = {
+        columns: [{ id: 'c1', name: 'S51' }, { id: 'c2', name: 'S52' }],
+        pallets: [
+            { id: 'p1', orderNumber: 'dn9', columnId: 'c1', dockNumber: 'DOCK-03', createdAt: 100 },
+            { id: 'p2', orderNumber: 'DN9', columnId: 'c2', dockNumber: '', createdAt: 50 },
+            { id: 'p3', orderNumber: 'DN8', columnId: 'c1', dockNumber: '', createdAt: 70 }
+        ],
+        shippedPallets: [{ id: 's1', orderNumber: 'DN9', shippedAt: 500 }]
+    };
+    ctx.api({ fn: 'saveBoardState', key: 'secret-1', args: [JSON.stringify(state), null] });
+    const p = JSON.parse(JSON.stringify(ctx.api({ fn: 'orderProgress', key: 'cs-1' }))).progress;
+    assert.deepEqual(p.DN9, { staged: 2, atDock: 1, docks: ['DOCK-03'], lanes: ['S51', 'S52'], shipped: 1, firstStagedAt: 50, lastShippedAt: 500 });
+    assert.equal(p.DN8.staged, 1);
 });
