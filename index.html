@@ -4449,7 +4449,7 @@
 
         function orderPickerMatches() {
             const q = String(document.getElementById('order-picker-search')?.value || '').trim().toLowerCase();
-            return availableIntakeOrders().filter(o => !q || [o.orderNumber, o.customer, o.carrier, o.reference, o.orderType, o.destination]
+            return availableIntakeOrders().filter(o => !q || [o.orderNumber, o.customer, o.carrier, o.reference, o.orderType, o.destination, o.picker, o.vrid]
                 .some(v => String(v || '').toLowerCase().includes(q)));
         }
 
@@ -4487,7 +4487,7 @@
                                 ${o.reference ? `<span class="text-[10px] font-mono-code font-bold text-slate-500">${escapeHtml([o.refType, o.reference].filter(Boolean).join(' '))}</span>` : ''}
                             </div>
                             <div class="text-xs font-semibold text-slate-700 truncate">${escapeHtml(o.customer || '')}${o.carrier ? ` · <span class="text-slate-500">${escapeHtml(o.carrier)}</span>` : ''}</div>
-                            <div class="text-[10px] text-slate-500">${released ? `Released ${escapeHtml(relativeAge(released))}` : ''}${o.cartons != null ? ` · ${o.cartons} ctn` : ''}${o.shipDate ? ` · ship ${escapeHtml(o.shipDate)}` : ''}</div>
+                            <div class="text-[10px] text-slate-500">${released ? `Released ${escapeHtml(relativeAge(released))}` : ''}${o.cartons != null ? ` · ${o.cartons} ctn` : ''}${o.shipDate ? ` · ship ${escapeHtml(o.shipDate)}` : ''}${o.picker ? ` · picker <b class="text-slate-700">${escapeHtml(o.picker)}</b>` : ''}${o.vrid ? ` · VRID <span class="font-mono-code font-bold text-slate-700">${escapeHtml(o.vrid)}</span>` : ''}</div>
                         </div>
                         <div class="text-right shrink-0">
                             <div class="font-mono-code text-base font-extrabold text-slate-900">${o.remaining == null ? '—' : o.remaining}<span class="text-[10px] font-bold text-slate-500"> to stage</span></div>
@@ -4520,6 +4520,8 @@
                         <div class="text-sm font-semibold text-slate-800">${escapeHtml(o.customer || '')}</div>
                         <div class="text-xs text-slate-600">${escapeHtml([o.orderType, o.carrier, o.destination].filter(Boolean).join(' · '))}</div>
                         ${o.reference ? `<div class="text-xs font-mono-code text-slate-600">${escapeHtml([o.refType, o.reference].filter(Boolean).join(' '))}</div>` : ''}
+                        ${o.vrid ? `<div class="text-xs font-mono-code text-slate-600">VRID ${escapeHtml(o.vrid)}</div>` : ''}
+                        ${o.picker ? `<div class="text-xs text-slate-700">Picker: <b>${escapeHtml(o.picker)}</b></div>` : ''}
                         ${o.notes ? `<div class="text-xs text-amber-900 mt-1">📝 ${escapeHtml(o.notes)}</div>` : ''}
                     </div>
                     <div class="text-right shrink-0 text-xs font-semibold text-slate-600">

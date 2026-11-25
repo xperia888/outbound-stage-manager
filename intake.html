@@ -11,33 +11,40 @@
   - Orders are stored one row per order in the warehouse's "Orders" tab of the same Google Sheet,
     through the same Apps Script web app as the staging board. The staging board itself is not changed.
 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
+    /* Same look as the staging app: slate header and page, amber actions, Inter + JetBrains Mono */
     :root {
-        --page: #eef1f5;
+        --page: #f1f5f9;          /* slate-100 */
         --surface: #ffffff;
-        --surface-2: #f4f6f9;
-        --line: #d7dde5;
-        --line-strong: #b9c3cf;
-        --text: #101828;
-        --text-2: #3d4a5c;
-        --muted: #667085;
-        --navy: #10294a;
-        --accent: #1f6fd1;
-        --accent-dark: #1559b0;
-        --accent-soft: #e6f0fd;
-        --good: #12804a;
-        --good-soft: #e3f4ea;
-        --warn: #8f5a00;
-        --warn-soft: #fff4d6;
-        --bad: #b42318;
-        --bad-soft: #fde8e7;
-        --teal: #1d7466;
-        --teal-soft: #e2f3ef;
-        --violet: #6449ad;
-        --violet-soft: #efeafb;
-        --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
-        --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-        --mono: "JetBrains Mono", "Consolas", "SFMono-Regular", ui-monospace, monospace;
+        --surface-2: #f8fafc;     /* slate-50 */
+        --line: #e2e8f0;          /* slate-200 */
+        --line-strong: #cbd5e1;   /* slate-300 */
+        --text: #0f172a;          /* slate-900 */
+        --text-2: #334155;        /* slate-700 */
+        --muted: #64748b;         /* slate-500 */
+        --slate-800: #1e293b;
+        --slate-900: #0f172a;
+        --amber: #f59e0b;         /* amber-500 */
+        --amber-600: #d97706;
+        --amber-soft: #fef3c7;    /* amber-100 */
+        --amber-50: #fffbeb;
+        --sky: #0369a1;           /* sky-700 */
+        --sky-soft: #e0f2fe;      /* sky-100 */
+        --good: #047857;          /* emerald-700 */
+        --good-soft: #d1fae5;
+        --warn: #92400e;          /* amber-800 */
+        --warn-soft: #fef3c7;
+        --bad: #b91c1c;           /* red-700 */
+        --bad-soft: #fee2e2;
+        --teal: #0f766e;
+        --teal-soft: #ccfbf1;
+        --violet: #6d28d9;
+        --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.06);
+        --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --mono: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { background: var(--page); color: var(--text); font-family: var(--font); font-size: 14px; }
@@ -46,159 +53,194 @@
     .mono { font-family: var(--mono); }
     .hidden { display: none !important; }
 
-    /* Header */
-    header {
-        background: var(--navy); color: #fff; border-bottom: 4px solid var(--accent);
-        padding: 12px 24px 0; position: sticky; top: 0; z-index: 20;
-    }
-    .top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-    .brand h1 { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
-    .brand .sub { font-size: 12px; color: #c8d5e6; margin-top: 2px; }
-    .wh-chip { font-family: var(--mono); font-size: 12px; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: #1b3a62; border: 1px solid #2f5384; color: #cfe3ff; }
-    .wh-chip.chino { color: #ffe1a8; border-color: #7a5a1c; background: #3a2c10; }
-    .wh-chip.test { color: #ffc2c2; border-color: #7a2a2a; background: #3a1414; }
+    /* Header (like the staging app) */
+    header { background: var(--slate-900); color: #fff; border-bottom: 1px solid var(--slate-800); position: sticky; top: 0; z-index: 20; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25); }
+    .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 20px 0; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-icon { background: var(--amber); color: #020617; border-radius: 8px; padding: 6px; display: inline-flex; }
+    .brand h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
+    .brand .sub { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+    .wh-chip { font-family: var(--mono); font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.45); color: #bae6fd; }
+    .wh-chip.chino { color: #fde68a; border-color: rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.15); }
+    .wh-chip.test { color: #fecaca; border-color: rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.15); }
     .top .spacer { flex: 1; }
-    .who { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #c8d5e6; }
-    .who button, .ghost-dark {
-        background: #1b3a62; border: 1px solid #2f5384; color: #fff; border-radius: 8px; padding: 5px 10px; font-size: 13px; font-weight: 600;
-    }
-    .who button:hover, .ghost-dark:hover { background: #24497a; }
-    nav.tabs { display: flex; gap: 4px; margin-top: 10px; overflow-x: auto; }
-    nav.tabs button {
-        background: transparent; border: none; color: #c8d5e6; font-weight: 700; font-size: 14px;
-        padding: 9px 14px; border-radius: 8px 8px 0 0; white-space: nowrap;
-    }
-    nav.tabs button:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
-    nav.tabs button.active { background: var(--page); color: var(--navy); }
+    .who { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; }
+    .who button { background: var(--slate-800); border: 1px solid #334155; color: #e2e8f0; border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
+    .who button:hover { background: #334155; color: #fff; }
+    nav.tabs { display: flex; gap: 2px; margin-top: 8px; padding: 0 20px; overflow-x: auto; }
+    nav.tabs button { background: transparent; border: none; border-bottom: 3px solid transparent; color: #94a3b8; font-weight: 700; font-size: 13px; padding: 8px 12px 9px; white-space: nowrap; }
+    nav.tabs button:hover { color: #fff; }
+    nav.tabs button.active { color: #fff; border-bottom-color: var(--amber); }
 
-    main { padding: 18px 24px 40px; max-width: 1500px; margin: 0 auto; }
-    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+    main { padding: 16px 20px 40px; max-width: 1500px; margin: 0 auto; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
     .card + .card { margin-top: 14px; }
     .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-    .card-head h2 { font-size: 16px; font-weight: 800; }
-    .card-head p { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .card-head h2 { font-size: 15px; font-weight: 800; }
+    .card-head p { color: var(--muted); font-size: 12.5px; margin-top: 2px; max-width: 760px; }
     .card-body { padding: 16px; }
 
-    /* Buttons & inputs */
-    .btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
-    .btn:hover { background: var(--surface-2); }
-    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .btn.primary:hover { background: var(--accent-dark); }
-    .btn.danger { color: var(--bad); border-color: #f1b7b2; }
+    /* Buttons & inputs (staging app style) */
+    .btn { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text-2); border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .btn:hover { background: var(--surface-2); color: var(--text); }
+    .btn.primary { background: var(--amber); border-color: var(--amber); color: #020617; font-weight: 800; }
+    .btn.primary:hover { background: #fbbf24; }
+    .btn.dark { background: var(--slate-900); border-color: var(--slate-900); color: #fff; font-weight: 800; }
+    .btn.dark:hover { background: var(--slate-800); }
+    .btn.danger { color: var(--bad); border-color: #fca5a5; }
     .btn.danger:hover { background: var(--bad-soft); }
-    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
-    .field label { display: block; font-size: 12px; font-weight: 700; color: var(--text-2); margin-bottom: 4px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .field label { display: block; font-size: 11.5px; font-weight: 700; color: var(--text-2); margin-bottom: 4px; }
     .field label .req { color: var(--bad); }
-    .field .hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .field .hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
     input[type=text], input[type=number], input[type=search], input[type=datetime-local], input[type=date], input[type=password], select, textarea {
-        width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; background: #fff; font-size: 14px;
+        width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 7px 10px; background: #fff; font-size: 13.5px;
     }
-    input:focus, select:focus, textarea:focus { outline: 2px solid rgba(31, 111, 209, 0.35); border-color: var(--accent); }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25); }
     input.invalid { border-color: var(--bad); background: #fffafa; }
-    textarea { min-height: 70px; resize: vertical; }
+    a { color: var(--sky); font-weight: 700; }
 
     /* Summary tiles */
     .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
-    .tile { background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--line-strong); border-radius: 10px; padding: 10px 14px; box-shadow: var(--shadow); text-align: left; }
-    .tile .n { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
-    .tile .t { font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
-    .tile.waiting { border-left-color: var(--warn); }
-    .tile.floor { border-left-color: var(--teal); }
-    .tile.dock { border-left-color: var(--accent); }
-    .tile.shipped { border-left-color: var(--good); }
-    .tile.today { border-left-color: var(--violet); }
-    .tile.selected { outline: 2px solid var(--accent); }
+    .tile { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--line-strong); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow); text-align: left; }
+    .tile:hover { border-color: var(--line-strong); }
+    .tile .n { font-family: var(--mono); font-size: 24px; font-weight: 800; line-height: 1.15; }
+    .tile .t { font-size: 11px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+    .tile.today { border-top-color: var(--violet); }
+    .tile.waiting { border-top-color: var(--amber); }
+    .tile.floor { border-top-color: var(--teal); }
+    .tile.dock { border-top-color: var(--sky); }
+    .tile.shipped { border-top-color: var(--good); }
 
     /* Toolbar */
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .toolbar input[type=search] { width: 330px; }
     .toolbar select { width: auto; }
 
-    /* Table */
+    /* Tables */
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; }
-    th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 800; padding: 9px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; }
-    td { padding: 9px 10px; border-bottom: 1px solid #eceff3; vertical-align: middle; white-space: nowrap; }
-    tbody tr { cursor: pointer; }
-    tbody tr:hover { background: #f7faff; }
+    th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 800; padding: 9px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+    td { padding: 9px 10px; border-bottom: 1px solid #eef2f6; vertical-align: middle; white-space: nowrap; font-size: 13px; }
+    #orders-body tr { cursor: pointer; }
+    #orders-body tr:hover { background: var(--amber-50); }
     tr.cancelled td { color: var(--muted); }
     tr.cancelled td .ono { text-decoration: line-through; }
-    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     .ono { font-family: var(--mono); font-weight: 800; }
     .cust { font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-    .sub2 { font-size: 12px; color: var(--muted); }
+    .sub2 { font-size: 11.5px; color: var(--muted); }
     .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
 
-    .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
     .chip.waiting { background: var(--warn-soft); color: var(--warn); }
-    .chip.partial, .chip.staged { background: var(--teal-soft); color: var(--teal); }
-    .chip.dock { background: var(--accent-soft); color: var(--accent-dark); }
+    .chip.partial, .chip.staged, .chip.new { background: var(--teal-soft); color: var(--teal); }
+    .chip.dock, .chip.update { background: var(--sky-soft); color: var(--sky); }
     .chip.shipped { background: var(--good-soft); color: var(--good); }
-    .chip.cancelled { background: #eef0f3; color: var(--muted); }
-    .chip.src { background: var(--surface-2); color: var(--text-2); font-weight: 700; }
-    .bar { width: 90px; height: 6px; background: #e7ebf0; border-radius: 3px; overflow: hidden; display: flex; margin-top: 4px; }
+    .chip.cancelled, .chip.skip { background: #e2e8f0; color: var(--muted); }
+    .chip.error { background: var(--bad-soft); color: var(--bad); }
+    .chip.src { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--line); font-weight: 700; }
+    .bar { width: 90px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; display: flex; margin-top: 4px; }
     .bar i { display: block; height: 100%; }
-    .bar i.s { background: var(--good); }
-    .bar i.f { background: var(--teal); }
+    .bar i.s { background: #10b981; }
+    .bar i.f { background: #14b8a6; }
 
     /* Form */
-    .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 16px; }
+    .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; }
     .form-grid .span2 { grid-column: span 2; }
-    .form-grid .span4 { grid-column: 1 / -1; }
-    .group-title { grid-column: 1 / -1; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-top: 6px; }
-    .form-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding: 14px 16px; border-top: 1px solid var(--line); background: var(--surface-2); border-radius: 0 0 12px 12px; }
+    .group-title { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 6px; }
+    .group-title::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+    .form-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--surface-2); border-radius: 0 0 14px 14px; }
     .form-actions .left { margin-right: auto; display: flex; gap: 8px; }
-    .floor-box { display: flex; gap: 16px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
-    .floor-box b { font-size: 16px; }
+    .floor-box { display: flex; gap: 18px; flex-wrap: wrap; background: var(--amber-50); border: 1px solid #fde68a; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px; }
+    .floor-box b { font-family: var(--mono); font-size: 16px; }
 
     /* Import */
-    .drop { border: 2px dashed var(--line-strong); border-radius: 12px; padding: 28px; text-align: center; background: var(--surface-2); }
-    .drop.over { border-color: var(--accent); background: var(--accent-soft); }
-    .drop p { color: var(--muted); margin-top: 6px; }
-    .steps { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
-    .steps span { font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: #e7ebf0; color: var(--muted); }
-    .steps span.on { background: var(--accent); color: #fff; }
-    .map-grid { display: grid; grid-template-columns: 190px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; align-items: center; }
-    .map-grid .h { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-    .map-grid .lbl { font-weight: 700; }
-    .map-grid .sample { font-family: var(--mono); font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .counts { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-    .counts .chip { font-size: 13px; padding: 4px 12px; }
+    .stepper { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .stepper .st { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+    .stepper .st .dot { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 12px; font-weight: 800; background: #e2e8f0; color: var(--muted); }
+    .stepper .st.on { color: var(--text); }
+    .stepper .st.on .dot { background: var(--slate-900); color: var(--amber); }
+    .stepper .st.done .dot { background: var(--amber); color: #020617; }
+    .stepper .line { width: 36px; height: 2px; background: var(--line); }
+    .drop { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 2px dashed var(--line-strong); border-radius: 14px; padding: 34px 20px; text-align: center; background: var(--surface-2); cursor: pointer; }
+    .drop:hover, .drop.over { border-color: var(--amber); background: var(--amber-50); }
+    .drop svg { color: var(--muted); }
+    .drop strong { font-size: 14px; }
+    .drop p { color: var(--muted); font-size: 12.5px; }
+    .tips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .tips div { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12px; color: var(--text-2); line-height: 1.45; }
+    .tips b { display: block; color: var(--text); margin-bottom: 2px; }
+    .file-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; }
+    .file-bar .name { font-family: var(--mono); font-weight: 800; }
+    .file-bar .meta { color: var(--muted); font-size: 12px; }
+    .file-bar .btn { margin-left: auto; }
+    .map-table td { white-space: normal; padding: 6px 10px; }
+    .map-table tr:nth-child(even) td { background: #fbfcfe; }
+    .map-table td.f { font-weight: 700; width: 210px; }
+    .map-table td.f .req { color: var(--bad); }
+    .map-table td.col { width: 260px; }
+    .map-table td.ex { font-family: var(--mono); font-size: 12px; color: var(--text-2); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .map-table td.def { width: 190px; }
+    .map-table select, .map-table input { padding: 5px 8px; font-size: 12.5px; }
+    .map-table select.unmapped { color: var(--muted); }
+    .mode { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .mode label { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line-strong); border-radius: 10px; padding: 10px 12px; cursor: pointer; background: #fff; }
+    .mode label:has(input:checked) { border-color: var(--amber); background: var(--amber-50); box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2); }
+    .mode b { display: block; font-size: 13px; }
+    .mode span { font-size: 12px; color: var(--muted); }
+    .actions-row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+    .stat-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .stat { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: #fff; }
+    .stat .n { font-family: var(--mono); font-size: 22px; font-weight: 800; }
+    .stat .t { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat.new { border-top: 3px solid var(--teal); } .stat.update { border-top: 3px solid var(--sky); }
+    .stat.skip { border-top: 3px solid var(--line-strong); } .stat.error { border-top: 3px solid var(--bad); }
+    .preview-wrap { max-height: 440px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
     .err-text { color: var(--bad); font-size: 12px; font-weight: 600; }
-    .radio-row { display: flex; gap: 18px; flex-wrap: wrap; }
-    .radio-row label { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; }
 
     /* API page */
-    pre { background: #0f1b2d; color: #dbe7f7; border-radius: 10px; padding: 14px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
-    .kv { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 8px 14px; }
+    pre { background: var(--slate-900); color: #e2e8f0; border-radius: 10px; padding: 14px; overflow-x: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; }
+    .kv { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 14px; font-size: 13px; }
     .kv dt { font-weight: 700; color: var(--text-2); }
-    .note { background: var(--accent-soft); border: 1px solid #bcd6f7; border-radius: 10px; padding: 10px 14px; color: #123d74; font-size: 13px; }
-    .note.warn { background: var(--warn-soft); border-color: #f0d68a; color: #6b4300; }
+    .note { background: var(--amber-50); border: 1px solid #fde68a; border-radius: 10px; padding: 10px 14px; color: #78350f; font-size: 12.5px; line-height: 1.5; }
+    .note.warn { background: var(--bad-soft); border-color: #fca5a5; color: #7f1d1d; }
+    .note.ok { background: var(--good-soft); border-color: #6ee7b7; color: #064e3b; }
     .api-fields td, .api-fields th { white-space: normal; }
+    h3.sec { font-size: 13px; font-weight: 800; margin: 18px 0 8px; }
 
     /* Modal, sign-in, toast */
-    .overlay { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
-    .modal { background: #fff; border-radius: 14px; width: 440px; max-width: 100%; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25); padding: 20px; }
-    .modal h3 { font-size: 17px; font-weight: 800; margin-bottom: 8px; }
-    .modal p { color: var(--text-2); line-height: 1.5; }
-    .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .overlay { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.7); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+    .modal { background: #fff; border-radius: 16px; width: 440px; max-width: 100%; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3); overflow: hidden; }
+    .modal .mh { background: var(--slate-900); color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+    .modal .mh h3 { font-size: 15px; font-weight: 800; }
+    .modal .mb { padding: 16px; }
+    .modal p { color: var(--text-2); line-height: 1.5; font-size: 13px; }
+    .modal .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--surface-2); }
     #signin .modal { width: 400px; }
     #signin .field { margin-top: 12px; }
-    #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 10px 16px; border-radius: 10px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 60; max-width: 92vw; }
-    #toast.bad { background: var(--bad); }
+    #toast { position: fixed; bottom: 18px; right: 18px; background: var(--slate-900); color: #fff; padding: 10px 14px; border-radius: 10px; font-weight: 600; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); z-index: 60; max-width: 92vw; border-left: 4px solid #10b981; }
+    #toast.bad { border-left-color: #ef4444; }
 
     @media (max-width: 900px) {
-        header { padding: 10px 12px 0; }
+        .top { padding: 8px 12px 0; }
+        nav.tabs { padding: 0 8px; }
         main { padding: 12px 10px 30px; }
         .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .tiles .tile:last-child { grid-column: 1 / -1; }
         .toolbar input[type=search] { width: 100%; }
         .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .form-grid .span2 { grid-column: 1 / -1; }
-        .map-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-        .map-grid .sample, .map-grid .h.sample-h, .map-grid .h.def-h { display: none; }
+        .tips, .mode { grid-template-columns: 1fr; }
+        .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .map-table thead { display: none; }
+        .map-table tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+        .map-table td { border: none; padding: 0; width: auto !important; background: none !important; }
+        .map-table td.f { grid-column: 1 / -1; }
+        .map-table td.ex { display: none; }
         .kv { grid-template-columns: 1fr; }
         .who .name-label { display: none; }
+        #toast { left: 10px; right: 10px; }
     }
 </style>
 </head>
@@ -206,8 +248,11 @@
 <header>
     <div class="top">
         <div class="brand">
-            <h1>Order Intake</h1>
-            <div class="sub">Customer service → warehouse release</div>
+            <span class="brand-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+            <div>
+                <h1>Order Intake</h1>
+                <div class="sub">Customer service → warehouse release</div>
+            </div>
         </div>
         <span class="wh-chip" id="wh-chip">—</span>
         <span class="spacer"></span>
@@ -262,7 +307,7 @@
                     <thead>
                         <tr>
                             <th>Released</th><th>Order #</th><th>Customer</th><th>Type</th><th>Reference</th>
-                            <th class="num">Cartons</th><th class="num">Pallets</th><th>Floor</th><th>Carrier</th><th>Ship / Appt</th><th>Source</th>
+                            <th class="num">Cartons</th><th class="num">Pallets</th><th>Floor</th><th>Picker</th><th>Carrier / VRID</th><th>Ship / Appt</th><th>Source</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body"></tbody>
@@ -316,7 +361,10 @@
                         <input type="number" id="f-pallets" min="0" step="1" inputmode="numeric">
                         <div class="hint">Expected; the floor's count shows against it</div>
                     </div>
-                    <div class="field"></div>
+                    <div class="field">
+                        <label for="f-picker">Picker</label>
+                        <input type="text" id="f-picker" list="picker-list" placeholder="Who picks this order">
+                    </div>
 
                     <div class="group-title">Reference</div>
                     <div class="field">
@@ -349,7 +397,12 @@
                         <label for="f-shipDate">Ship / appointment date</label>
                         <input type="date" id="f-shipDate">
                     </div>
-                    <div class="field span2">
+                    <div class="field">
+                        <label for="f-vrid">VRID</label>
+                        <input type="text" id="f-vrid" class="mono" placeholder="e.g. 115XYZ7AB" autocomplete="off">
+                        <div class="hint">Vehicle Run ID (Amazon loads)</div>
+                    </div>
+                    <div class="field">
                         <label for="f-destination">Destination</label>
                         <input type="text" id="f-destination" placeholder="City, state or ship-to">
                     </div>
@@ -372,6 +425,7 @@
         </form>
         <datalist id="customer-list"></datalist>
         <datalist id="carrier-list"></datalist>
+        <datalist id="picker-list"></datalist>
     </section>
 
     <!-- ============================== IMPORT ============================== -->
@@ -380,43 +434,62 @@
             <div class="card-head">
                 <div>
                     <h2>Import orders from the WMS</h2>
-                    <p>Export orders from the WMS as CSV or Excel, then load the file here. New orders are added; orders already in the portal are updated.</p>
+                    <p>Load the WMS order export (CSV or Excel). New orders are added; orders already here are updated by Order #. Nothing is saved until you press Import.</p>
                 </div>
-                <button type="button" class="btn" id="template-btn">Download template</button>
+                <button type="button" class="btn" id="template-btn">⬇ Download template</button>
             </div>
             <div class="card-body">
-                <div class="steps"><span id="st-1" class="on">1 · Choose file</span><span id="st-2">2 · Match columns</span><span id="st-3">3 · Check &amp; import</span></div>
+                <div class="stepper">
+                    <span class="st on" id="st-1"><span class="dot">1</span>Choose file</span><span class="line"></span>
+                    <span class="st" id="st-2"><span class="dot">2</span>Match columns</span><span class="line"></span>
+                    <span class="st" id="st-3"><span class="dot">3</span>Check &amp; import</span>
+                </div>
 
                 <div id="imp-step1">
                     <label class="drop" id="drop">
                         <input type="file" id="imp-file" accept=".csv,.txt,.tsv,.xlsx,.xls" hidden>
+                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
                         <strong>Drop the WMS export here, or click to choose a file</strong>
-                        <p>CSV, TSV or Excel (.xlsx / .xls). The first row must be the column names.</p>
+                        <p>CSV, TSV or Excel (.xlsx / .xls) · first row = column names</p>
                     </label>
+                    <div class="tips">
+                        <div><b>Any column names</b>Columns are matched to portal fields by name (e.g. “Delivery No” → Order #). You can change any match.</div>
+                        <div><b>Remembered</b>Your matching and defaults are saved on this device for the next file from the same WMS report.</div>
+                        <div><b>Safe updates</b>Empty cells never erase details already entered. Rows with problems are shown and skipped.</div>
+                    </div>
                 </div>
 
                 <div id="imp-step2" class="hidden">
-                    <p style="margin-bottom:10px"><b id="imp-file-name"></b> · <span id="imp-row-count"></span> · <a href="#" id="imp-change-file">choose another file</a></p>
-                    <div class="note" style="margin-bottom:12px">Match each portal field to a column in the file. Matches are guessed from the column names and remembered for next time. Use <b>Default</b> for a value every order should get when the file has none (e.g. Reference type = ARN#).</div>
-                    <div class="map-grid" id="map-grid"></div>
-                    <div style="margin-top:16px" class="radio-row">
-                        <label><input type="radio" name="imp-mode" value="upsert" checked> Add new orders and update existing ones</label>
-                        <label><input type="radio" name="imp-mode" value="insertOnly"> Only add new orders (skip existing)</label>
+                    <div class="file-bar">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                        <span class="name" id="imp-file-name"></span>
+                        <span class="meta" id="imp-row-count"></span>
+                        <button type="button" class="btn" id="imp-change-file">Choose another file</button>
                     </div>
-                    <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end">
-                        <button type="button" class="btn primary" id="imp-preview-btn">Check rows →</button>
+                    <div class="table-wrap" style="border:1px solid var(--line); border-radius:10px">
+                        <table class="map-table">
+                            <thead><tr><th>Portal field</th><th>Column in your file</th><th>Example from file</th><th>If empty, use</th></tr></thead>
+                            <tbody id="map-grid"></tbody>
+                        </table>
+                    </div>
+                    <div class="mode">
+                        <label><input type="radio" name="imp-mode" value="upsert" checked><div><b>Add new &amp; update existing</b><span>Orders already in the portal get the values from the file.</span></div></label>
+                        <label><input type="radio" name="imp-mode" value="insertOnly"><div><b>Only add new orders</b><span>Orders already in the portal are skipped.</span></div></label>
+                    </div>
+                    <div class="actions-row">
+                        <button type="button" class="btn dark" id="imp-preview-btn">Check rows →</button>
                     </div>
                 </div>
 
                 <div id="imp-step3" class="hidden">
-                    <div class="counts" id="imp-counts"></div>
-                    <div class="table-wrap" style="max-height:420px; overflow:auto; border:1px solid var(--line); border-radius:10px">
+                    <div class="stat-row" id="imp-counts"></div>
+                    <div class="preview-wrap">
                         <table>
-                            <thead><tr><th>Row</th><th>Result</th><th>Order #</th><th>Customer</th><th class="num">Cartons</th><th class="num">Pallets</th><th>Reference</th><th>Type</th><th>Carrier</th><th>Released</th></tr></thead>
+                            <thead><tr><th>Row</th><th>Result</th><th>Order #</th><th>Customer</th><th class="num">Cartons</th><th class="num">Pallets</th><th>Reference</th><th>Type</th><th>Carrier</th><th>VRID</th><th>Picker</th><th>Released</th></tr></thead>
                             <tbody id="imp-preview-body"></tbody>
                         </table>
                     </div>
-                    <div style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end; align-items:center">
+                    <div class="actions-row">
                         <span class="sub2" id="imp-progress"></span>
                         <button type="button" class="btn" id="imp-back-btn">← Change matching</button>
                         <button type="button" class="btn primary" id="imp-go-btn">Import</button>
@@ -445,17 +518,19 @@
 <!-- Sign-in -->
 <div class="overlay hidden" id="signin">
     <form class="modal" id="signin-form" autocomplete="off">
-        <h3>Order Intake sign-in</h3>
-        <p>Enter your customer-service (or warehouse) access code. The code picks the warehouse.</p>
-        <div class="field">
-            <label for="signin-code">Access code</label>
-            <input type="password" id="signin-code" autocomplete="off" required>
+        <div class="mh"><span class="brand-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span><h3>Order Intake sign-in</h3></div>
+        <div class="mb">
+            <p>Enter your customer-service (or warehouse) access code. The code picks the warehouse.</p>
+            <div class="field">
+                <label for="signin-code">Access code</label>
+                <input type="password" id="signin-code" autocomplete="off" required>
+            </div>
+            <div class="field">
+                <label for="signin-name">Your name</label>
+                <input type="text" id="signin-name" placeholder="Shown as “Entered by” on orders">
+            </div>
+            <div class="err-text" id="signin-error" style="margin-top:10px"></div>
         </div>
-        <div class="field">
-            <label for="signin-name">Your name</label>
-            <input type="text" id="signin-name" placeholder="Shown as “Entered by” on orders">
-        </div>
-        <div class="err-text" id="signin-error" style="margin-top:10px"></div>
         <div class="actions"><button type="submit" class="btn primary" id="signin-btn">Sign in</button></div>
     </form>
 </div>
@@ -463,8 +538,8 @@
 <!-- Confirm -->
 <div class="overlay hidden" id="confirm">
     <div class="modal">
-        <h3 id="confirm-title"></h3>
-        <p id="confirm-text"></p>
+        <div class="mh"><h3 id="confirm-title"></h3></div>
+        <div class="mb"><p id="confirm-text"></p></div>
         <div class="actions">
             <button type="button" class="btn" id="confirm-no">Cancel</button>
             <button type="button" class="btn primary" id="confirm-yes">OK</button>
@@ -505,12 +580,14 @@
         { key: 'releasedAt', label: 'Released to warehouse', type: 'datetime', synonyms: ['released', 'releasedat', 'releasedate', 'releasetime', 'releasedatetime', 'createddate', 'orderdate', 'ordertime', 'handoff', 'handout', 'cstime'] },
         { key: 'cartons', label: 'Cartons', type: 'int', synonyms: ['cartons', 'carton', 'ctns', 'ctn', 'cartonqty', 'cartoncount', 'boxes', 'cases', 'casecount', 'qtycartons'] },
         { key: 'pallets', label: 'Pallets', type: 'int', synonyms: ['pallets', 'pallet', 'plts', 'plt', 'palletqty', 'palletcount', 'skids', 'lpn', 'lpncount'] },
+        { key: 'picker', label: 'Picker', type: 'text', synonyms: ['picker', 'pickername', 'pickedby', 'assignedpicker', 'assignedto', 'associate', 'pickerid', 'picker1'] },
         { key: 'refType', label: 'Reference type', type: 'text', synonyms: ['referencetype', 'reftype'] },
         { key: 'reference', label: 'Reference', type: 'text', synonyms: ['reference', 'ref', 'refnumber', 'arn', 'arnnumber', 'arn#', 'asn', 'po', 'ponumber', 'customerpo', 'customerref'] },
         { key: 'orderType', label: 'Order type', type: 'text', synonyms: ['ordertype', 'type', 'shipmenttype', 'servicetype', 'mode', 'shipmode', 'service'] },
         { key: 'carrier', label: 'Carrier', type: 'text', synonyms: ['carrier', 'carriername', 'shipvia', 'via', 'trucker', 'scacname'] },
         { key: 'scac', label: 'SCAC', type: 'text', synonyms: ['scac', 'scaccode', 'carriercode'] },
         { key: 'proBol', label: 'PRO / BOL', type: 'text', synonyms: ['pro', 'pronumber', 'bol', 'bolnumber', 'billoflading', 'probol', 'tracking', 'trackingnumber'] },
+        { key: 'vrid', label: 'VRID', type: 'text', synonyms: ['vrid', 'vrids', 'vehiclerunid', 'vehiclerun', 'amazonvrid', 'loadid', 'amazonloadid'] },
         { key: 'shipDate', label: 'Ship / appt date', type: 'date', synonyms: ['shipdate', 'appointment', 'appt', 'apptdate', 'appointmentdate', 'pickupdate', 'scheduledship', 'mustship', 'shipby'] },
         { key: 'destination', label: 'Destination', type: 'text', synonyms: ['destination', 'dest', 'shiptocity', 'city', 'shiptoaddress', 'address', 'deliverto'] },
         { key: 'notes', label: 'Notes', type: 'text', synonyms: ['notes', 'note', 'comments', 'comment', 'remarks', 'instructions', 'specialinstructions'] },
@@ -765,7 +842,7 @@
         return orders.filter(o => {
             if (keys && !keys.includes(floorState(o).key)) return false;
             if (!q) return true;
-            return [o.orderNumber, o.customer, o.reference, o.carrier, o.proBol, o.destination, o.orderType]
+            return [o.orderNumber, o.customer, o.reference, o.carrier, o.proBol, o.destination, o.orderType, o.picker, o.vrid]
                 .some(v => String(v || '').toLowerCase().includes(q));
         });
     }
@@ -775,7 +852,7 @@
         const list = filteredOrders();
         const body = $('orders-body');
         if (!list.length) {
-            body.innerHTML = `<tr><td colspan="11" class="empty">${orders.length ? 'No orders match these filters.' : 'No orders yet. Use “+ New Order” or “Import from WMS”.'}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="12" class="empty">${orders.length ? 'No orders match these filters.' : 'No orders yet. Use “+ New Order” or “Import from WMS”.'}</td></tr>`;
         } else {
             body.innerHTML = list.map(o => {
                 const st = floorState(o);
@@ -798,7 +875,8 @@
                     <td class="num">${o.cartons == null ? '' : o.cartons}</td>
                     <td class="num">${o.pallets == null ? '' : o.pallets}</td>
                     <td><span class="chip ${st.key}">${esc(st.label)}</span>${bar}${floorText}</td>
-                    <td>${esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}</td>
+                    <td>${esc(o.picker || '')}</td>
+                    <td>${esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}${o.vrid ? `<div class="sub2 mono">VRID ${esc(o.vrid)}</div>` : ''}</td>
                     <td>${esc(o.shipDate || '')}</td>
                     <td><span class="chip src">${esc(o.source || '')}</span></td>
                 </tr>`;
@@ -825,10 +903,11 @@
         const common = ['Saia', 'Estes Express', 'Old Dominion', 'XPO Logistics', 'FedEx Freight', 'R+L Carriers', 'ABF Freight', 'TForce Freight', 'Southeastern', 'UPS', 'FedEx'];
         $('customer-list').innerHTML = uniq('customer').map(v => `<option value="${esc(v)}">`).join('');
         $('carrier-list').innerHTML = [...new Set([...uniq('carrier'), ...common])].map(v => `<option value="${esc(v)}">`).join('');
+        $('picker-list').innerHTML = uniq('picker').map(v => `<option value="${esc(v)}">`).join('');
     }
 
     $('export-btn').addEventListener('click', () => {
-        const cols = ['orderNumber', 'customer', 'releasedAt', 'cartons', 'pallets', 'refType', 'reference', 'orderType', 'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes', 'status', 'source', 'enteredBy'];
+        const cols = ['orderNumber', 'customer', 'releasedAt', 'cartons', 'pallets', 'picker', 'refType', 'reference', 'orderType', 'carrier', 'scac', 'proBol', 'vrid', 'shipDate', 'destination', 'notes', 'status', 'source', 'enteredBy'];
         const labels = cols.map(k => (FIELDS.find(f => f.key === k) || { label: k === 'source' ? 'Source' : 'Entered by' }).label);
         const cell = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
         const list = filteredOrders();
@@ -852,7 +931,7 @@
     // ===================================================================================
     // New / edit form
     // ===================================================================================
-    const FORM_KEYS = ['orderNumber', 'customer', 'releasedAt', 'orderType', 'cartons', 'pallets', 'refType', 'reference', 'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes'];
+    const FORM_KEYS = ['orderNumber', 'customer', 'releasedAt', 'orderType', 'cartons', 'pallets', 'picker', 'refType', 'reference', 'carrier', 'scac', 'proBol', 'vrid', 'shipDate', 'destination', 'notes'];
     let editing = null; // the order being edited, or null for a new one
 
     function openForm(order) {
@@ -902,7 +981,7 @@
             const v = $('f-' + k).value.trim();
             if (k === 'releasedAt') o[k] = v ? new Date(v).toISOString() : '';
             else if (k === 'orderNumber') o[k] = norm(v);
-            else if (k === 'scac') o[k] = v.toUpperCase();
+            else if (k === 'scac' || k === 'vrid') o[k] = v.toUpperCase();
             else o[k] = v;
         });
         return o;
@@ -984,7 +1063,8 @@
     function setImportStep(n) {
         [1, 2, 3].forEach(i => {
             $('imp-step' + i).classList.toggle('hidden', i !== n);
-            $('st-' + i).classList.toggle('on', i <= n);
+            $('st-' + i).classList.toggle('on', i === n);
+            $('st-' + i).classList.toggle('done', i < n);
         });
     }
 
@@ -1049,7 +1129,7 @@
         guessMapping();
         renderMapping();
         $('imp-file-name').textContent = imp.fileName;
-        $('imp-row-count').textContent = `${imp.rows.length} row(s), ${imp.headers.length} column(s)`;
+        $('imp-row-count').textContent = `${imp.rows.length} row(s) · ${imp.headers.length} column(s) · ${Object.keys(imp.mapping).length} matched`;
         setImportStep(2);
     }
 
@@ -1070,20 +1150,24 @@
         });
     }
 
+    function sampleOf(idx) {
+        if (idx == null) return '';
+        const v = imp.rows.map(r => r[idx]).find(x => String(x == null ? '' : x).trim() !== '');
+        return v instanceof Date ? v.toLocaleString() : String(v == null ? '' : v);
+    }
+
     function renderMapping() {
-        const sampleOf = idx => {
-            const v = imp.rows.map(r => r[idx]).find(x => String(x == null ? '' : x).trim() !== '');
-            return v instanceof Date ? v.toLocaleString() : String(v == null ? '' : v);
-        };
         const opts = sel => `<option value="">— not in file —</option>` + imp.headers.map((h, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${esc(h)}</option>`).join('');
-        $('map-grid').innerHTML = `<div class="h">Portal field</div><div class="h">Column in file</div><div class="h sample-h">Example</div><div class="h def-h">Default</div>` +
-            FIELDS.map(f => {
-                const idx = imp.mapping[f.key];
-                return `<div class="lbl">${esc(f.label)}${f.required ? ' <span class="err-text">*</span>' : ''}</div>
-                    <select data-map="${f.key}">${opts(idx == null ? null : idx)}</select>
-                    <div class="sample" data-sample="${f.key}">${idx == null ? '' : esc(sampleOf(idx))}</div>
-                    <input type="text" data-default="${f.key}" value="${esc(imp.defaults[f.key] || '')}" placeholder="${f.key === 'releasedAt' ? 'now' : f.required ? '' : 'none'}"${f.key === 'orderNumber' ? ' disabled' : ''}>`;
-            }).join('');
+        $('map-grid').innerHTML = FIELDS.map(f => {
+            const idx = imp.mapping[f.key];
+            const placeholder = f.key === 'releasedAt' ? 'now' : f.key === 'orderNumber' ? '' : '—';
+            return `<tr>
+                <td class="f">${esc(f.label)}${f.required ? ' <span class="req">*</span>' : ''}</td>
+                <td class="col"><select data-map="${f.key}" class="${idx == null ? 'unmapped' : ''}" aria-label="Column for ${esc(f.label)}">${opts(idx == null ? null : idx)}</select></td>
+                <td class="ex" data-sample="${f.key}" title="${esc(sampleOf(idx))}">${esc(sampleOf(idx))}</td>
+                <td class="def">${f.key === 'orderNumber' ? '<span class="sub2">required in file</span>' : `<input type="text" data-default="${f.key}" value="${esc(imp.defaults[f.key] || '')}" placeholder="${placeholder}" aria-label="Default for ${esc(f.label)}">`}</td>
+            </tr>`;
+        }).join('');
     }
     $('map-grid').addEventListener('change', e => {
         const sel = e.target.closest('select[data-map]');
@@ -1091,9 +1175,10 @@
             const key = sel.dataset.map;
             if (sel.value === '') delete imp.mapping[key];
             else imp.mapping[key] = Number(sel.value);
-            const idx = imp.mapping[key];
-            const v = idx == null ? '' : imp.rows.map(r => r[idx]).find(x => String(x == null ? '' : x).trim() !== '');
-            document.querySelector(`[data-sample="${key}"]`).textContent = v instanceof Date ? v.toLocaleString() : String(v == null ? '' : v);
+            sel.classList.toggle('unmapped', sel.value === '');
+            const cell = document.querySelector(`[data-sample="${key}"]`);
+            cell.textContent = sampleOf(imp.mapping[key]);
+            cell.title = cell.textContent;
         }
     });
     $('map-grid').addEventListener('input', e => {
@@ -1162,6 +1247,7 @@
         });
         if (o.orderNumber != null) o.orderNumber = norm(o.orderNumber);
         if (o.scac) o.scac = o.scac.toUpperCase();
+        if (o.vrid) o.vrid = o.vrid.toUpperCase();
         return { o, problems };
     }
 
@@ -1194,14 +1280,15 @@
     function renderPreview() {
         const c = { new: 0, update: 0, skip: 0, error: 0 };
         imp.parsed.forEach(p => { c[p.result]++; });
-        $('imp-counts').innerHTML = `<span class="chip staged">${c.new} new</span><span class="chip dock">${c.update} update</span>`
-            + (c.skip ? `<span class="chip cancelled">${c.skip} skipped (already in portal)</span>` : '')
-            + (c.error ? `<span class="chip waiting" style="background:var(--bad-soft);color:var(--bad)">${c.error} with problems (not imported)</span>` : '');
+        const stat = (k, n, t) => `<div class="stat ${k}"><div class="n">${n}</div><div class="t">${t}</div></div>`;
+        $('imp-counts').innerHTML = stat('new', c.new, 'New orders') + stat('update', c.update, 'Updates')
+            + stat('skip', c.skip, 'Skipped (already here)') + stat('error', c.error, 'With problems (not imported)');
+        $('imp-counts').dataset.summary = `${c.new} new · ${c.update} update · ${c.skip} skip · ${c.error} with problems`;
         const show = imp.parsed.slice().sort((a, b) => (a.result === 'error' ? -1 : 0) - (b.result === 'error' ? -1 : 0)).slice(0, 300);
-        const label = { new: '<span class="chip staged">New</span>', update: '<span class="chip dock">Update</span>', skip: '<span class="chip cancelled">Skip</span>' };
+        const label = { new: '<span class="chip new">New</span>', update: '<span class="chip update">Update</span>', skip: '<span class="chip skip">Skip</span>' };
         $('imp-preview-body').innerHTML = show.map(p => `<tr>
             <td>${p.line}</td>
-            <td>${p.result === 'error' ? `<span class="err-text">${esc(p.problems.join('; '))}</span>` : label[p.result]}</td>
+            <td style="white-space:normal">${p.result === 'error' ? `<span class="chip error">Problem</span> <span class="err-text">${esc(p.problems.join('; '))}</span>` : label[p.result]}</td>
             <td class="ono">${esc(p.o.orderNumber || '')}</td>
             <td>${esc(p.o.customer == null ? '' : p.o.customer)}</td>
             <td class="num">${p.o.cartons == null ? '' : esc(p.o.cartons)}</td>
@@ -1209,8 +1296,10 @@
             <td>${esc([p.o.refType, p.o.reference].filter(Boolean).join(' '))}</td>
             <td>${esc(p.o.orderType || '')}</td>
             <td>${esc(p.o.carrier || '')}</td>
+            <td class="mono">${esc(p.o.vrid || '')}</td>
+            <td>${esc(p.o.picker || '')}</td>
             <td>${p.o.releasedAt ? esc(fmtDateTime(p.o.releasedAt)) : ''}</td>
-        </tr>`).join('') + (imp.parsed.length > show.length ? `<tr><td colspan="10" class="sub2">…and ${imp.parsed.length - show.length} more row(s)</td></tr>` : '');
+        </tr>`).join('') + (imp.parsed.length > show.length ? `<tr><td colspan="12" class="sub2">…and ${imp.parsed.length - show.length} more row(s)</td></tr>` : '');
         const n = c.new + c.update;
         $('imp-go-btn').textContent = n ? `Import ${n} order(s)` : 'Nothing to import';
         $('imp-go-btn').disabled = !n;
@@ -1238,7 +1327,7 @@
         }
         $('imp-back-btn').disabled = false;
         $('imp-progress').textContent = '';
-        $('imp-result').innerHTML = `<div class="note${total.errors.length ? ' warn' : ''}"><b>Import finished:</b> ${total.inserted} added, ${total.updated} updated${total.skipped ? `, ${total.skipped} skipped` : ''}${total.errors.length ? `, ${total.errors.length} not saved` : ''}. Saved to the “${esc(WAREHOUSES[WH].name)}” Orders tab.
+        $('imp-result').innerHTML = `<div class="note ${total.errors.length ? 'warn' : 'ok'}"><b>Import finished:</b> ${total.inserted} added, ${total.updated} updated${total.skipped ? `, ${total.skipped} skipped` : ''}${total.errors.length ? `, ${total.errors.length} not saved` : ''}. Saved to the “${esc(WAREHOUSES[WH].name)}” Orders tab.
             ${total.errors.length ? '<ul style="margin:6px 0 0 18px">' + total.errors.slice(0, 20).map(e => `<li><b class="mono">${esc(e.orderNumber || '')}</b> ${esc(e.error)}</li>`).join('') + '</ul>' : ''}</div>`;
         $('imp-go-btn').textContent = 'Done';
         toast(`Imported: ${total.inserted} added, ${total.updated} updated`);
@@ -1256,7 +1345,10 @@
     $('imp-go-btn').addEventListener('click', runImport);
     $('template-btn').addEventListener('click', () => {
         const head = FIELDS.map(f => f.label === 'Status (Released / Cancelled)' ? 'Status' : f.label);
-        const ex = ['DN2611190307', 'Acme Corp', '11/24/2026 2:05 PM', '1200', '16', 'ARN#', 'ARN-88921', 'LTL', 'Saia', 'SAIA', '', '11/26/2026', 'Phoenix, AZ', '', 'Released'];
+        const sample = { orderNumber: 'DN2611190307', customer: 'Acme Corp', releasedAt: '11/24/2026 2:05 PM', cartons: '1200', pallets: '16', picker: 'Jose M.',
+            refType: 'ARN#', reference: 'ARN-88921', orderType: 'LTL', carrier: 'Saia', scac: 'SAIA', proBol: '', vrid: '', shipDate: '11/26/2026',
+            destination: 'Phoenix, AZ', notes: '', status: 'Released' };
+        const ex = FIELDS.map(f => sample[f.key] || '');
         const cell = v => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
         downloadText('order-import-template.csv', [head.map(cell).join(','), ex.map(cell).join(',')].join('\r\n'));
     });
@@ -1283,8 +1375,8 @@
             key: '<WMS key>',
             args: [[{
                 orderNumber: 'DN2611190307', customer: 'Acme Corp', releasedAt: '2026-11-24T22:05:00Z',
-                cartons: 1200, pallets: 16, refType: 'ARN#', reference: 'ARN-88921', orderType: 'LTL',
-                carrier: 'Saia', scac: 'SAIA', proBol: '', shipDate: '2026-11-26', destination: 'Phoenix, AZ', notes: ''
+                cartons: 1200, pallets: 16, picker: 'Jose M.', refType: 'ARN#', reference: 'ARN-88921', orderType: 'LTL',
+                carrier: 'Saia', scac: 'SAIA', proBol: '', vrid: '115XYZ7AB', shipDate: '2026-11-26', destination: 'Phoenix, AZ', notes: ''
             }], { mode: 'upsert', source: 'WMS API' }]
         };
         const fieldRows = FIELDS.map(f => `<tr><td class="mono">${f.key}</td><td>${esc(f.label)}</td><td>${
@@ -1298,20 +1390,20 @@
                 <dt>Key</dt><dd>Script Property <span class="mono">${esc((s && s.apiKeyProperty) || (wh === 'CHINO' ? 'WMS_API_KEY_CHINO' : 'WMS_API_KEY'))}</span> in Apps Script → Project Settings. ${s && s.apiKeySet ? 'It is set.' : 'Not set yet — add a long random value and give it only to whoever runs the WMS connection.'} The key can only add/update and list orders; it cannot change the staging board or sign in to the portal.</dd>
                 <dt>Limits</dt><dd>Up to 2,000 orders per request. Send changed orders every 5–15 minutes rather than every second.</dd>
             </dl>
-            <h3 style="margin:18px 0 8px">Send orders</h3>
+            <h3 class="sec">Send orders</h3>
             <pre>${esc(JSON.stringify(example, null, 2))}</pre>
             <p class="sub2" style="margin-top:6px">Answer: <span class="mono">{"ok":true,"inserted":1,"updated":0,"skipped":0,"errors":[]}</span>. Each problem row is listed in <span class="mono">errors</span> with its <span class="mono">orderNumber</span> and the reason; the other rows are still saved.</p>
-            <h3 style="margin:18px 0 8px">Example with curl</h3>
+            <h3 class="sec">Example with curl</h3>
             <pre>curl -L -X POST '${esc(CLOUD_API_URL)}' \\
   -H 'Content-Type: text/plain' \\
   --data '{"fn":"upsertOrders","warehouse":"${esc(wh)}","key":"&lt;WMS key&gt;","args":[[{"orderNumber":"DN2611190307","customer":"Acme Corp","pallets":16}],{"source":"WMS API"}]}'</pre>
             <p class="sub2" style="margin-top:6px">Google answers with a redirect, so the client must follow redirects (<span class="mono">-L</span> in curl).</p>
-            <h3 style="margin:18px 0 8px">Read orders back</h3>
+            <h3 class="sec">Read orders back</h3>
             <pre>${esc(JSON.stringify({ fn: 'listOrders', warehouse: wh, key: '<WMS key>', args: [{ since: '2026-11-24T00:00:00Z' }] }, null, 2))}</pre>
             <p class="sub2" style="margin-top:6px"><span class="mono">since</span> returns orders changed after that time; <span class="mono">days</span> (default 30, 0 = all) limits by release date.</p>
-            <h3 style="margin:18px 0 8px">Fields</h3>
+            <h3 class="sec">Fields</h3>
             <div class="table-wrap"><table class="api-fields"><thead><tr><th>Field</th><th>Portal name</th><th>Format</th></tr></thead><tbody>${fieldRows}</tbody></table></div>
-            <h3 style="margin:18px 0 8px">Pulling from the WMS instead</h3>
+            <h3 class="sec">Pulling from the WMS instead</h3>
             <p style="line-height:1.55">If the WMS offers its own API, the Apps Script can fetch new orders on a timer (e.g. every 10 minutes) and save them the same way. That needs the WMS's API address, sign-in method and order fields — send those over and the scheduled pull can be added without changing this portal.</p>`;
     }
 

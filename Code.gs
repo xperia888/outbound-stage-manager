@@ -368,11 +368,14 @@ const ORDER_FIELDS_ = [
   { key: 'source', header: 'Source', type: 'text' },
   { key: 'enteredBy', header: 'Entered By', type: 'text' },
   { key: 'createdAt', header: 'Created', type: 'datetime' },
-  { key: 'updatedAt', header: 'Updated', type: 'datetime' }
+  { key: 'updatedAt', header: 'Updated', type: 'datetime' },
+  // Added later: kept at the end so rows already in the sheet stay lined up
+  { key: 'picker', header: 'Picker', type: 'text' },
+  { key: 'vrid', header: 'VRID', type: 'text' }
 ];
 /** Fields a person or the WMS may set (the rest are kept by the server). */
 const ORDER_INPUT_KEYS_ = ['customer', 'releasedAt', 'cartons', 'pallets', 'refType', 'reference', 'orderType',
-  'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes', 'enteredBy'];
+  'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes', 'enteredBy', 'picker', 'vrid'];
 const ORDER_STATUSES_ = ['Released', 'Cancelled'];
 const ORDERS_MAX_BATCH_ = 2000;
 
@@ -388,6 +391,13 @@ function getOrdersSheet_() {
     sheet = ss.insertSheet(ACTIVE_WH_.ordersSheet);
     sheet.getRange(1, 1, 1, ORDER_FIELDS_.length).setValues([ORDER_FIELDS_.map(f => f.header)]).setFontWeight('bold');
     sheet.setFrozenRows(1);
+  } else {
+    // A tab made before new columns were added: add the missing headers at the end
+    const head = sheet.getRange(1, 1, 1, ORDER_FIELDS_.length).getValues()[0];
+    const missing = ORDER_FIELDS_.some((f, i) => String(head[i] || '') !== f.header);
+    if (missing) {
+      sheet.getRange(1, 1, 1, ORDER_FIELDS_.length).setValues([ORDER_FIELDS_.map(f => f.header)]).setFontWeight('bold');
+    }
   }
   return sheet;
 }

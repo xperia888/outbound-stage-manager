@@ -83,12 +83,13 @@ Customer service releases orders to the warehouse here: https://xperia888.github
   - Order # (must match what the floor scans)
   - Customer
   - Released-to-warehouse time (defaults to now)
-  - Cartons and expected pallets
+  - Cartons, expected pallets and picker
   - Reference type + reference (ARN#, Repack, PO#…)
   - Order type
-  - Carrier, SCAC, PRO/BOL, ship/appointment date
+  - Carrier, SCAC, PRO/BOL, VRID, ship/appointment date
   - Destination, notes
   - Status, source, entered by, created/updated (kept by the server)
+  - Picker and VRID are the last two columns of the Orders tab; older tabs get them added automatically
 - **Order list:** shows each order's floor progress, read from the staging board (read only): waiting, partly staged, staged, at dock, or shipped, with lanes and counts. You can search, filter and export to CSV.
 - **Cancel:** marks the row Cancelled. Rows are never deleted, so there's always a history, and a cancelled order can be restored.
 - **Import from WMS:** load a CSV/TSV or Excel export.

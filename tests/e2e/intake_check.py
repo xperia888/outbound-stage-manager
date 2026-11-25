@@ -46,13 +46,13 @@ threading.Thread(target=site.serve_forever, daemon=True).start()
 # Files a WMS might export (odd column names on purpose)
 csv_path = os.path.join(OUT, 'wms_export.csv')
 with open(csv_path, 'w', newline='') as f:
-    f.write('﻿Delivery No,Ship To Name,Ctns,Plts,ARN,Ship Via,Created Date,Remarks\r\n'
-            'dn-imp-1,"Globex, Inc.",120,6,ARN-1001,Saia,11/24/2026 9:15 AM,\r\n'
-            'DN-IMP-2,Initech,80,4,ARN-1002,Estes Express,11/24/2026 10:40 AM,"Call ""before"" pickup"\r\n'
-            'DN-E2E-1,,,7,,,,\r\n'                      # existing order: only pallets changes
-            'DN-IMP-3,Umbrella,ten,2,ARN-1003,UPS,11/24/2026 11:00 AM,\r\n'  # bad cartons
-            'DN-IMP-1,Globex,1,1,,,,\r\n'                # duplicate in file
-            ',No Number Co,1,1,,,,\r\n')
+    f.write('﻿Delivery No,Ship To Name,Ctns,Plts,ARN,Ship Via,Created Date,Remarks,Picked By,VRID\r\n'
+            'dn-imp-1,"Globex, Inc.",120,6,ARN-1001,Saia,11/24/2026 9:15 AM,,Maria,vr-001\r\n'
+            'DN-IMP-2,Initech,80,4,ARN-1002,Estes Express,11/24/2026 10:40 AM,"Call ""before"" pickup",,\r\n'
+            'DN-E2E-1,,,7,,,,,,\r\n'                      # existing order: only pallets changes
+            'DN-IMP-3,Umbrella,ten,2,ARN-1003,UPS,11/24/2026 11:00 AM,,,\r\n'  # bad cartons
+            'DN-IMP-1,Globex,1,1,,,,,,\r\n'                # duplicate in file
+            ',No Number Co,1,1,,,,,,\r\n')
 xlsx_path = os.path.join(OUT, 'wms_export.xlsx')
 wb = openpyxl.Workbook(); ws = wb.active
 ws.append(['Order Number', 'Customer', 'Cartons', 'Pallets', 'PO', 'Carrier', 'Release Date'])
@@ -102,12 +102,14 @@ async def main():
         await pg.select_option('#f-refType', 'ARN#'); await pg.fill('#f-reference', 'ARN-0001')
         await pg.fill('#f-carrier', 'Saia'); await pg.fill('#f-scac', 'saia'); await pg.fill('#f-shipDate', '2026-11-26')
         await pg.fill('#f-destination', 'Phoenix, AZ')
+        await pg.fill('#f-picker', 'Jose M.'); await pg.fill('#f-vrid', '115xyz7ab')
         await pg.screenshot(path=f'{OUT}/intake_form.png', full_page=True)
         await pg.click('#save-btn'); await pg.wait_for_timeout(1500)
         rows = orders_rows()
         o = next((x for x in rows if x.get('Order #') == 'DN-E2E-1'), {})
         record('new order saved to the Orders tab', o.get('Customer') == 'Acme Corp' and o.get('Pallets') == 6 and o.get('Reference Type') == 'ARN#'
-               and o.get('SCAC') == 'SAIA' and o.get('Entered By') == 'Amy' and o.get('Source') == 'Manual' and o.get('Status') == 'Released', o)
+               and o.get('SCAC') == 'SAIA' and o.get('Entered By') == 'Amy' and o.get('Source') == 'Manual' and o.get('Status') == 'Released'
+               and o.get('Picker') == 'Jose M.' and o.get('VRID') == '115XYZ7AB', o)
         record('release time filled in', bool(o.get('Released to Warehouse')))
         row_text = await pg.text_content('tr[data-order="DN-E2E-1"]') or ''
         record('list shows floor progress from the board (At D3, 4/6)', 'At D3' in row_text and '4/6' in row_text, row_text)
@@ -152,15 +154,21 @@ async def main():
 
         # --- CSV import -------------------------------------------------------------------------
         await pg.click('#tabs button[data-view="import"]')
+        await pg.screenshot(path=f'{OUT}/intake_import_start.png')
         await pg.set_input_files('#imp-file', csv_path); await pg.wait_for_timeout(500)
         mapped = await pg.evaluate("Object.fromEntries([...document.querySelectorAll('select[data-map]')].map(s => [s.dataset.map, s.value === '' ? '' : s.options[s.selectedIndex].text]))")
-        want = {'orderNumber': 'Delivery No', 'customer': 'Ship To Name', 'cartons': 'Ctns', 'pallets': 'Plts', 'reference': 'ARN', 'carrier': 'Ship Via', 'releasedAt': 'Created Date', 'notes': 'Remarks'}
+        want = {'orderNumber': 'Delivery No', 'customer': 'Ship To Name', 'cartons': 'Ctns', 'pallets': 'Plts', 'reference': 'ARN', 'carrier': 'Ship Via', 'releasedAt': 'Created Date', 'notes': 'Remarks', 'picker': 'Picked By', 'vrid': 'VRID'}
         record('columns matched from WMS header names', all(mapped.get(k) == v for k, v in want.items()), mapped)
         await pg.fill('input[data-default="refType"]', 'ARN#')
         await pg.screenshot(path=f'{OUT}/intake_import_map.png', full_page=True)
+        await pg.set_viewport_size({'width': 1280, 'height': 900})
+        await pg.screenshot(path=f'{OUT}/intake_import_map_1280.png', full_page=True)
+        await pg.set_viewport_size({'width': 1024, 'height': 800})
+        await pg.screenshot(path=f'{OUT}/intake_import_map_1024.png', full_page=True)
+        await pg.set_viewport_size({'width': 1440, 'height': 900})
         await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(300)
-        counts = await pg.text_content('#imp-counts')
-        record('preview: 2 new, 1 update, 3 problems', '2 new' in counts and '1 update' in counts and '3 with problems' in counts, counts)
+        counts = await pg.get_attribute('#imp-counts', 'data-summary') or ''
+        record('preview: 2 new, 1 update, 3 problems', counts == '2 new · 1 update · 0 skip · 3 with problems', counts)
         await pg.screenshot(path=f'{OUT}/intake_import_preview.png', full_page=True)
         await pg.click('#imp-go-btn'); await pg.wait_for_timeout(2000)
         res = await pg.text_content('#imp-result')
@@ -168,7 +176,8 @@ async def main():
         rows = {x['Order #']: x for x in orders_rows()}
         g = rows.get('DN-IMP-1', {})
         record('imported order saved with mapped fields', g.get('Customer') == 'Globex, Inc.' and g.get('Cartons') == 120 and g.get('Pallets') == 6
-               and g.get('Reference') == 'ARN-1001' and g.get('Reference Type') == 'ARN#' and g.get('Source') == 'WMS import', g)
+               and g.get('Reference') == 'ARN-1001' and g.get('Reference Type') == 'ARN#' and g.get('Source') == 'WMS import'
+               and g.get('Picker') == 'Maria' and g.get('VRID') == 'VR-001', g)
         record('quoted CSV text kept', rows.get('DN-IMP-2', {}).get('Notes') == 'Call "before" pickup', rows.get('DN-IMP-2'))
         e1 = rows.get('DN-E2E-1', {})
         record('import update changes only columns that have values', e1.get('Pallets') == 7 and e1.get('Customer') == 'Acme Corp' and e1.get('Cartons') == 250, e1)
@@ -239,6 +248,11 @@ async def main():
         await pp.screenshot(path=f'{OUT}/intake_phone.png', full_page=False)
         await pp.click('#new-btn'); await pp.wait_for_timeout(200)
         await pp.screenshot(path=f'{OUT}/intake_phone_form.png', full_page=False)
+        await pp.click('#tabs button[data-view="import"]'); await pp.wait_for_timeout(200)
+        await pp.set_input_files('#imp-file', csv_path); await pp.wait_for_timeout(600)
+        await pp.screenshot(path=f'{OUT}/intake_phone_import.png', full_page=True)
+        ov = await pp.evaluate("document.documentElement.scrollWidth - innerWidth")
+        record('phone: import matching fits the screen', ov <= 0, ov)
         await b.close()
 
 try:
