@@ -846,6 +846,26 @@ test('orders: upsert adds, updates only the fields sent, validates, and keeps hi
     assert.equal(call('upsertOrders', [[{ orderNumber: 'A', customer: 'x' }, { orderNumber: 'a', customer: 'y' }]]).errors[0].error.startsWith('Order # appears twice'), true);
 });
 
+test('orders: Picker and VRID are saved; an older Orders tab gets the new headers added at the end', () => {
+    const { ctx, sheets } = intakeGs();
+    const call = (fn, args) => JSON.parse(JSON.stringify(ctx.api({ fn, key: 'cs-1', args })));
+    // An Orders tab created before Picker/VRID existed (19 columns)
+    const oldHeaders = ['Order #', 'Customer', 'Released to Warehouse', 'Cartons', 'Pallets', 'Reference Type', 'Reference', 'Order Type',
+        'Carrier', 'SCAC', 'PRO / BOL', 'Ship / Appt Date', 'Destination', 'Notes', 'Status', 'Source', 'Entered By', 'Created', 'Updated'];
+    const ss = ctx.SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.insertSheet('Orders');
+    sheet.getRange(1, 1, 1, oldHeaders.length).setValues([oldHeaders]);
+    sheet.getRange(2, 1, 1, oldHeaders.length).setValues([['OLD-1', 'Old Co', '', 3, 2, '', '', '', 'Saia', '', '', '', '', '', 'Released', 'Manual', '', '', '']]);
+    const r = call('upsertOrders', [[{ orderNumber: 'NEW-1', customer: 'New Co', picker: 'Jose', vrid: '115XYZ7AB' }, { orderNumber: 'OLD-1', vrid: 'VR-9' }]]);
+    assert.deepEqual([r.inserted, r.updated], [1, 1]);
+    const rows = sheets.get('Orders').rows;
+    assert.deepEqual(rows[0].slice(-2), ['Picker', 'VRID']);
+    assert.equal(rows[1][8], 'Saia', 'old row stays lined up');
+    const list = call('listOrders', [{ days: 0 }]).orders;
+    assert.equal(list.find(o => o.orderNumber === 'NEW-1').picker, 'Jose');
+    assert.equal(list.find(o => o.orderNumber === 'OLD-1').vrid, 'VR-9');
+});
+
 test('orders: progress counts staged, at dock and shipped pallets per order from the board', () => {
     const { ctx } = intakeGs();
     const state = {
