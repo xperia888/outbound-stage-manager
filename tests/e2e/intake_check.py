@@ -2,7 +2,7 @@
 in-memory sheet. Seeds a staging board so floor progress shows, then: CS sign-in, new order,
 edit, cancel/restore, CSV and Excel import with column matching, WMS API push, API page,
 phone layout. Screenshots go to out/intake_*.png. Exit code 1 if any check fails."""
-import asyncio, functools, http.server, threading, json, subprocess, time, urllib.request, os, sys
+import asyncio, re, functools, http.server, threading, json, subprocess, time, urllib.request, os, sys
 from playwright.async_api import async_playwright
 import openpyxl
 
@@ -53,6 +53,9 @@ with open(csv_path, 'w', newline='') as f:
             'DN-IMP-3,Umbrella,ten,2,ARN-1003,UPS,11/24/2026 11:00 AM,,,,\r\n'  # bad cartons
             'DN-IMP-1,Globex,1,1,,,,,,,\r\n'                # duplicate in file
             ',No Number Co,1,1,,,,,,,\r\n')
+split_path = os.path.join(OUT, 'split_release.csv')
+with open(split_path, 'w', newline='') as f:
+    f.write('Order,Customer,Carrier,Release Date,Release Time\r\nDN-SPLIT-1,Split Co,UPS,11/23/2026,3:45 PM\r\nDN-SPLIT-2,Split Co,UPS,2026-11-23,1405\r\nDN-SPLIT-3,Split Co,UPS,11/23/2026,25:99\r\n')
 xlsx_path = os.path.join(OUT, 'wms_export.xlsx')
 wb = openpyxl.Workbook(); ws = wb.active
 ws.append(['Order Number', 'Customer', 'Cartons', 'Pallets', 'PO', 'Carrier', 'Release Date'])
@@ -90,6 +93,10 @@ def orders_rows():
     head = rows[0] if rows else []
     return [dict(zip(head, r)) for r in rows[1:]]
 
+async def local_iso(page, local):
+    """The UTC ISO time (to the minute) of a local date-time in the browser's time zone."""
+    return (await page.evaluate("s => new Date(s).toISOString()", local))[:16]
+
 async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox'])
@@ -114,6 +121,8 @@ async def main():
 
         # --- New order --------------------------------------------------------------------------
         await pg.click('#new-btn'); await pg.wait_for_timeout(200)
+        rel0 = (await pg.input_value('#f-releaseDate'), await pg.input_value('#f-releaseTime'))
+        record('new order: release date and time are two fields, both start at now', bool(re.fullmatch(r'\d{4}-\d{2}-\d{2}', rel0[0])) and bool(re.fullmatch(r'\d{2}:\d{2}', rel0[1])), rel0)
         await pg.click('#save-btn'); await pg.wait_for_timeout(200)
         record('form requires Order # and customer', 'required' in (await pg.text_content('#form-error') or ''))
         await pg.fill('#f-orderNumber', 'dn-e2e-1'); await pg.fill('#f-customer', 'Acme Corp')
@@ -122,6 +131,10 @@ async def main():
         await pg.fill('#f-carrier', 'Saia'); await pg.fill('#f-scac', 'saia'); await pg.fill('#f-shipDate', '2026-11-26'); await pg.fill('#f-readyDate', '2026-11-25')
         await pg.fill('#f-destination', 'Phoenix, AZ')
         await pg.fill('#f-picker', 'Jose M.'); await pg.fill('#f-vrid', '115xyz7ab')
+        await pg.fill('#f-releaseDate', '2026-11-24'); await pg.fill('#f-releaseTime', '')
+        await pg.click('#save-btn'); await pg.wait_for_timeout(200)
+        record('a release date without a time is refused', 'Enter the release time' in (await pg.text_content('#form-error') or ''))
+        await pg.fill('#f-releaseTime', '14:05')
         await pg.screenshot(path=f'{OUT}/intake_form.png', full_page=True)
         await pg.click('#save-btn'); await pg.wait_for_timeout(1500)
         rows = orders_rows()
@@ -129,7 +142,11 @@ async def main():
         record('new order saved to the Orders tab', o.get('Customer') == 'Acme Corp' and o.get('Pallets') == 6 and o.get('Reference Type') == 'ARN#'
                and o.get('SCAC') == 'SAIA' and o.get('Entered By') == 'Amy' and o.get('Source') == 'Manual' and o.get('Status') == 'Released'
                and o.get('Picker') == 'Jose M.' and o.get('VRID') == '115XYZ7AB' and o.get('Order Ready Date') == '2026-11-25', o)
-        record('release time filled in', bool(o.get('Released to Warehouse')))
+        record('release date + time saved as one release time', str(o.get('Released to Warehouse', '')).startswith(await local_iso(pg, '2026-11-24T14:05')), o.get('Released to Warehouse'))
+        await pg.click('tr[data-order="DN-E2E-1"]'); await pg.wait_for_timeout(200)
+        back = (await pg.input_value('#f-releaseDate'), await pg.input_value('#f-releaseTime'))
+        record('editing shows the saved release date and time', back == ('2026-11-24', '14:05'), back)
+        await pg.click('#form-close-btn'); await pg.wait_for_timeout(150)
         row_text = await pg.text_content('tr[data-order="DN-E2E-1"]') or ''
         record('list shows floor progress from the board (At D3, 4/6)', 'At D3' in row_text and '4/6' in row_text, row_text)
         lane_cell = await pg.evaluate("[...document.querySelectorAll('tr[data-order=\"DN-E2E-1\"] .lane-chip')].map(e => e.textContent).join(',')")
@@ -185,7 +202,7 @@ async def main():
         await pg.set_input_files('#imp-file', csv_path); await pg.wait_for_timeout(500)
         MAPPED = "Object.fromEntries(Object.entries(imp.mapping).map(([k, v]) => [k, v.map(i => imp.headers[i]).join(' + ')]))"
         mapped = await pg.evaluate(MAPPED)
-        want = {'orderNumber': 'Delivery No', 'customer': 'Ship To Name', 'cartons': 'Ctns', 'pallets': 'Plts', 'reference': 'ARN', 'carrier': 'Ship Via', 'releasedAt': 'Created Date', 'notes': 'Remarks', 'picker': 'Picked By', 'vrid': 'VRID', 'readyDate': 'Order Ready'}
+        want = {'orderNumber': 'Delivery No', 'customer': 'Ship To Name', 'cartons': 'Ctns', 'pallets': 'Plts', 'reference': 'ARN', 'carrier': 'Ship Via', 'releaseDate': 'Created Date', 'notes': 'Remarks', 'picker': 'Picked By', 'vrid': 'VRID', 'readyDate': 'Order Ready'}
         record('columns matched from WMS header names', all(mapped.get(k) == v for k, v in want.items()), mapped)
         await pg.fill('input[data-default="refType"]', 'ARN#')
         await pg.screenshot(path=f'{OUT}/intake_import_map.png', full_page=True)
@@ -229,6 +246,21 @@ async def main():
         x = {r['Order #']: r for r in orders_rows()}.get('DN-XL-1', {})
         record('Excel order saved (dates and numbers)', x.get('Customer') == 'Stark Industries' and x.get('Pallets') == 12 and x.get('Reference') == 'PO-77'
                and x.get('Reference Type') == 'PO#' and str(x.get('Released to Warehouse', '')).startswith('2026-11-24'), x)
+
+        # --- Release date and release time in two columns --------------------------------------
+        await pg.click('#imp-back-btn'); await pg.wait_for_timeout(150)
+        await pg.click('#imp-change-file')
+        await pg.set_input_files('#imp-file', split_path); await pg.wait_for_timeout(800)
+        mapped = await pg.evaluate(MAPPED)
+        record('separate Release Date / Release Time columns match their own fields', mapped.get('releaseDate') == 'Release Date' and mapped.get('releaseTime') == 'Release Time', mapped)
+        await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(300)
+        counts = await pg.get_attribute('#imp-counts', 'data-summary') or ''
+        record('a bad release time is flagged', counts.startswith('2 new') and '1 with problems' in counts, counts)
+        await pg.click('#imp-go-btn'); await pg.wait_for_timeout(1800)
+        rows = {r['Order #']: r for r in orders_rows()}
+        record('date + time columns combined (3:45 PM; 1405)', str(rows.get('DN-SPLIT-1', {}).get('Released to Warehouse', '')).startswith(await local_iso(pg, '2026-11-23T15:45'))
+               and str(rows.get('DN-SPLIT-2', {}).get('Released to Warehouse', '')).startswith(await local_iso(pg, '2026-11-23T14:05')) and 'DN-SPLIT-3' not in rows,
+               (rows.get('DN-SPLIT-1', {}).get('Released to Warehouse'), rows.get('DN-SPLIT-2', {}).get('Released to Warehouse')))
 
         # --- Any Excel layout: drag-and-match, combine, save as template ------------------------
         await pg.click('#imp-back-btn'); await pg.wait_for_timeout(150)
