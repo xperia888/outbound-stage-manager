@@ -48,9 +48,9 @@ WAREHOUSES_.TEST.templatesSheet = 'Import Templates TEST';
 /** What each kind of key may call. */
 const ROLE_FUNCTIONS_ = {
   floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
-    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate'],
+    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData'],
   cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
-    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate'],
+    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData'],
   api: ['listOrders', 'upsertOrders']
 };
 let ACTIVE_WH_ = WAREHOUSES_.ONT; // set per request by api(); each request runs on its own
@@ -160,6 +160,7 @@ function runRequest_(req, role) {
     case 'listImportTemplates': return listImportTemplates_();
     case 'saveImportTemplate': return saveImportTemplate_(args[0], args[1], args[2]);
     case 'deleteImportTemplate': return deleteImportTemplate_(args[0]);
+    case 'reportData': return reportData_(args[0]);
     default: return { ok: false, error: 'Unknown request: ' + req.fn };
   }
 }
@@ -834,5 +835,134 @@ function deleteImportTemplate_(name) {
     return { ok: false, error: String(err) };
   } finally {
     lock.releaseLock();
+  }
+}
+
+
+// =====================================================================================
+// Reports: intake orders + the Scan Log (every scan / move / dock / ship) + the live board
+// =====================================================================================
+const REPORT_MAX_LOG_ROWS_ = 60000;
+
+/**
+ * options: { from, to } ISO times (the page sends its own local day boundaries).
+ * Returns per-order floor history from the Scan Log, activity counts inside the range,
+ * the intake orders that matter for the range, and floor orders that are not in intake.
+ */
+function reportData_(options) {
+  try {
+    const opts = options || {};
+    const fromMs = Date.parse(String(opts.from || '')) || 0;
+    const toMs = Date.parse(String(opts.to || '')) || Date.now();
+    if (toMs <= fromMs) return { ok: false, error: 'The end of the range must be after the start' };
+
+    // --- Scan Log → per order
+    const floor = {};
+    const activity = { SCAN: 0, MOVE: 0, CONSOLIDATE: 0, DOCK: 0, SHIP: 0, REMOVE: 0 };
+    const hourly = {};
+    const get = ord => (floor[ord] = floor[ord] || {
+      firstScanAt: null, lastScanAt: null, firstDockAt: null, firstShipAt: null, lastShipAt: null,
+      scanned: {}, shipped: {}, removed: {}, lanes: {}, docks: {},
+      scannedInRange: 0, shippedInRange: 0, carrier: ''
+    });
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const logSheet = ss.getSheetByName(ACTIVE_WH_.scanLogSheet);
+    if (logSheet && logSheet.getLastRow() > 1) {
+      const last = logSheet.getLastRow();
+      const start = Math.max(2, last - REPORT_MAX_LOG_ROWS_ + 1);
+      const rows = logSheet.getRange(start, 1, last - start + 1, SCAN_LOG_HEADERS.length).getValues();
+      rows.forEach(r => {
+        const t = r[0] instanceof Date ? r[0].getTime() : Date.parse(String(r[0] || ''));
+        const action = String(r[1] || '').toUpperCase();
+        const slp = String(r[2] || '');
+        const ord = normalizeOrderNumber_(r[3]);
+        if (!t || !ord) return;
+        const e = get(ord);
+        const inRange = t >= fromMs && t < toMs;
+        if (inRange && activity[action] != null) {
+          activity[action]++;
+          const h = new Date(t).getHours();
+          hourly[h] = hourly[h] || { SCAN: 0, SHIP: 0 };
+          if (action === 'SCAN' || action === 'SHIP') hourly[h][action]++;
+        }
+        if (r[7] && !e.carrier) e.carrier = String(r[7]);
+        if (action === 'SCAN') {
+          e.scanned[slp] = true;
+          if (!e.firstScanAt || t < e.firstScanAt) e.firstScanAt = t;
+          if (!e.lastScanAt || t > e.lastScanAt) e.lastScanAt = t;
+          if (r[5]) e.lanes[String(r[5])] = true;
+          if (inRange) e.scannedInRange++;
+        } else if (action === 'MOVE' || action === 'CONSOLIDATE') {
+          if (r[5]) e.lanes[String(r[5])] = true;
+        } else if (action === 'DOCK') {
+          if (!e.firstDockAt || t < e.firstDockAt) e.firstDockAt = t;
+          if (r[5]) e.docks[String(r[5])] = true;
+        } else if (action === 'SHIP') {
+          e.shipped[slp] = true;
+          if (!e.firstShipAt || t < e.firstShipAt) e.firstShipAt = t;
+          if (!e.lastShipAt || t > e.lastShipAt) e.lastShipAt = t;
+          if (r[9]) e.docks[String(r[9])] = true;
+          if (inRange) e.shippedInRange++;
+        } else if (action === 'REMOVE') {
+          e.removed[slp] = true;
+        }
+      });
+    }
+    const floorOut = {};
+    Object.keys(floor).forEach(ord => {
+      const e = floor[ord];
+      floorOut[ord] = {
+        firstScanAt: e.firstScanAt, lastScanAt: e.lastScanAt, firstDockAt: e.firstDockAt,
+        firstShipAt: e.firstShipAt, lastShipAt: e.lastShipAt,
+        scanned: Object.keys(e.scanned).length, shipped: Object.keys(e.shipped).length, removed: Object.keys(e.removed).length,
+        lanes: Object.keys(e.lanes).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+        docks: Object.keys(e.docks).sort(),
+        scannedInRange: e.scannedInRange, shippedInRange: e.shippedInRange, carrier: e.carrier
+      };
+    });
+
+    // --- Live board
+    let progress = {};
+    const board = loadBoardState_();
+    if (board.ok && board.stateJson) {
+      try { progress = boardProgress_(JSON.parse(board.stateJson)); } catch (e) { progress = {}; }
+    }
+
+    // --- Intake orders that matter: released before the range ends, and either released in the range,
+    //     active in the range, or still open at its end
+    const orders = [];
+    const known = {};
+    const ordersSheet = ss.getSheetByName(ACTIVE_WH_.ordersSheet);
+    if (ordersSheet) {
+      readOrderRows_(ordersSheet).filter(r => normalizeOrderNumber_(r[0])).map(rowToOrder_).forEach(o => {
+        const ord = normalizeOrderNumber_(o.orderNumber);
+        known[ord] = true;
+        const rel = Date.parse(o.releasedAt) || 0;
+        const f = floorOut[ord];
+        const p = progress[ord];
+        const activeInRange = f && (f.scannedInRange || f.shippedInRange);
+        const open = o.status !== 'Cancelled' && (!f || !f.lastShipAt || (p && p.staged > 0)) && rel < toMs;
+        if ((rel >= fromMs && rel < toMs) || activeInRange || open) orders.push(o);
+      });
+    }
+    const floorOnly = Object.keys(Object.assign({}, floorOut, progress)).filter(ord => !known[ord]).map(ord => {
+      const f = floorOut[ord] || {};
+      const p = progress[ord] || {};
+      return {
+        orderNumber: ord, onFloor: p.staged || 0, lanes: (p.lanes && p.lanes.length ? p.lanes : f.lanes) || [],
+        scannedInRange: f.scannedInRange || 0, shippedInRange: f.shippedInRange || 0, lastActivityAt: f.lastShipAt || f.lastScanAt || p.firstStagedAt || null
+      };
+    }).filter(x => x.onFloor || x.scannedInRange || x.shippedInRange);
+
+    // Send only what the report needs
+    const wanted = {};
+    orders.forEach(o => { wanted[normalizeOrderNumber_(o.orderNumber)] = true; });
+    floorOnly.forEach(x => { wanted[x.orderNumber] = true; });
+    const pick = src => { const out = {}; Object.keys(src).forEach(k => { if (wanted[k]) out[k] = src[k]; }); return out; };
+
+    return { ok: true, from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString(), generatedAt: new Date().toISOString(),
+      orders: orders, floor: pick(floorOut), progress: pick(progress), activity: activity, hourly: hourly, floorOnly: floorOnly };
+  } catch (err) {
+    return { ok: false, error: String(err) };
   }
 }

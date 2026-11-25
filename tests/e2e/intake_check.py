@@ -325,6 +325,40 @@ async def main():
                and 'wms-e2e' not in api_text)
         await pg.screenshot(path=f'{OUT}/intake_api.png', full_page=True)
 
+        # --- Reports ----------------------------------------------------------------------------
+        tnow = int(time.time() * 1000)
+        evs = [{'id': 'r1', 'time': tnow - 6000, 'action': 'SCAN', 'slp': 'DN-OLD-7-01', 'orderNumber': 'DN-OLD-7', 'toLane': 'S60'},
+               {'id': 'r2', 'time': tnow - 5000, 'action': 'SCAN', 'slp': 'DN-OLD-7-02', 'orderNumber': 'DN-OLD-7', 'toLane': 'S60'},
+               {'id': 'r3', 'time': tnow - 5000, 'action': 'SCAN', 'slp': 'DN-OLD-7-03', 'orderNumber': 'DN-OLD-7', 'toLane': 'S61'},
+               {'id': 'r4', 'time': tnow - 4000, 'action': 'DOCK', 'slp': 'DN-OLD-7-01', 'orderNumber': 'DN-OLD-7', 'toLane': 'DOCK-05'},
+               {'id': 'r5', 'time': tnow - 3000, 'action': 'SHIP', 'slp': 'DN-OLD-7-01', 'orderNumber': 'DN-OLD-7', 'dockNumber': 'DOCK-05'},
+               {'id': 'r6', 'time': tnow - 3000, 'action': 'SHIP', 'slp': 'DN-OLD-7-02', 'orderNumber': 'DN-OLD-7', 'dockNumber': 'DOCK-05'},
+               {'id': 'r7', 'time': tnow - 2000, 'action': 'SHIP', 'slp': 'DN-OLD-7-03', 'orderNumber': 'DN-OLD-7', 'dockNumber': 'DOCK-05'},
+               {'id': 'r8', 'time': tnow - 2000, 'action': 'SCAN', 'slp': 'DN-E2E-1-09', 'orderNumber': 'DN-E2E-1', 'toLane': 'S52'},
+               {'id': 'r9', 'time': tnow - 1000, 'action': 'SCAN', 'slp': 'DN-GHOST-5-01', 'orderNumber': 'DN-GHOST-5', 'toLane': 'W06.74'}]
+        record('seed scan log', req({'fn': 'logScanEvents', 'key': 'ont-e2e', 'warehouse': 'ONT', 'args': [evs]}).get('ok'))
+        await pg.click('#tabs button[data-view="reports"]'); await pg.wait_for_timeout(1800)
+        out = await pg.text_content('#report-out') or ''
+        record('EOD report builds for today', 'End of Day' in out and 'Pallets shipped' in out, out[:200])
+        kp = await pg.evaluate("[...document.querySelectorAll('#report-out .kpi')].map(k => k.querySelector('.t').textContent + '=' + k.querySelector('.n').textContent)")
+        record('EOD totals: 5 staged, 3 shipped, 1 completed', 'Pallets staged=5' in kp and 'Pallets shipped=3' in kp and 'Orders completed=1' in kp, kp)
+        shipped_tbl = await pg.evaluate("[...document.querySelectorAll('#report-out .rep-sec')].find(s => s.textContent.includes('Shipped today'))?.textContent || ''")
+        record('EOD lists the shipped order with dock and lead time', 'DN-OLD-7' in shipped_tbl and 'D5' in shipped_tbl, shipped_tbl[:200])
+        exc = await pg.evaluate("[...document.querySelectorAll('#report-out .rep-sec')].find(s => s.textContent.includes('Exceptions'))?.textContent || ''")
+        record('EOD exceptions include a floor order missing from intake', 'DN-GHOST-5' in exc and 'not in Order Intake' in exc, exc[:200])
+        open_sec = await pg.evaluate("[...document.querySelectorAll('#report-out .rep-sec')].find(s => s.textContent.includes('Open at end of day'))?.textContent || ''")
+        record('EOD open orders include DN-E2E-1 with its lanes', 'DN-E2E-1' in open_sec and 'S51' in open_sec, open_sec[:200])
+        await pg.screenshot(path=f'{OUT}/intake_eod.png', full_page=True)
+        await pg.click('.seg button[data-kind="life"]'); await pg.wait_for_timeout(1800)
+        rows_life = await pg.evaluate("[...document.querySelectorAll('#report-out .rep-sec:last-of-type tbody tr')].map(r => r.textContent)")
+        old7 = next((r for r in rows_life if 'DN-OLD-7' in r), '')
+        record('Lifecycle shows every order with milestones and status', len(rows_life) >= 8 and 'Shipped' in old7 and 'D5' in old7, (len(rows_life), old7[:200]))
+        await pg.screenshot(path=f'{OUT}/intake_lifecycle.png', full_page=True)
+        async with pg.expect_download() as dl:
+            await pg.click('#rep-csv')
+        csv_text = open(await (await dl.value).path(), encoding='utf-8-sig').read()
+        record('Lifecycle CSV export', csv_text.startswith('Order #,Customer') and 'DN-OLD-7' in csv_text and 'Release to shipped (h)' in csv_text, csv_text[:120])
+
         # --- Staging app and board untouched --------------------------------------------------
         st = req({'fn': 'loadBoardState', 'key': 'ont-e2e', 'warehouse': 'ONT'})
         record('staging board unchanged by intake', json.loads(st['stateJson']) == board)

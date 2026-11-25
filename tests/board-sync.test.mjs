@@ -925,6 +925,43 @@ test('orders: stage lanes from the board are written into the Orders tab by Orde
     assert.deepEqual(sheets.get('Orders').rows[0].slice(-5), ['Stage Lanes', 'Dock', 'Pallets On Floor', 'Pallets Shipped', 'Floor Updated']);
 });
 
+test('reports: floor history from the Scan Log per order, activity in range, floor orders missing from intake', () => {
+    const { ctx } = intakeGs();
+    const call = (fn, args, key = 'cs-1') => JSON.parse(JSON.stringify(ctx.api({ fn, key, args })));
+    const day = Date.parse('2026-11-24T08:00:00Z');
+    const H = 3600000;
+    call('upsertOrders', [[
+        { orderNumber: 'DN1', customer: 'Acme', pallets: 2, releasedAt: new Date(day).toISOString() },
+        { orderNumber: 'DN2', customer: 'Beta', pallets: 3, releasedAt: new Date(day + 2 * H).toISOString() },
+        { orderNumber: 'OLD', customer: 'Gone', pallets: 1, releasedAt: new Date(day - 30 * 24 * H).toISOString() }
+    ]]);
+    const ev = (id, h, action, slp, ord, toLane = '', dock = '') => ({ id, time: day + h * H, action, slp, orderNumber: ord, toLane, dockNumber: dock });
+    ctx.api({ fn: 'logScanEvents', key: 'secret-1', args: [[
+        ev('e1', 1, 'SCAN', 'DN1-01', 'DN1', 'S51'), ev('e2', 1, 'SCAN', 'DN1-02', 'DN1', 'S51'),
+        ev('e3', 3, 'MOVE', 'DN1-02', 'DN1', 'S52'), ev('e4', 4, 'DOCK', 'DN1-01', 'DN1', 'DOCK-03'),
+        ev('e5', 5, 'SHIP', 'DN1-01', 'DN1', '', 'DOCK-03'), ev('e6', 5.5, 'SHIP', 'DN1-02', 'DN1', '', 'DOCK-03'),
+        ev('e7', 6, 'SCAN', 'DN2-01', 'DN2', 'S53'),
+        ev('e8', 6, 'SCAN', 'X-01', 'DN9', 'W06.74'),
+        ev('e9', -48, 'SCAN', 'OLD-01', 'OLD', 'S60'), ev('e10', -47, 'SHIP', 'OLD-01', 'OLD')
+    ]] });
+    ctx.api({ fn: 'saveBoardState', key: 'secret-1', args: [JSON.stringify({ columns: [{ id: 'c', name: 'S53' }, { id: 'w', name: 'W06.74' }],
+        pallets: [{ id: 'a', orderNumber: 'DN2', columnId: 'c' }, { id: 'b', orderNumber: 'DN9', columnId: 'w' }] }), null] });
+
+    const r = call('reportData', [{ from: new Date(day).toISOString(), to: new Date(day + 24 * H).toISOString() }]);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.orders.map(o => o.orderNumber).sort(), ['DN1', 'DN2'], 'old shipped order left out');
+    const f = r.floor.DN1;
+    assert.deepEqual([f.scanned, f.shipped, f.firstScanAt, f.firstDockAt, f.lastShipAt], [2, 2, day + H, day + 4 * H, day + 5.5 * H]);
+    assert.deepEqual(f.lanes, ['S51', 'S52']);
+    assert.deepEqual(f.docks, ['DOCK-03']);
+    assert.equal(r.activity.SCAN, 4);
+    assert.equal(r.activity.SHIP, 2);
+    assert.equal(r.progress.DN2.staged, 1);
+    assert.deepEqual(r.floorOnly.map(x => [x.orderNumber, x.onFloor, x.lanes.join()]), [['DN9', 1, 'W06.74']]);
+    assert.equal(call('reportData', [{ from: '2026-11-25T00:00:00Z', to: '2026-11-24T00:00:00Z' }]).ok, false);
+    assert.equal(call('reportData', [{}], 'wms-key-1').unauthorized, true);
+});
+
 test('orders: progress counts staged, at dock and shipped pallets per order from the board', () => {
     const { ctx } = intakeGs();
     const state = {
