@@ -328,18 +328,15 @@ async def main():
                and 'wms-e2e' not in api_text)
         await pg.screenshot(path=f'{OUT}/intake_api.png', full_page=True)
 
-        # --- Name is required before creating or importing ---------------------------------------
+        # --- Name is entered on the sign-in page only ---------------------------------------------
         await pg.click('#tabs button[data-view="orders"]')
         await pg.evaluate("userName = ''; localStorage.removeItem(INTAKE_USER_KEY); applyWarehouseLabel()")
-        record('header asks for a name when none is set', (await pg.text_content('#user-btn')) == 'Set your name')
         await pg.click('#new-btn'); await pg.wait_for_timeout(200)
-        asked = await pg.is_visible('#prompt') and 'Who is entering orders' in (await pg.text_content('#prompt-title') or '')
-        await pg.click('#prompt-no'); await pg.wait_for_timeout(200)
-        record('+ New Order asks for a name first; cancelling does not open the form', asked and await pg.is_hidden('#view-form'))
+        record('no name: + New Order goes back to the sign-in page, no pop-up', await pg.is_visible('#signin') and await pg.is_hidden('#prompt') and await pg.is_hidden('#view-form'))
+        await pg.fill('#signin-name', 'Amy'); await pg.click('#signin-btn'); await pg.wait_for_timeout(300)
+        record('still signed in: entering just the name is enough', await pg.is_hidden('#signin') and (await pg.text_content('#user-btn')) == 'Amy')
         await pg.click('#tabs button[data-view="import"]'); await pg.wait_for_timeout(200)
-        asked_imp = await pg.is_visible('#prompt')
-        await pg.fill('#prompt-input', 'Amy'); await pg.click('#prompt-yes'); await pg.wait_for_timeout(200)
-        record('Import asks for a name first, then opens', asked_imp and await pg.is_visible('#view-import') and (await pg.text_content('#user-btn')) == 'Amy')
+        record('import opens once a name is set', await pg.is_visible('#view-import'))
         nn = req({'fn': 'upsertOrders', 'key': 'cs-e2e', 'warehouse': 'ONT', 'args': [[{'orderNumber': 'DN-NONAME', 'customer': 'X'}], {}]})
         record('server refuses orders without a name', nn.get('ok') is False and nn.get('needName') is True, nn)
 
@@ -386,6 +383,8 @@ async def main():
         st = req({'fn': 'loadBoardState', 'key': 'ont-e2e', 'warehouse': 'ONT'})
         record('staging board unchanged by intake', json.loads(st['stateJson']) == board)
 
+        await pg.click('#signout-btn'); await pg.wait_for_timeout(150); await pg.click('#confirm-yes'); await pg.wait_for_timeout(300)
+        record('sign out clears the name for the next person', await pg.is_visible('#signin') and await pg.input_value('#signin-name') == '')
         record('no page errors', not errs, errs)
 
         # --- Phone ------------------------------------------------------------------------------

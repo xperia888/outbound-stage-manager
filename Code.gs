@@ -483,7 +483,7 @@ function upsertOrders_(orders, options, role) {
   // People must say who they are (for the reports); the WMS connection may leave it blank
   const batchUser = String(opts.enteredBy == null ? '' : opts.enteredBy).trim().slice(0, 80);
   if (role !== 'api' && !batchUser && list.some(o => !String((o && o.enteredBy) || '').trim())) {
-    return { ok: false, needName: true, error: 'Enter your name before creating or importing orders' };
+    return { ok: false, needName: true, error: 'Name is required' };
   }
 
   const lock = LockService.getScriptLock();
@@ -609,7 +609,7 @@ function setOrderStatus_(orderNumber, status, enteredBy) {
   const st = ORDER_STATUSES_.find(x => x.toLowerCase() === String(status || '').toLowerCase());
   if (!ord) return { ok: false, error: 'Order # is missing' };
   if (!st) return { ok: false, error: 'Status must be Released or Cancelled' };
-  if (!String(enteredBy || '').trim()) return { ok: false, needName: true, error: 'Enter your name before changing orders' };
+  if (!String(enteredBy || '').trim()) return { ok: false, needName: true, error: 'Name is required' };
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { ok: false, error: 'Busy — try again' };
   try {
