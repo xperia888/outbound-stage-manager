@@ -5,7 +5,7 @@ Two devices (separate browser profiles) per warehouse talk to the real Code.gs r
 in fake-apps-script.mjs. Every request the page makes to script.google.com is routed there.
 Usage: python3 run_e2e.py [rounds]
 """
-import asyncio, functools, http.server, json, subprocess, sys, threading, time, urllib.request
+import asyncio, functools, http.server, json, re, subprocess, sys, threading, time, urllib.request
 from pathlib import Path
 from playwright.async_api import async_playwright
 
@@ -469,8 +469,13 @@ async def run_round(browser, wh, rnd, devices):
     carried = await A.evaluate("document.getElementById('quick-doublestack-chk').checked && document.getElementById('quick-pallet-count').value === '16'")
     record(wh, rnd, 'Find Space: "Use Location" carries 2x + pallet count to the quick bar', carried)
     await A.uncheck('#quick-doublestack-chk'); await A.fill('#quick-pallet-count', '')
+    ages = await A.evaluate("[...document.querySelectorAll('.age-badge')].map(e => e.textContent.trim())")
+    fmt_ok = await A.evaluate("[formatAgeDays(Date.now() - 5*60000), formatAgeDays(Date.now() - 5*3600000), formatAgeDays(Date.now() - (3*86400000 + 4*3600000))].join('|')")
+    record(wh, rnd, 'Pallet cards show their age (days once a day old)', len(ages) > 0 and all(re.fullmatch(r'\d+m|\d+h|\d+d \d+h', a) for a in ages) and fmt_ok == '5m|5h|3d 4h', (ages[:5], fmt_ok))
     await A.click('#card-mode-grouped-btn'); await A.wait_for_timeout(200)
     grouped = await state(A, "appState.cardGroupMode")
+    g_ages = await A.evaluate("[...document.querySelectorAll('.age-badge')].map(e => e.textContent.trim())")
+    record(wh, rnd, 'Grouped order cards show the order age', len(g_ages) > 0 and all(a.startswith('Age ') for a in g_ages), g_ages[:5])
     await A.click('#card-mode-pallets-btn'); await A.wait_for_timeout(200)
     record(wh, rnd, 'Grouped / SLPs view toggle', grouped == 'grouped', grouped)
     lm_before = await state(A, "appState.layoutMode")

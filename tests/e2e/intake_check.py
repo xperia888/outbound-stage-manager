@@ -46,13 +46,13 @@ threading.Thread(target=site.serve_forever, daemon=True).start()
 # Files a WMS might export (odd column names on purpose)
 csv_path = os.path.join(OUT, 'wms_export.csv')
 with open(csv_path, 'w', newline='') as f:
-    f.write('﻿Delivery No,Ship To Name,Ctns,Plts,ARN,Ship Via,Created Date,Remarks,Picked By,VRID\r\n'
-            'dn-imp-1,"Globex, Inc.",120,6,ARN-1001,Saia,11/24/2026 9:15 AM,,Maria,vr-001\r\n'
-            'DN-IMP-2,Initech,80,4,ARN-1002,Estes Express,11/24/2026 10:40 AM,"Call ""before"" pickup",,\r\n'
-            'DN-E2E-1,,,7,,,,,,\r\n'                      # existing order: only pallets changes
-            'DN-IMP-3,Umbrella,ten,2,ARN-1003,UPS,11/24/2026 11:00 AM,,,\r\n'  # bad cartons
-            'DN-IMP-1,Globex,1,1,,,,,,\r\n'                # duplicate in file
-            ',No Number Co,1,1,,,,,,\r\n')
+    f.write('﻿Delivery No,Ship To Name,Ctns,Plts,ARN,Ship Via,Created Date,Remarks,Picked By,VRID,Order Ready\r\n'
+            'dn-imp-1,"Globex, Inc.",120,6,ARN-1001,Saia,11/24/2026 9:15 AM,,Maria,vr-001,11/25/2026\r\n'
+            'DN-IMP-2,Initech,80,4,ARN-1002,Estes Express,11/24/2026 10:40 AM,"Call ""before"" pickup",,,\r\n'
+            'DN-E2E-1,,,7,,,,,,,\r\n'                      # existing order: only pallets changes
+            'DN-IMP-3,Umbrella,ten,2,ARN-1003,UPS,11/24/2026 11:00 AM,,,,\r\n'  # bad cartons
+            'DN-IMP-1,Globex,1,1,,,,,,,\r\n'                # duplicate in file
+            ',No Number Co,1,1,,,,,,,\r\n')
 xlsx_path = os.path.join(OUT, 'wms_export.xlsx')
 wb = openpyxl.Workbook(); ws = wb.active
 ws.append(['Order Number', 'Customer', 'Cartons', 'Pallets', 'PO', 'Carrier', 'Release Date'])
@@ -119,7 +119,7 @@ async def main():
         await pg.fill('#f-orderNumber', 'dn-e2e-1'); await pg.fill('#f-customer', 'Acme Corp')
         await pg.select_option('#f-orderType', 'LTL'); await pg.fill('#f-cartons', '240'); await pg.fill('#f-pallets', '6')
         await pg.select_option('#f-refType', 'ARN#'); await pg.fill('#f-reference', 'ARN-0001')
-        await pg.fill('#f-carrier', 'Saia'); await pg.fill('#f-scac', 'saia'); await pg.fill('#f-shipDate', '2026-11-26')
+        await pg.fill('#f-carrier', 'Saia'); await pg.fill('#f-scac', 'saia'); await pg.fill('#f-shipDate', '2026-11-26'); await pg.fill('#f-readyDate', '2026-11-25')
         await pg.fill('#f-destination', 'Phoenix, AZ')
         await pg.fill('#f-picker', 'Jose M.'); await pg.fill('#f-vrid', '115xyz7ab')
         await pg.screenshot(path=f'{OUT}/intake_form.png', full_page=True)
@@ -128,7 +128,7 @@ async def main():
         o = next((x for x in rows if x.get('Order #') == 'DN-E2E-1'), {})
         record('new order saved to the Orders tab', o.get('Customer') == 'Acme Corp' and o.get('Pallets') == 6 and o.get('Reference Type') == 'ARN#'
                and o.get('SCAC') == 'SAIA' and o.get('Entered By') == 'Amy' and o.get('Source') == 'Manual' and o.get('Status') == 'Released'
-               and o.get('Picker') == 'Jose M.' and o.get('VRID') == '115XYZ7AB', o)
+               and o.get('Picker') == 'Jose M.' and o.get('VRID') == '115XYZ7AB' and o.get('Order Ready Date') == '2026-11-25', o)
         record('release time filled in', bool(o.get('Released to Warehouse')))
         row_text = await pg.text_content('tr[data-order="DN-E2E-1"]') or ''
         record('list shows floor progress from the board (At D3, 4/6)', 'At D3' in row_text and '4/6' in row_text, row_text)
@@ -185,7 +185,7 @@ async def main():
         await pg.set_input_files('#imp-file', csv_path); await pg.wait_for_timeout(500)
         MAPPED = "Object.fromEntries(Object.entries(imp.mapping).map(([k, v]) => [k, v.map(i => imp.headers[i]).join(' + ')]))"
         mapped = await pg.evaluate(MAPPED)
-        want = {'orderNumber': 'Delivery No', 'customer': 'Ship To Name', 'cartons': 'Ctns', 'pallets': 'Plts', 'reference': 'ARN', 'carrier': 'Ship Via', 'releasedAt': 'Created Date', 'notes': 'Remarks', 'picker': 'Picked By', 'vrid': 'VRID'}
+        want = {'orderNumber': 'Delivery No', 'customer': 'Ship To Name', 'cartons': 'Ctns', 'pallets': 'Plts', 'reference': 'ARN', 'carrier': 'Ship Via', 'releasedAt': 'Created Date', 'notes': 'Remarks', 'picker': 'Picked By', 'vrid': 'VRID', 'readyDate': 'Order Ready'}
         record('columns matched from WMS header names', all(mapped.get(k) == v for k, v in want.items()), mapped)
         await pg.fill('input[data-default="refType"]', 'ARN#')
         await pg.screenshot(path=f'{OUT}/intake_import_map.png', full_page=True)
@@ -205,7 +205,7 @@ async def main():
         g = rows.get('DN-IMP-1', {})
         record('imported order saved with mapped fields', g.get('Customer') == 'Globex, Inc.' and g.get('Cartons') == 120 and g.get('Pallets') == 6
                and g.get('Reference') == 'ARN-1001' and g.get('Reference Type') == 'ARN#' and g.get('Source') == 'WMS import'
-               and g.get('Picker') == 'Maria' and g.get('VRID') == 'VR-001', g)
+               and g.get('Picker') == 'Maria' and g.get('VRID') == 'VR-001' and g.get('Order Ready Date') == '2026-11-25', g)
         record('quoted CSV text kept', rows.get('DN-IMP-2', {}).get('Notes') == 'Call "before" pickup', rows.get('DN-IMP-2'))
         e1 = rows.get('DN-E2E-1', {})
         record('import update changes only columns that have values', e1.get('Pallets') == 7 and e1.get('Customer') == 'Acme Corp' and e1.get('Cartons') == 250, e1)

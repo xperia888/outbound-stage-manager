@@ -389,11 +389,13 @@ const ORDER_FIELDS_ = [
   { key: 'palletsShipped', header: 'Pallets Shipped', type: 'int' },
   { key: 'floorUpdatedAt', header: 'Floor Updated', type: 'datetime' },
   // Who first entered the order (set once, on create; "Entered By" is whoever saved it last)
-  { key: 'createdBy', header: 'Created By', type: 'text' }
+  { key: 'createdBy', header: 'Created By', type: 'text' },
+  // When the order is picked and ready to stage / ship (YYYY-MM-DD)
+  { key: 'readyDate', header: 'Order Ready Date', type: 'text' }
 ];
 /** Fields a person or the WMS may set (the rest are kept by the server). */
 const ORDER_INPUT_KEYS_ = ['customer', 'releasedAt', 'cartons', 'pallets', 'refType', 'reference', 'orderType',
-  'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes', 'enteredBy', 'picker', 'vrid'];
+  'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes', 'enteredBy', 'picker', 'vrid', 'readyDate'];
 const ORDER_STATUSES_ = ['Released', 'Cancelled'];
 const ORDERS_MAX_BATCH_ = 2000;
 
@@ -467,7 +469,7 @@ function cleanOrderValue_(field, value) {
 /**
  * Adds or updates orders by Order #.
  * orders: [{ orderNumber, customer, releasedAt, cartons, pallets, refType, reference, orderType,
- *            carrier, scac, proBol, shipDate, destination, notes, enteredBy }]
+ *            carrier, scac, proBol, shipDate, readyDate, destination, notes, enteredBy }]
  * options.mode: 'upsert' (default) adds new orders and updates existing ones;
  *               'insertOnly' skips orders that already exist.
  * Only the fields present on an order are changed, so an import that has no Carrier

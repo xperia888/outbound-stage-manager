@@ -3034,6 +3034,26 @@
             return `${days}d`;
         }
 
+        /** Age on the floor for cards: "35m", "5h", then days + hours ("2d 4h") once a pallet is a day old. */
+        function formatAgeDays(timestamp) {
+            if (!timestamp) return '0m';
+            const mins = Math.floor(Math.max(0, Date.now() - Number(timestamp)) / 60000);
+            if (mins < 60) return `${mins}m`;
+            const hours = Math.floor(mins / 60);
+            if (hours < 24) return `${hours}h`;
+            return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+        }
+
+        /** Coloured age pill for a card, by dwell level. */
+        function ageBadgeHtml(level, timestamp, prefix = '') {
+            const cls = level === 'overweek' ? 'bg-purple-700 text-white'
+                : level === 'overdue' ? 'bg-red-600 text-white'
+                    : level === 'warning' ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        : 'bg-white/80 text-slate-600 border border-slate-200';
+            const label = level === 'overweek' ? 'Over a week' : level === 'overdue' ? 'Overdue' : level === 'warning' ? 'Aging' : 'Age';
+            return `<span class="age-badge font-mono-code text-[9px] font-extrabold ${cls} px-1 rounded whitespace-nowrap" title="${label}: on the floor ${formatAgeDays(timestamp)} (since ${escapeHtml(formatDateAndTime(timestamp))})">${prefix}${formatAgeDays(timestamp)}</span>`;
+        }
+
         function formatDateAndTime(timestamp) {
             if (!timestamp) return '';
             const d = new Date(Number(timestamp));
@@ -3323,7 +3343,7 @@
                                 <span class="font-mono-code text-[11px] font-bold bg-slate-100 px-1.5 py-0.2 rounded">${escapeHtml(col ? col.name : 'Unknown')}</span>
                             </div>
                             <div class="text-[11px] text-slate-500">
-                                Age: <strong class="text-slate-800">${formatRelativeAge(p.createdAt)}</strong> (Staged ${formatDateAndTime(p.createdAt)})
+                                Age: <strong class="text-slate-800">${formatAgeDays(p.createdAt)}</strong> (Staged ${formatDateAndTime(p.createdAt)})
                                 ${p.carrier ? ` • ${escapeHtml(p.carrier)}` : ''}
                             </div>
                         </div>
@@ -3636,11 +3656,7 @@
                             ? 'pallet-warning-alert border-amber-500'
                             : (p.doubleStacked ? 'border-cyan-500' : theme.cardBorder);
 
-                const ageBadge = dwell.level === 'overweek'
-                    ? `<span class="font-mono-code text-[9px] font-extrabold bg-purple-700 text-white px-1 rounded">7D+</span>`
-                    : dwell.level === 'overdue'
-                        ? `<span class="font-mono-code text-[9px] font-extrabold bg-red-600 text-white px-1 rounded">DUE</span>`
-                        : `<span class="font-mono-code text-[9px] text-slate-500">${formatRelativeAge(p.createdAt)}</span>`;
+                const ageBadge = ageBadgeHtml(dwell.level, p.createdAt);
 
                 const pairBadgeHtml = pairInfo
                     ? `<span class="font-mono-code text-[9px] font-extrabold ${pairInfo.tier === 'BTM' ? 'bg-cyan-800 text-white' : 'bg-cyan-100 text-cyan-950 border border-cyan-400'} px-1 rounded" title="${pairInfo.isPaired ? `Paired with ${pairInfo.partnerSlp}` : 'Awaiting 2nd pallet for stack'}">${pairInfo.tier} #${pairInfo.pairNum}</span>`
@@ -3735,6 +3751,10 @@
                 const sample = laneSlps[0];
                 const isHighlighted = highlightedOrderNumber && normalizeOrderNumber(highlightedOrderNumber) === ord;
                 const doubleCount = laneSlps.filter(s => s.doubleStacked).length;
+                // Order age = its oldest pallet on the floor (any lane), coloured by that pallet's dwell level
+                const oldestPallet = (orderSlpMap.get(ord) || laneSlps).reduce((a, s) => ((Number(s.createdAt) || Date.now()) < (Number(a.createdAt) || Date.now()) ? s : a));
+                const oldestCreated = Number(oldestPallet.createdAt) || Date.now();
+                const orderAgeLevel = getPalletDwellStatus(oldestPallet).level;
                 const spotsUsed = computeFloorSpotsUsed(laneSlps);
 
                 let worstLevel = 'normal';
@@ -3769,7 +3789,10 @@
                                 ${laneSlps.length}/${totalOrderSlps} SLP (${spotsUsed}sp)
                             </span>
                         </div>
-                        ${doubleCount > 0 ? `<div class="font-mono-code text-[9px] font-extrabold text-cyan-800 bg-cyan-100/80 border border-cyan-300 px-1.5 py-0.2 rounded inline-block">2x Stacked: ${doubleCount} SLP</div>` : ''}
+                        <div class="flex flex-wrap items-center gap-1">
+                            ${ageBadgeHtml(orderAgeLevel, oldestCreated, 'Age ')}
+                            ${doubleCount > 0 ? `<span class="font-mono-code text-[9px] font-extrabold text-cyan-800 bg-cyan-100/80 border border-cyan-300 px-1.5 py-0.2 rounded">2x Stacked: ${doubleCount} SLP</span>` : ''}
+                        </div>
                         ${sample.carrier ? `<div class="text-[10px] font-semibold text-slate-700 truncate">${escapeHtml(sample.carrier)}</div>` : ''}
                         <div class="flex flex-wrap gap-1">
                             ${laneSlps.map(s => {
@@ -6078,7 +6101,7 @@
                                 </div>
                             </div>
                             <div class="text-[11px] text-slate-600">
-                                Carrier: <strong>${escapeHtml(o.carrier || 'Unassigned')}</strong> • Dest: <strong>${escapeHtml(o.destination || '—')}</strong> • Dwell: <strong>${formatRelativeAge(o.oldestCreated)}</strong>
+                                Carrier: <strong>${escapeHtml(o.carrier || 'Unassigned')}</strong> • Dest: <strong>${escapeHtml(o.destination || '—')}</strong> • Age: <strong>${formatAgeDays(o.oldestCreated)}</strong>
                                 ${o.notes ? ` • Notes: <strong>${escapeHtml(o.notes)}</strong>` : ''}
                             </div>
                             <div class="flex flex-wrap gap-1">

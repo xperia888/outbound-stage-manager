@@ -86,10 +86,12 @@ Customer service releases orders to the warehouse here: https://xperia888.github
   - Cartons, expected pallets and picker
   - Reference type + reference (ARN#, Repack, PO#…)
   - Order type
+  - **Order ready date** (when the order is picked and ready); it is matched automatically during import from columns such as "Ready Date" or "Order Ready"
   - Carrier, SCAC, PRO/BOL, VRID, ship/appointment date
   - Destination, notes
   - Status, source, entered by, created/updated (kept by the server)
   - Picker and VRID are the last two columns of the Orders tab; older tabs get them added automatically
+  - **Order Ready Date** is added as the last column of the Orders tab; older tabs get it added automatically
 - **Order list:** shows each order's floor progress, read from the staging board (read only): waiting, partly staged, staged, at dock, or shipped, with lanes and counts. You can search, filter and export to CSV.
 - **Stage lanes from the floor:** orders are matched to the staging board by Order #.
   - The list has a **Stage Lane** column, live from the board; grey chips mean the order's last lanes after it shipped.
@@ -151,6 +153,10 @@ No SLP barcodes are needed. A shipment is an order number plus a number of palle
 - **Pallet labels:** each pallet gets a label from the order number, e.g. `SO-41200-01`, `SO-41200-02`. Numbering carries on when more pallets are added to the same order later.
 - **Lane:** the lane box picks a lane automatically (same order first, then an empty lane), or choose one yourself.
 - **Edit order:** use **Add pallets** to add more to an existing order.
+
+## Pallet age on cards
+
+Each pallet card shows how long that pallet has been on the floor: minutes, then hours, then days + hours (`2d 14h`). The colour follows the dwell alert levels: grey when normal, amber when aging, red when overdue, purple when over a week. In **Grouped** view, each order card shows **Age** = the age of the order's oldest pallet on the floor.
 
 ## Lane capacity
 
