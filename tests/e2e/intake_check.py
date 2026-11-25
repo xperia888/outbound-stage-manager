@@ -102,6 +102,9 @@ async def main():
         # --- Sign in with the CS code -----------------------------------------------------------
         await pg.goto(f'http://127.0.0.1:{SITE_PORT}/intake.html'); await pg.wait_for_timeout(500)
         record('sign-in shows on a new device', await pg.is_visible('#signin'))
+        await pg.fill('#signin-code', 'cs-e2e'); await pg.click('#signin-btn'); await pg.wait_for_timeout(300)
+        record('name is required at sign-in', await pg.is_visible('#signin') and 'Enter your name' in (await pg.text_content('#signin-error') or ''))
+        await pg.fill('#signin-name', 'Amy')
         await pg.fill('#signin-code', 'wms-e2e'); await pg.click('#signin-btn'); await pg.wait_for_timeout(600)
         record('WMS key rejected at sign-in', 'not recognized' in (await pg.text_content('#signin-error') or ''))
         await pg.fill('#signin-code', 'cs-e2e'); await pg.fill('#signin-name', 'Amy'); await pg.click('#signin-btn')
@@ -325,6 +328,21 @@ async def main():
                and 'wms-e2e' not in api_text)
         await pg.screenshot(path=f'{OUT}/intake_api.png', full_page=True)
 
+        # --- Name is required before creating or importing ---------------------------------------
+        await pg.click('#tabs button[data-view="orders"]')
+        await pg.evaluate("userName = ''; localStorage.removeItem(INTAKE_USER_KEY); applyWarehouseLabel()")
+        record('header asks for a name when none is set', (await pg.text_content('#user-btn')) == 'Set your name')
+        await pg.click('#new-btn'); await pg.wait_for_timeout(200)
+        asked = await pg.is_visible('#prompt') and 'Who is entering orders' in (await pg.text_content('#prompt-title') or '')
+        await pg.click('#prompt-no'); await pg.wait_for_timeout(200)
+        record('+ New Order asks for a name first; cancelling does not open the form', asked and await pg.is_hidden('#view-form'))
+        await pg.click('#tabs button[data-view="import"]'); await pg.wait_for_timeout(200)
+        asked_imp = await pg.is_visible('#prompt')
+        await pg.fill('#prompt-input', 'Amy'); await pg.click('#prompt-yes'); await pg.wait_for_timeout(200)
+        record('Import asks for a name first, then opens', asked_imp and await pg.is_visible('#view-import') and (await pg.text_content('#user-btn')) == 'Amy')
+        nn = req({'fn': 'upsertOrders', 'key': 'cs-e2e', 'warehouse': 'ONT', 'args': [[{'orderNumber': 'DN-NONAME', 'customer': 'X'}], {}]})
+        record('server refuses orders without a name', nn.get('ok') is False and nn.get('needName') is True, nn)
+
         # --- Reports ----------------------------------------------------------------------------
         tnow = int(time.time() * 1000)
         evs = [{'id': 'r1', 'time': tnow - 6000, 'action': 'SCAN', 'slp': 'DN-OLD-7-01', 'orderNumber': 'DN-OLD-7', 'toLane': 'S60'},
@@ -348,16 +366,21 @@ async def main():
         record('EOD exceptions include a floor order missing from intake', 'DN-GHOST-5' in exc and 'not in Order Intake' in exc, exc[:200])
         open_sec = await pg.evaluate("[...document.querySelectorAll('#report-out .rep-sec')].find(s => s.textContent.includes('Open at end of day'))?.textContent || ''")
         record('EOD open orders include DN-E2E-1 with its lanes', 'DN-E2E-1' in open_sec and 'S51' in open_sec, open_sec[:200])
+        by_user = await pg.evaluate("[...document.querySelectorAll('#rep-by-user tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim()))")
+        amy = next((r for r in by_user if r[0] == 'Amy'), None)
+        record('EOD By user counts orders each person created', amy is not None and int(amy[1]) >= 3, by_user)
         await pg.screenshot(path=f'{OUT}/intake_eod.png', full_page=True)
         await pg.click('.seg button[data-kind="life"]'); await pg.wait_for_timeout(1800)
         rows_life = await pg.evaluate("[...document.querySelectorAll('#report-out .rep-sec:last-of-type tbody tr')].map(r => r.textContent)")
         old7 = next((r for r in rows_life if 'DN-OLD-7' in r), '')
         record('Lifecycle shows every order with milestones and status', len(rows_life) >= 8 and 'Shipped' in old7 and 'D5' in old7, (len(rows_life), old7[:200]))
+        life_user = await pg.evaluate("[...document.querySelectorAll('#rep-life-user tbody tr')].map(r => r.cells[0].textContent.trim())")
+        record('Lifecycle By user and Created by column', 'Amy' in life_user and 'Amy' in old7, (life_user, old7[:120]))
         await pg.screenshot(path=f'{OUT}/intake_lifecycle.png', full_page=True)
         async with pg.expect_download() as dl:
             await pg.click('#rep-csv')
         csv_text = open(await (await dl.value).path(), encoding='utf-8-sig').read()
-        record('Lifecycle CSV export', csv_text.startswith('Order #,Customer') and 'DN-OLD-7' in csv_text and 'Release to shipped (h)' in csv_text, csv_text[:120])
+        record('Lifecycle CSV export', csv_text.startswith('Order #,Customer,Created by,Last edited by') and 'DN-OLD-7' in csv_text and 'Release to shipped (h)' in csv_text, csv_text[:120])
 
         # --- Staging app and board untouched --------------------------------------------------
         st = req({'fn': 'loadBoardState', 'key': 'ont-e2e', 'warehouse': 'ONT'})
@@ -370,7 +393,7 @@ async def main():
         await ph.route('https://script.google.com/**', to_gas)
         pp = await ph.new_page()
         await pp.goto(f'http://127.0.0.1:{SITE_PORT}/intake.html'); await pp.wait_for_timeout(300)
-        await pp.fill('#signin-code', 'cs-e2e'); await pp.click('#signin-btn'); await pp.wait_for_timeout(1500)
+        await pp.fill('#signin-code', 'cs-e2e'); await pp.fill('#signin-name', 'Kim'); await pp.click('#signin-btn'); await pp.wait_for_timeout(1500)
         overflow = await pp.evaluate("document.documentElement.scrollWidth - innerWidth")
         record('phone: page does not scroll sideways', overflow <= 0, overflow)
         await pp.screenshot(path=f'{OUT}/intake_phone.png', full_page=False)
