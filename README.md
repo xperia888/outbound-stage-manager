@@ -104,13 +104,26 @@ Customer service releases orders to the warehouse here: https://xperia888.github
   - **Templates:** **Save as template…** stores the matching, defaults, sheet and header row under a name (e.g. "Amazon VRID report") in the **Import Templates** tab. Everyone in that warehouse can use it. When a file with the same columns is loaded, its template is applied automatically. Templates can be updated or deleted.
   - Rows are checked before importing (new, update, skip, problem). Existing orders are updated by Order #, and blank cells never wipe what was already entered.
 - **API connector:** a WMS or a small script can POST orders as JSON. The **API Connector** tab has the exact request format.
+- **Reports** tab (floor leads and customer service), with **Export CSV** and **Print / PDF**. Each report combines intake orders with the staging floor history from the **Scan Log** and the live board:
+  - **End of Day** (pick a day; default is today):
+    - Totals: orders released, pallets and cartons released, pallets staged, pallets shipped, orders completed, and orders still open.
+    - Floor activity by hour.
+    - Shipped orders, with dock, last pallet out and the time from release to shipped.
+    - Orders still open at end of day, with their age and stage lanes.
+    - Orders released, by customer and by picker.
+    - Exceptions: orders waiting more than 24h, over/short shipments, cancelled orders still on the floor, and floor orders that are missing from intake.
+  - **Order Lifecycle** (pick a date range, or a 7 days / 30 days / This month shortcut): every order released in the range, with each milestone:
+    - Released, first staged, at dock and shipped.
+    - The time between milestones.
+    - Pallets expected vs staged vs shipped.
+    - Averages for the whole range and for each customer.
 
 **Access (Script Properties):**
 
 | Property | Who | Can do |
 |---|---|---|
 | `ACCESS_CODE` / `ACCESS_CODE_CHINO` | Floor leads | Everything, including the portal |
-| `CS_CODE` / `CS_CODE_CHINO` | Customer service | Orders only; cannot read or change the staging board |
+| `CS_CODE` / `CS_CODE_CHINO` | Customer service | Orders and reports; cannot change the staging board |
 | `WMS_API_KEY` / `WMS_API_KEY_CHINO` | The WMS connection | `upsertOrders` and `listOrders` only; not a sign-in code |
 
 **Setup:** update `Code.gs` in Apps Script, add the properties you need, then use **Deploy → Manage deployments → Edit → New version**. The `Orders` tab is created on the first save.

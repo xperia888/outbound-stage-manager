@@ -261,6 +261,56 @@
     .dnd-hint b { color: var(--text-2); }
     #prompt input { margin-top: 10px; }
 
+    /* Reports */
+    .rep-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 9px; overflow: hidden; }
+    .seg button { border: none; background: #fff; padding: 7px 14px; font-weight: 800; font-size: 12.5px; color: var(--text-2); }
+    .seg button + button { border-left: 1px solid var(--line-strong); }
+    .seg button.on { background: var(--slate-900); color: #fff; }
+    .rep-controls input[type=date] { width: 150px; padding: 6px 8px; }
+    .rep-controls .quick { display: inline-flex; gap: 4px; }
+    .rep-controls .quick .btn { padding: 5px 9px; font-size: 12px; }
+    .rep-title { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .rep-title h2 { font-size: 18px; font-weight: 800; }
+    .rep-title .meta { font-size: 12px; color: var(--muted); }
+    .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .kpi { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+    .kpi .n { font-family: var(--mono); font-size: 22px; font-weight: 800; line-height: 1.15; }
+    .kpi .n small { font-size: 12px; color: var(--muted); font-weight: 700; }
+    .kpi .t { font-size: 10.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+    .kpi.alert .n { color: var(--bad); }
+    .rep-sec { margin-top: 16px; }
+    .rep-sec h3 { font-size: 13px; font-weight: 800; margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
+    .rep-sec h3 span { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .rep-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+    .rep-table { border: 1px solid var(--line); border-radius: 10px; overflow: auto; }
+    .rep-table td, .rep-table th { padding: 7px 9px; font-size: 12.5px; }
+    .rep-table tfoot td { font-weight: 800; background: var(--surface-2); border-top: 1px solid var(--line); }
+    .rep-empty { color: var(--muted); font-size: 12.5px; padding: 12px; border: 1px dashed var(--line-strong); border-radius: 10px; text-align: center; }
+    .exc { display: flex; flex-direction: column; gap: 6px; }
+    .exc div { display: flex; gap: 10px; align-items: baseline; border: 1px solid #fecaca; background: #fff7f7; border-radius: 9px; padding: 7px 10px; font-size: 12.5px; }
+    .exc div b { font-family: var(--mono); }
+    .exc div .why { color: var(--bad); font-weight: 700; margin-left: auto; white-space: nowrap; }
+    .hours { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; align-items: end; height: 120px; border-bottom: 1px solid var(--line-strong); padding: 0 2px; }
+    .hours .h { display: flex; gap: 2px; align-items: flex-end; height: 100%; justify-content: center; }
+    .hours .h i { display: block; width: 45%; max-width: 12px; border-radius: 3px 3px 0 0; min-height: 0; }
+    .hours .h i.sc { background: #0369a1; }
+    .hours .h i.sh { background: #047857; }
+    .hour-labels { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: center; margin-top: 3px; }
+    .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+    .dur-good { color: var(--good); font-weight: 700; } .dur-warn { color: var(--warn); font-weight: 700; } .dur-bad { color: var(--bad); font-weight: 700; }
+    @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rep-grid { grid-template-columns: 1fr; } }
+    @media print {
+        header, #report-controls, .no-print, #toast { display: none !important; }
+        html, body { background: #fff; }
+        main { padding: 0; max-width: none; }
+        .card { box-shadow: none; border: none; }
+        .rep-table { overflow: visible; }
+        th { position: static; }
+        .kpi, .rep-table, .exc div { break-inside: avoid; }
+    }
+
     /* API page */
     pre { background: var(--slate-900); color: #e2e8f0; border-radius: 10px; padding: 14px; overflow-x: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; }
     .kv { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 14px; font-size: 13px; }
@@ -327,6 +377,7 @@
         <button type="button" data-view="orders" class="active">Orders</button>
         <button type="button" data-view="form">+ New Order</button>
         <button type="button" data-view="import">Import from WMS</button>
+        <button type="button" data-view="reports">Reports</button>
         <button type="button" data-view="api">API Connector</button>
     </nav>
 </header>
@@ -574,6 +625,35 @@
                     <div id="imp-result" style="margin-top:14px"></div>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <!-- ============================== REPORTS ============================== -->
+    <section id="view-reports" class="hidden">
+        <div class="card">
+            <div class="card-head" id="report-controls">
+                <div class="rep-controls">
+                    <div class="seg" role="tablist">
+                        <button type="button" class="on" data-kind="eod">End of Day</button>
+                        <button type="button" data-kind="life">Order Lifecycle</button>
+                    </div>
+                    <span id="rep-eod-ctl"><input type="date" id="rep-day" aria-label="Day"></span>
+                    <span id="rep-life-ctl" class="hidden rep-controls">
+                        <input type="date" id="rep-from" aria-label="From"> <span class="sub2">to</span> <input type="date" id="rep-to" aria-label="To">
+                        <span class="quick">
+                            <button type="button" class="btn" data-quick="7">7 days</button>
+                            <button type="button" class="btn" data-quick="30">30 days</button>
+                            <button type="button" class="btn" data-quick="month">This month</button>
+                        </span>
+                    </span>
+                    <button type="button" class="btn dark" id="rep-run">Run report</button>
+                </div>
+                <div class="rep-controls">
+                    <button type="button" class="btn" id="rep-csv">Export CSV</button>
+                    <button type="button" class="btn" id="rep-print">Print / PDF</button>
+                </div>
+            </div>
+            <div class="card-body" id="report-out"><div class="rep-empty">Choose a day and press Run report.</div></div>
         </div>
     </section>
 
@@ -843,7 +923,7 @@
     let currentView = 'orders';
     function showView(view) {
         currentView = view;
-        ['orders', 'form', 'import', 'api'].forEach(v => $('view-' + v).classList.toggle('hidden', v !== view));
+        ['orders', 'form', 'import', 'reports', 'api'].forEach(v => $('view-' + v).classList.toggle('hidden', v !== view));
         document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
         window.scrollTo(0, 0);
     }
@@ -853,6 +933,7 @@
         if (b.dataset.view === 'form') openForm(null);
         else showView(b.dataset.view);
         if (b.dataset.view === 'import' && currentKey()) loadImportTemplates();
+        if (b.dataset.view === 'reports' && currentKey() && !reportData) runReport();
     });
 
     // ===================================================================================
@@ -1771,6 +1852,277 @@
         const ex = FIELDS.map(f => sample[f.key] || '');
         const cell = v => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
         downloadText('order-import-template.csv', [head.map(cell).join(','), ex.map(cell).join(',')].join('\r\n'));
+    });
+
+    // ===================================================================================
+    // Reports: End of Day and Order Lifecycle (intake + Scan Log + live board)
+    // ===================================================================================
+    let reportKind = 'eod';
+    let reportData = null;
+    let reportRows = [];      // per-order rows of the report on screen (for CSV)
+    const HOUR = 3600000;
+    const dayInput = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const parseDay = v => { const [y, m, d] = String(v).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+    function dur(ms) {
+        if (ms == null || !isFinite(ms) || ms < 0) return '';
+        const m = Math.round(ms / 60000);
+        if (m < 60) return `${m}m`;
+        const h = Math.floor(m / 60);
+        if (h < 24) return `${h}h ${m % 60}m`;
+        return `${Math.floor(h / 24)}d ${h % 24}h`;
+    }
+    const durClass = (ms, warnH, badH) => (ms == null ? '' : ms >= badH * HOUR ? 'dur-bad' : ms >= warnH * HOUR ? 'dur-warn' : 'dur-good');
+    const avg = list => { const v = list.filter(x => x != null && isFinite(x) && x >= 0); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+    function whenShort(ms, refDay) {
+        if (!ms) return '';
+        const d = new Date(ms);
+        const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        return refDay && d.toDateString() === refDay.toDateString() ? t : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${t}`;
+    }
+
+    /** One order with its floor history merged in. */
+    function orderView(o, data) {
+        const ord = norm(o.orderNumber);
+        const f = data.floor[ord] || {};
+        const p = data.progress[ord] || {};
+        const onFloor = p.staged || 0;
+        const shipped = Math.max(f.shipped || 0, p.shipped || 0);
+        const released = Date.parse(o.releasedAt) || null;
+        const firstStaged = f.firstScanAt || p.firstStagedAt || null;
+        const lastShip = f.lastShipAt || p.lastShippedAt || null;
+        let status;
+        if (o.status === 'Cancelled') status = 'Cancelled';
+        else if (shipped > 0 && onFloor === 0) status = 'Shipped';
+        else if (p.atDock > 0) status = 'At dock';
+        else if (onFloor > 0) status = Number(o.pallets) && onFloor + shipped < Number(o.pallets) ? 'Partly staged' : 'Staged';
+        else status = 'Waiting';
+        const expected = o.pallets == null ? null : Number(o.pallets);
+        return {
+            o, ord, released, firstStaged, firstDock: f.firstDockAt || null, lastShip, onFloor, shipped,
+            staged: Math.max(f.scanned || 0, onFloor + shipped), expected, status,
+            lanes: (p.lanes && p.lanes.length ? p.lanes : f.lanes) || (o.stageLanes ? String(o.stageLanes).split(/,\s*/) : []),
+            docks: (f.docks && f.docks.length ? f.docks : p.docks || []).map(d => String(d).replace(/^DOCK-?0*(?=\d)/i, 'D')),
+            releaseToStage: released && firstStaged ? firstStaged - released : null,
+            stageToShip: firstStaged && lastShip && status === 'Shipped' ? lastShip - firstStaged : null,
+            total: released && lastShip && status === 'Shipped' ? lastShip - released : null,
+            variance: status === 'Shipped' && expected ? shipped - expected : null,
+            scannedInRange: f.scannedInRange || 0, shippedInRange: f.shippedInRange || 0
+        };
+    }
+
+    const statusChip = st => `<span class="chip ${{ 'Waiting': 'waiting', 'Partly staged': 'partial', 'Staged': 'staged', 'At dock': 'dock', 'Shipped': 'shipped', 'Cancelled': 'cancelled' }[st] || ''}">${esc(st)}</span>`;
+    const kpi = (n, t, cls = '') => `<div class="kpi ${cls}"><div class="n">${n}</div><div class="t">${t}</div></div>`;
+    const sum = (list, fn) => list.reduce((a, x) => a + (Number(fn(x)) || 0), 0);
+
+    function setReportKind(kind) {
+        reportKind = kind;
+        document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.kind === kind));
+        $('rep-eod-ctl').classList.toggle('hidden', kind !== 'eod');
+        $('rep-life-ctl').classList.toggle('hidden', kind !== 'life');
+        runReport();
+    }
+    document.querySelector('.seg').addEventListener('click', e => { const b = e.target.closest('button[data-kind]'); if (b) setReportKind(b.dataset.kind); });
+    document.querySelector('#rep-life-ctl .quick').addEventListener('click', e => {
+        const b = e.target.closest('[data-quick]');
+        if (!b) return;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        let from = new Date(today);
+        if (b.dataset.quick === 'month') from = new Date(today.getFullYear(), today.getMonth(), 1);
+        else from.setDate(from.getDate() - Number(b.dataset.quick) + 1);
+        $('rep-from').value = dayInput(from); $('rep-to').value = dayInput(today);
+        runReport();
+    });
+    $('rep-run').addEventListener('click', runReport);
+    $('rep-day').addEventListener('change', runReport);
+    $('rep-print').addEventListener('click', () => window.print());
+    (() => {
+        const today = new Date();
+        const from = new Date(); from.setDate(from.getDate() - 6);
+        $('rep-day').value = dayInput(today);
+        $('rep-from').value = dayInput(from);
+        $('rep-to').value = dayInput(today);
+    })();
+
+    async function runReport() {
+        let from, to;
+        if (reportKind === 'eod') {
+            from = parseDay($('rep-day').value || dayInput(new Date()));
+            to = new Date(from); to.setDate(to.getDate() + 1);
+        } else {
+            from = parseDay($('rep-from').value);
+            to = parseDay($('rep-to').value); to.setDate(to.getDate() + 1);
+        }
+        if (!(to > from)) { toast('Pick a valid date range.', true); return; }
+        $('report-out').innerHTML = '<div class="rep-empty">Building the report…</div>';
+        $('rep-run').disabled = true;
+        const r = await cloud('reportData', [{ from: from.toISOString(), to: to.toISOString() }]);
+        $('rep-run').disabled = false;
+        if (!r.ok) { $('report-out').innerHTML = `<div class="rep-empty err-text">${esc(r.error || 'Could not build the report')}</div>`; return; }
+        reportData = r;
+        if (reportKind === 'eod') renderEod(r, from, to); else renderLifecycle(r, from, to);
+    }
+
+    function renderEod(data, from, to) {
+        const views = data.orders.map(o => orderView(o, data));
+        const inDay = ms => ms && ms >= from.getTime() && ms < to.getTime();
+        const released = views.filter(v => inDay(v.released) && v.status !== 'Cancelled');
+        const cancelledToday = views.filter(v => v.status === 'Cancelled' && inDay(Date.parse(v.o.updatedAt)));
+        const shippedToday = views.filter(v => v.shippedInRange > 0).sort((a, b) => (a.lastShip || 0) - (b.lastShip || 0));
+        const completed = shippedToday.filter(v => v.status === 'Shipped' && inDay(v.lastShip));
+        const isToday = from.toDateString() === new Date().toDateString();
+        const endRef = isToday ? Date.now() : to.getTime();
+        const open = views.filter(v => v.status !== 'Shipped' && v.status !== 'Cancelled' && v.released && v.released < to.getTime())
+            .sort((a, b) => a.released - b.released);
+        const exceptions = [];
+        open.filter(v => v.status === 'Waiting' && endRef - v.released > 24 * HOUR)
+            .forEach(v => exceptions.push({ ord: v.o.orderNumber, who: v.o.customer, why: `Waiting ${dur(endRef - v.released)} — not staged` }));
+        completed.filter(v => v.variance).forEach(v => exceptions.push({ ord: v.o.orderNumber, who: v.o.customer, why: `${v.variance > 0 ? 'Over' : 'Short'} ${Math.abs(v.variance)} plt (shipped ${v.shipped} of ${v.expected})` }));
+        views.filter(v => v.status === 'Cancelled' && v.onFloor > 0).forEach(v => exceptions.push({ ord: v.o.orderNumber, who: v.o.customer, why: `Cancelled but ${v.onFloor} plt still on floor` }));
+        data.floorOnly.forEach(x => exceptions.push({ ord: x.orderNumber, who: (x.lanes || []).join(', '), why: `On the floor but not in Order Intake${x.onFloor ? ` (${x.onFloor} plt)` : ''}` }));
+
+        const byCustomer = {};
+        released.forEach(v => {
+            const c = byCustomer[v.o.customer || '—'] = byCustomer[v.o.customer || '—'] || { orders: 0, cartons: 0, pallets: 0, staged: 0, shipped: 0 };
+            c.orders++; c.cartons += Number(v.o.cartons) || 0; c.pallets += Number(v.o.pallets) || 0; c.staged += v.staged; c.shipped += v.shipped;
+        });
+        const byPicker = {};
+        views.filter(v => (inDay(v.released) || v.scannedInRange || v.shippedInRange) && v.o.picker).forEach(v => {
+            const p = byPicker[v.o.picker] = byPicker[v.o.picker] || { orders: 0, pallets: 0, shipped: 0 };
+            p.orders++; p.pallets += Number(v.o.pallets) || 0; p.shipped += v.shippedInRange;
+        });
+        const act = data.activity || {};
+        const hours = Array.from({ length: 24 }, (_, h) => (data.hourly || {})[h] || { SCAN: 0, SHIP: 0 });
+        const firstH = Math.max(0, hours.findIndex(x => x.SCAN || x.SHIP) - 1);
+        const lastH = Math.min(23, 23 - [...hours].reverse().findIndex(x => x.SCAN || x.SHIP) + 1);
+        const shownH = hours.findIndex(x => x.SCAN || x.SHIP) === -1 ? [] : hours.slice(firstH, lastH + 1).map((x, i) => ({ h: firstH + i, ...x }));
+        const maxH = Math.max(1, ...shownH.map(x => Math.max(x.SCAN, x.SHIP)));
+
+        reportRows = [...new Set([...released, ...shippedToday, ...open])].map(v => v);
+        const dayLabel = from.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        const empty = msg => `<div class="rep-empty">${msg}</div>`;
+        $('report-out').innerHTML = `
+            <div class="rep-title"><div><h2>End of Day — ${esc(dayLabel)}</h2><div class="meta">${esc(WAREHOUSES[WH].name)} · generated ${esc(new Date(data.generatedAt).toLocaleString())}${isToday ? ' · day still in progress' : ''}</div></div></div>
+            <div class="kpis">
+                ${kpi(released.length, 'Orders released')}
+                ${kpi(`${sum(released, v => v.o.pallets)} <small>plt · ${sum(released, v => v.o.cartons)} ctn</small>`, 'Released volume')}
+                ${kpi(act.SCAN || 0, 'Pallets staged')}
+                ${kpi(act.SHIP || 0, 'Pallets shipped')}
+                ${kpi(completed.length, 'Orders completed')}
+                ${kpi(open.length, 'Open at end of day', open.length ? '' : '')}
+            </div>
+            <div class="rep-grid">
+                <div class="rep-sec">
+                    <h3>Floor activity by hour <span>${act.SCAN || 0} staged · ${act.SHIP || 0} shipped · ${act.DOCK || 0} docked · ${(act.MOVE || 0) + (act.CONSOLIDATE || 0)} moved</span></h3>
+                    ${shownH.length ? `<div class="legend"><span><i style="background:#0369a1"></i>Staged</span><span><i style="background:#047857"></i>Shipped</span></div>
+                    <div class="hours">${shownH.map(x => `<div class="h" title="${x.h}:00 — ${x.SCAN} staged, ${x.SHIP} shipped"><i class="sc" style="height:${x.SCAN / maxH * 100}%"></i><i class="sh" style="height:${x.SHIP / maxH * 100}%"></i></div>`).join('')}</div>
+                    <div class="hour-labels">${shownH.map(x => `<span>${x.h % 12 || 12}${x.h < 12 ? 'a' : 'p'}</span>`).join('')}</div>` : empty('No floor activity logged this day.')}
+                </div>
+                <div class="rep-sec">
+                    <h3>Exceptions <span>${exceptions.length}</span></h3>
+                    ${exceptions.length ? `<div class="exc">${exceptions.slice(0, 40).map(x => `<div><b>${esc(x.ord)}</b><span>${esc(x.who || '')}</span><span class="why">${esc(x.why)}</span></div>`).join('')}</div>` : empty('No exceptions.')}
+                </div>
+            </div>
+            <div class="rep-sec">
+                <h3>Shipped today <span>${shippedToday.length} order(s) · ${act.SHIP || 0} pallet(s)</span></h3>
+                ${shippedToday.length ? `<div class="rep-table"><table><thead><tr><th>Order #</th><th>Customer</th><th>Carrier / VRID</th><th>Dock</th><th class="num">Shipped today</th><th class="num">Total / expected</th><th>Last pallet out</th><th>Release → shipped</th><th>Status</th></tr></thead><tbody>
+                ${shippedToday.map(v => `<tr><td class="ono">${esc(v.o.orderNumber)}</td><td>${esc(v.o.customer || '')}</td><td>${esc(v.o.carrier || '')}${v.o.vrid ? ` <span class="sub2 mono">${esc(v.o.vrid)}</span>` : ''}</td><td class="mono">${esc(v.docks.join(', '))}</td>
+                    <td class="num">${v.shippedInRange}</td><td class="num">${v.shipped}${v.expected != null ? ' / ' + v.expected : ''}</td><td>${esc(whenShort(v.lastShip, from))}</td>
+                    <td class="${durClass(v.total, 24, 48)}">${esc(dur(v.total))}</td><td>${statusChip(v.status)}</td></tr>`).join('')}
+                </tbody></table></div>` : empty('Nothing shipped this day.')}
+            </div>
+            <div class="rep-sec">
+                <h3>Open at end of day <span>${open.length} order(s) still to finish</span></h3>
+                ${open.length ? `<div class="rep-table"><table><thead><tr><th>Order #</th><th>Customer</th><th>Released</th><th>Age</th><th>Status</th><th class="num">On floor / expected</th><th>Stage lanes</th><th>Picker</th><th>Carrier</th></tr></thead><tbody>
+                ${open.map(v => `<tr><td class="ono">${esc(v.o.orderNumber)}</td><td>${esc(v.o.customer || '')}</td><td>${esc(whenShort(v.released, from))}</td>
+                    <td class="${durClass(endRef - v.released, 24, 48)}">${esc(dur(endRef - v.released))}</td><td>${statusChip(v.status)}</td>
+                    <td class="num">${v.onFloor}${v.expected != null ? ' / ' + v.expected : ''}</td><td class="mono">${esc(v.lanes.join(', '))}</td><td>${esc(v.o.picker || '')}</td><td>${esc(v.o.carrier || '')}</td></tr>`).join('')}
+                </tbody></table></div>` : empty('All released orders are shipped.')}
+            </div>
+            <div class="rep-grid">
+                <div class="rep-sec">
+                    <h3>Released by customer <span>${released.length} order(s)</span></h3>
+                    ${released.length ? `<div class="rep-table"><table><thead><tr><th>Customer</th><th class="num">Orders</th><th class="num">Cartons</th><th class="num">Pallets</th><th class="num">Staged</th><th class="num">Shipped</th></tr></thead><tbody>
+                    ${Object.entries(byCustomer).sort((a, b) => b[1].orders - a[1].orders).map(([c, x]) => `<tr><td>${esc(c)}</td><td class="num">${x.orders}</td><td class="num">${x.cartons}</td><td class="num">${x.pallets}</td><td class="num">${x.staged}</td><td class="num">${x.shipped}</td></tr>`).join('')}
+                    </tbody><tfoot><tr><td>Total</td><td class="num">${released.length}</td><td class="num">${sum(released, v => v.o.cartons)}</td><td class="num">${sum(released, v => v.o.pallets)}</td><td class="num">${sum(released, v => v.staged)}</td><td class="num">${sum(released, v => v.shipped)}</td></tr></tfoot></table></div>` : empty('No orders released this day.')}
+                </div>
+                <div class="rep-sec">
+                    <h3>By picker <span>orders released or worked this day</span></h3>
+                    ${Object.keys(byPicker).length ? `<div class="rep-table"><table><thead><tr><th>Picker</th><th class="num">Orders</th><th class="num">Pallets</th><th class="num">Shipped today</th></tr></thead><tbody>
+                    ${Object.entries(byPicker).sort((a, b) => b[1].pallets - a[1].pallets).map(([n, x]) => `<tr><td>${esc(n)}</td><td class="num">${x.orders}</td><td class="num">${x.pallets}</td><td class="num">${x.shipped}</td></tr>`).join('')}
+                    </tbody></table></div>` : empty('No picker entered on these orders.')}
+                </div>
+            </div>
+            ${cancelledToday.length ? `<div class="rep-sec"><h3>Cancelled this day <span>${cancelledToday.length}</span></h3><div class="sub2">${cancelledToday.map(v => `<b class="mono">${esc(v.o.orderNumber)}</b> ${esc(v.o.customer || '')}`).join(' · ')}</div></div>` : ''}`;
+    }
+
+    function renderLifecycle(data, from, to) {
+        const inRange = ms => ms && ms >= from.getTime() && ms < to.getTime();
+        const views = data.orders.map(o => orderView(o, data)).filter(v => inRange(v.released)).sort((a, b) => a.released - b.released);
+        const active = views.filter(v => v.status !== 'Cancelled');
+        const done = active.filter(v => v.status === 'Shipped');
+        const notStarted = active.filter(v => v.status === 'Waiting');
+        const exp = sum(done.filter(v => v.expected), v => v.expected), shp = sum(done.filter(v => v.expected), v => v.shipped);
+        const aStage = avg(active.map(v => v.releaseToStage)), aShip = avg(done.map(v => v.stageToShip)), aTotal = avg(done.map(v => v.total));
+        const byCustomer = {};
+        active.forEach(v => {
+            const c = byCustomer[v.o.customer || '—'] = byCustomer[v.o.customer || '—'] || { orders: 0, done: 0, pallets: 0, shipped: 0, totals: [] };
+            c.orders++; c.pallets += Number(v.o.pallets) || 0; c.shipped += v.shipped;
+            if (v.status === 'Shipped') { c.done++; c.totals.push(v.total); }
+        });
+        reportRows = views;
+        const lastDay = new Date(to); lastDay.setDate(lastDay.getDate() - 1);
+        const fmtD = d => d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+        $('report-out').innerHTML = `
+            <div class="rep-title"><div><h2>Order Lifecycle — ${esc(fmtD(from))}${from.toDateString() === lastDay.toDateString() ? '' : ' to ' + esc(fmtD(lastDay))}</h2>
+                <div class="meta">${esc(WAREHOUSES[WH].name)} · orders released in this period, from release to shipped · generated ${esc(new Date(data.generatedAt).toLocaleString())}</div></div></div>
+            <div class="kpis">
+                ${kpi(active.length, 'Orders released')}
+                ${kpi(`${done.length} <small>${active.length ? Math.round(done.length / active.length * 100) : 0}%</small>`, 'Shipped complete')}
+                ${kpi(`${active.length - done.length - notStarted.length} <small>· ${notStarted.length} not started</small>`, 'In progress')}
+                ${kpi(esc(dur(aStage) || '—'), 'Avg release → staged')}
+                ${kpi(esc(dur(aShip) || '—'), 'Avg staged → shipped')}
+                ${kpi(esc(dur(aTotal) || '—'), 'Avg release → shipped')}
+            </div>
+            <div class="sub2" style="margin:-6px 0 10px">Pallets on completed orders: ${shp} shipped of ${exp} expected${exp ? ` (${Math.round(shp / exp * 100)}%)` : ''} · ${views.length - active.length} cancelled</div>
+            <div class="rep-sec">
+                <h3>By customer</h3>
+                ${active.length ? `<div class="rep-table"><table><thead><tr><th>Customer</th><th class="num">Orders</th><th class="num">Shipped complete</th><th class="num">Pallets expected</th><th class="num">Pallets shipped</th><th>Avg release → shipped</th></tr></thead><tbody>
+                ${Object.entries(byCustomer).sort((a, b) => b[1].orders - a[1].orders).map(([c, x]) => { const t = avg(x.totals); return `<tr><td>${esc(c)}</td><td class="num">${x.orders}</td><td class="num">${x.done}</td><td class="num">${x.pallets}</td><td class="num">${x.shipped}</td><td class="${durClass(t, 24, 48)}">${esc(dur(t) || '—')}</td></tr>`; }).join('')}
+                </tbody></table></div>` : '<div class="rep-empty">No orders released in this period.</div>'}
+            </div>
+            <div class="rep-sec">
+                <h3>Every order, release to shipped <span>${views.length} order(s)</span></h3>
+                ${views.length ? `<div class="rep-table"><table><thead><tr>
+                    <th>Order #</th><th>Customer</th><th>Type</th><th>Reference</th><th>Picker</th><th>Carrier / VRID</th>
+                    <th>Released</th><th>First staged</th><th>At dock</th><th>Shipped</th>
+                    <th>Release → staged</th><th>Staged → shipped</th><th>Total</th>
+                    <th class="num">Exp.</th><th class="num">Staged</th><th class="num">Shipped</th><th>Lanes</th><th>Dock</th><th>Status</th></tr></thead><tbody>
+                ${views.map(v => `<tr>
+                    <td class="ono">${esc(v.o.orderNumber)}</td><td>${esc(v.o.customer || '')}</td><td>${esc(v.o.orderType || '')}</td>
+                    <td>${esc([v.o.refType, v.o.reference].filter(Boolean).join(' '))}</td><td>${esc(v.o.picker || '')}</td>
+                    <td>${esc(v.o.carrier || '')}${v.o.vrid ? ` <span class="sub2 mono">${esc(v.o.vrid)}</span>` : ''}</td>
+                    <td>${esc(whenShort(v.released))}</td><td>${esc(whenShort(v.firstStaged))}</td><td>${esc(whenShort(v.firstDock))}</td><td>${esc(whenShort(v.lastShip))}</td>
+                    <td class="${durClass(v.releaseToStage, 8, 24)}">${esc(dur(v.releaseToStage))}</td><td class="${durClass(v.stageToShip, 24, 48)}">${esc(dur(v.stageToShip))}</td>
+                    <td class="${durClass(v.total, 24, 48)}">${esc(dur(v.total))}</td>
+                    <td class="num">${v.expected == null ? '' : v.expected}</td><td class="num">${v.staged}</td>
+                    <td class="num">${v.shipped}${v.variance ? ` <span class="dur-bad">(${v.variance > 0 ? '+' : ''}${v.variance})</span>` : ''}</td>
+                    <td class="mono">${esc(v.lanes.join(', '))}</td><td class="mono">${esc(v.docks.join(', '))}</td><td>${statusChip(v.status)}</td></tr>`).join('')}
+                </tbody></table></div>` : '<div class="rep-empty">No orders released in this period.</div>'}
+            </div>`;
+    }
+
+    $('rep-csv').addEventListener('click', () => {
+        if (!reportRows.length) { toast('Run a report first.', true); return; }
+        const iso = ms => (ms ? new Date(ms).toLocaleString() : '');
+        const hours = ms => (ms == null ? '' : (ms / HOUR).toFixed(1));
+        const head = ['Order #', 'Customer', 'Order type', 'Reference type', 'Reference', 'Picker', 'Carrier', 'VRID', 'Released', 'First staged', 'At dock', 'Last shipped',
+            'Release to staged (h)', 'Staged to shipped (h)', 'Release to shipped (h)', 'Pallets expected', 'Pallets staged', 'Pallets on floor', 'Pallets shipped', 'Over/short', 'Stage lanes', 'Dock', 'Status'];
+        const cell = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+        const lines = [head.map(cell).join(',')].concat(reportRows.map(v => [v.o.orderNumber, v.o.customer, v.o.orderType, v.o.refType, v.o.reference, v.o.picker, v.o.carrier, v.o.vrid,
+            iso(v.released), iso(v.firstStaged), iso(v.firstDock), iso(v.lastShip), hours(v.releaseToStage), hours(v.stageToShip), hours(v.total),
+            v.expected, v.staged, v.onFloor, v.shipped, v.variance, v.lanes.join(', '), v.docks.join(', '), v.status].map(cell).join(',')));
+        const name = reportKind === 'eod' ? `eod-${$('rep-day').value}` : `order-lifecycle-${$('rep-from').value}-to-${$('rep-to').value}`;
+        downloadText(`${name}-${WAREHOUSES[WH].name}.csv`, lines.join('\r\n'));
     });
 
     // ===================================================================================
