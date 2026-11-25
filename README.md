@@ -111,6 +111,14 @@ Customer service releases orders to the warehouse here: https://xperia888.github
 ## Adding a shipment
 
 No SLP barcodes are needed. A shipment is an order number plus a number of pallets.
+- **Select Order** (header button): lists the orders customer service released in Order Intake that still have pallets to stage, oldest first.
+  - Each entry shows the customer, carrier, reference, pallets left and progress.
+  - Tap an order, or scan or type its number into the search box and press Enter.
+  - The pallet count is prefilled with what's left, and a lane is suggested. **Add Shipment** stages them.
+  - Carrier and destination come from the intake order.
+  - Fully staged and cancelled orders drop off the list. The list refreshes every minute.
+  - **Order not listed? Scan / type it** opens the scan window for orders that aren't in Order Intake.
+
 - **Quick bar:** scan or type the order number and press Enter. The cursor jumps to **Pallets**; type the count and press Enter.
 - **Scan Order:** the same with the camera. Scanning the order barcode fills in the order number, then you enter the number of pallets. Carrier and destination can be added here.
 - **Pallet labels:** each pallet gets a label from the order number, e.g. `SO-41200-01`, `SO-41200-02`. Numbering carries on when more pallets are added to the same order later.
