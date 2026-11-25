@@ -387,7 +387,9 @@ const ORDER_FIELDS_ = [
   { key: 'dock', header: 'Dock', type: 'text' },
   { key: 'palletsOnFloor', header: 'Pallets On Floor', type: 'int' },
   { key: 'palletsShipped', header: 'Pallets Shipped', type: 'int' },
-  { key: 'floorUpdatedAt', header: 'Floor Updated', type: 'datetime' }
+  { key: 'floorUpdatedAt', header: 'Floor Updated', type: 'datetime' },
+  // Who first entered the order (set once, on create; "Entered By" is whoever saved it last)
+  { key: 'createdBy', header: 'Created By', type: 'text' }
 ];
 /** Fields a person or the WMS may set (the rest are kept by the server). */
 const ORDER_INPUT_KEYS_ = ['customer', 'releasedAt', 'cartons', 'pallets', 'refType', 'reference', 'orderType',
@@ -478,6 +480,11 @@ function upsertOrders_(orders, options, role) {
   const opts = options || {};
   const mode = opts.mode === 'insertOnly' ? 'insertOnly' : 'upsert';
   const source = String(opts.source || (role === 'api' ? 'WMS API' : 'Manual')).slice(0, 40);
+  // People must say who they are (for the reports); the WMS connection may leave it blank
+  const batchUser = String(opts.enteredBy == null ? '' : opts.enteredBy).trim().slice(0, 80);
+  if (role !== 'api' && !batchUser && list.some(o => !String((o && o.enteredBy) || '').trim())) {
+    return { ok: false, needName: true, error: 'Enter your name before creating or importing orders' };
+  }
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return { ok: false, error: 'Busy — try again' };
@@ -509,6 +516,7 @@ function upsertOrders_(orders, options, role) {
           if (!Object.prototype.hasOwnProperty.call(o, key) || o[key] === undefined) return;
           values[key] = cleanOrderValue_(ORDER_FIELDS_[col[key]], o[key]);
         });
+        if (!values.enteredBy && batchUser) values.enteredBy = batchUser;
         if (o.status !== undefined && o.status !== '') {
           const st = ORDER_STATUSES_.find(x => x.toLowerCase() === String(o.status).trim().toLowerCase());
           if (!st) throw new Error('Status must be Released or Cancelled');
@@ -534,6 +542,7 @@ function upsertOrders_(orders, options, role) {
           row[col.source] = source;
           row[col.createdAt] = now;
           row[col.updatedAt] = now;
+          row[col.createdBy] = values.enteredBy || '';
           index[orderNumber] = rows.length + added.length;
           added.push(row);
         }
@@ -600,6 +609,7 @@ function setOrderStatus_(orderNumber, status, enteredBy) {
   const st = ORDER_STATUSES_.find(x => x.toLowerCase() === String(status || '').toLowerCase());
   if (!ord) return { ok: false, error: 'Order # is missing' };
   if (!st) return { ok: false, error: 'Status must be Released or Cancelled' };
+  if (!String(enteredBy || '').trim()) return { ok: false, needName: true, error: 'Enter your name before changing orders' };
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { ok: false, error: 'Busy — try again' };
   try {

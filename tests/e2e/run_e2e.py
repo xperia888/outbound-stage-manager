@@ -188,8 +188,8 @@ async def run_round(browser, wh, rnd, devices):
     # --- Select Order: released orders from Order Intake ----------------------------------------------
     rel = f'DN-{tag}-REL'
     seeded = gas_call({'fn': 'upsertOrders', 'warehouse': wh, 'key': code, 'args': [[
-        {'orderNumber': rel, 'customer': f'Customer {tag}', 'pallets': 5, 'cartons': 50, 'carrier': 'Saia', 'destination': 'Reno, NV', 'refType': 'ARN#', 'reference': f'ARN-{tag}'},
-        {'orderNumber': f'DN-{tag}-CXL', 'customer': 'Cancelled Co', 'pallets': 2, 'status': 'Cancelled'}], {'source': 'Manual'}]})
+        {'orderNumber': rel, 'enteredBy': 'E2E', 'customer': f'Customer {tag}', 'pallets': 5, 'cartons': 50, 'carrier': 'Saia', 'destination': 'Reno, NV', 'refType': 'ARN#', 'reference': f'ARN-{tag}'},
+        {'orderNumber': f'DN-{tag}-CXL', 'enteredBy': 'E2E', 'customer': 'Cancelled Co', 'pallets': 2, 'status': 'Cancelled'}], {'source': 'Manual'}]})
     await A.click('button:has-text("Select Order")')
     listed = await wait_for(A, f"[...document.querySelectorAll('#order-picker-list button')].some(b => b.textContent.includes('{rel}'))", 15000)
     cxl_hidden = not await A.evaluate(f"[...document.querySelectorAll('#order-picker-list button')].some(b => b.textContent.includes('DN-{tag}-CXL'))")

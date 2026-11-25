@@ -67,6 +67,7 @@
     .who { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; }
     .who button { background: var(--slate-800); border: 1px solid #334155; color: #e2e8f0; border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
     .who button:hover { background: #334155; color: #fff; }
+    .who button.need-name { background: var(--amber-500, #f59e0b); border-color: #f59e0b; color: #111827; }
     nav.tabs { display: flex; gap: 2px; margin-top: 8px; padding: 0 20px; overflow-x: auto; }
     nav.tabs button { background: transparent; border: none; border-bottom: 3px solid transparent; color: #94a3b8; font-weight: 700; font-size: 13px; padding: 8px 12px 9px; white-space: nowrap; }
     nav.tabs button:hover { color: #fff; }
@@ -684,7 +685,7 @@
             </div>
             <div class="field">
                 <label for="signin-name">Your name</label>
-                <input type="text" id="signin-name" placeholder="Shown as “Entered by” on orders">
+                <input type="text" id="signin-name" maxlength="60" placeholder="Required — shown on orders and in the reports">
             </div>
             <div class="err-text" id="signin-error" style="margin-top:10px"></div>
         </div>
@@ -867,7 +868,8 @@
         const chip = $('wh-chip');
         chip.textContent = WAREHOUSES[WH].name;
         chip.className = 'wh-chip ' + WAREHOUSES[WH].chip;
-        $('user-btn').textContent = userName || 'Set name';
+        $('user-btn').textContent = userName || 'Set your name';
+        $('user-btn').classList.toggle('need-name', !userName);
         document.title = `Order Intake — ${WAREHOUSES[WH].name}`;
     }
 
@@ -881,8 +883,9 @@
     $('signin-form').addEventListener('submit', async e => {
         e.preventDefault();
         const code = $('signin-code').value.trim();
-        const name = $('signin-name').value.trim();
+        const name = $('signin-name').value.replace(/\s+/g, ' ').trim();
         if (!code) return;
+        if (!name) { $('signin-error').textContent = 'Enter your name. It is saved on the orders you create and used in the reports.'; $('signin-name').focus(); return; }
         const btn = $('signin-btn');
         btn.disabled = true; btn.textContent = 'Checking…';
         const r = await cloud('resolveWarehouse', [], { key: code });
@@ -894,7 +897,7 @@
         WH = r.warehouse;
         store.set(INTAKE_WH_KEY, WH);
         store.set(intakeCodeKey(WH), code);
-        if (name) { userName = name; store.set(INTAKE_USER_KEY, name); }
+        userName = name; store.set(INTAKE_USER_KEY, name);
         $('signin-code').value = '';
         $('signin').classList.add('hidden');
         applyWarehouseLabel();
@@ -909,13 +912,24 @@
         renderOrders();
         showSignIn();
     });
-    $('user-btn').addEventListener('click', () => {
-        const name = prompt('Your name (shown as “Entered by” on orders you save):', userName || '');
-        if (name == null) return;
-        userName = name.trim();
+    /** Asks for the user's name. Resolves true once a name is set. */
+    async function askName(why) {
+        const name = await promptBox(userName ? 'Change your name' : 'Who is entering orders?',
+            why || 'Your name is saved on every order you create or import, and the reports count work by name.', userName || '');
+        if (!name) return !!userName;
+        userName = name.slice(0, 60);
         store.set(INTAKE_USER_KEY, userName);
         applyWarehouseLabel();
-    });
+        return true;
+    }
+    /** Every create, import or cancel needs a name first. */
+    async function ensureName() {
+        if (userName) return true;
+        const ok = await askName('Enter your name before creating or importing orders. It is saved on each order and used in the reports.');
+        if (!ok) toast('A name is needed to create or import orders.', true);
+        return ok;
+    }
+    $('user-btn').addEventListener('click', () => askName());
 
     // ===================================================================================
     // Tabs
@@ -930,6 +944,11 @@
     $('tabs').addEventListener('click', e => {
         const b = e.target.closest('button[data-view]');
         if (!b) return;
+        if ((b.dataset.view === 'form' || b.dataset.view === 'import') && currentKey()) {
+            ensureName().then(ok => { if (!ok) return; if (b.dataset.view === 'form') openForm(null); else showView('import'); });
+            if (b.dataset.view === 'import') loadImportTemplates();
+            return;
+        }
         if (b.dataset.view === 'form') openForm(null);
         else showView(b.dataset.view);
         if (b.dataset.view === 'import' && currentKey()) loadImportTemplates();
@@ -1080,7 +1099,7 @@
     $('status-filter').addEventListener('change', renderOrders);
     $('days-filter').addEventListener('change', loadOrders);
     $('refresh-btn').addEventListener('click', loadOrders);
-    $('new-btn').addEventListener('click', () => openForm(null));
+    $('new-btn').addEventListener('click', async () => { if (await ensureName()) openForm(null); });
 
     function refreshDatalists() {
         const uniq = key => [...new Set(orders.map(o => String(o[key] || '').trim()).filter(Boolean))].sort().slice(0, 300);
@@ -1192,11 +1211,12 @@
             const ok = await confirmBox(`Order ${o.orderNumber} is already in the portal`, 'Saving will update the existing order with these details.', 'Update it');
             if (!ok) return;
         }
-        o.enteredBy = userName || '';
+        if (!(await ensureName())) return;
+        o.enteredBy = userName;
         $('save-btn').disabled = true; $('save-new-btn').disabled = true;
         const r = await cloud('upsertOrders', [[o], { source: 'Manual' }]);
         $('save-btn').disabled = false; $('save-new-btn').disabled = false;
-        if (!r.ok) { $('form-error').textContent = r.error || 'Could not save'; return; }
+        if (!r.ok) { if (r.needName) { userName = ''; applyWarehouseLabel(); } $('form-error').textContent = r.error || 'Could not save'; return; }
         if (r.errors && r.errors.length) { $('form-error').textContent = r.errors.map(e => e.error).join(' · '); return; }
         toast(r.inserted ? `Order ${o.orderNumber} released to the warehouse` : `Order ${o.orderNumber} updated`);
         await loadOrders();
@@ -1229,8 +1249,8 @@
             cancel ? 'The order stays in the sheet marked Cancelled. Pallets already on the floor are not changed — remove them in the staging app if needed.'
                 : 'The order goes back to Released.',
             cancel ? 'Cancel order' : 'Restore', cancel);
-        if (!ok) return;
-        const r = await cloud('setOrderStatus', [editing.orderNumber, status, userName || '']);
+        if (!ok || !(await ensureName())) return;
+        const r = await cloud('setOrderStatus', [editing.orderNumber, status, userName]);
         if (!r.ok) { toast(r.error || 'Could not change the status', true); return; }
         toast(cancel ? `Order ${editing.orderNumber} cancelled` : `Order ${editing.orderNumber} restored`);
         await loadOrders();
@@ -1810,8 +1830,10 @@
     }
 
     async function runImport() {
+        if (!(await ensureName())) return;
         const mode = document.querySelector('input[name=imp-mode]:checked').value;
-        const todo = imp.parsed.filter(p => p.result === 'new' || p.result === 'update').map(p => Object.assign({ enteredBy: userName || '' }, p.o));
+        // The person importing is credited, whatever the file says
+        const todo = imp.parsed.filter(p => p.result === 'new' || p.result === 'update').map(p => Object.assign({}, p.o, { enteredBy: userName }));
         const source = (imp.template ? `Import: ${imp.template}` : 'WMS import').slice(0, 40);
         const total = { inserted: 0, updated: 0, skipped: 0, errors: [] };
         $('imp-go-btn').disabled = true; $('imp-back-btn').disabled = true;
@@ -1897,8 +1919,9 @@
         else if (onFloor > 0) status = Number(o.pallets) && onFloor + shipped < Number(o.pallets) ? 'Partly staged' : 'Staged';
         else status = 'Waiting';
         const expected = o.pallets == null ? null : Number(o.pallets);
+        const creator = o.createdBy || o.enteredBy || (o.source ? `(${o.source})` : '—');
         return {
-            o, ord, released, firstStaged, firstDock: f.firstDockAt || null, lastShip, onFloor, shipped,
+            o, ord, creator, created: Date.parse(o.createdAt) || null, updated: Date.parse(o.updatedAt) || null, released, firstStaged, firstDock: f.firstDockAt || null, lastShip, onFloor, shipped,
             staged: Math.max(f.scanned || 0, onFloor + shipped), expected, status,
             lanes: (p.lanes && p.lanes.length ? p.lanes : f.lanes) || (o.stageLanes ? String(o.stageLanes).split(/,\s*/) : []),
             docks: (f.docks && f.docks.length ? f.docks : p.docks || []).map(d => String(d).replace(/^DOCK-?0*(?=\d)/i, 'D')),
@@ -1990,6 +2013,17 @@
             const p = byPicker[v.o.picker] = byPicker[v.o.picker] || { orders: 0, pallets: 0, shipped: 0 };
             p.orders++; p.pallets += Number(v.o.pallets) || 0; p.shipped += v.shippedInRange;
         });
+        const byUser = {};
+        const userRow = n => (byUser[n] = byUser[n] || { created: 0, pallets: 0, cartons: 0, edited: 0, cancelled: 0, shipped: 0 });
+        views.forEach(v => {
+            if (inDay(v.created)) {
+                const u = userRow(v.creator);
+                u.created++; u.pallets += Number(v.o.pallets) || 0; u.cartons += Number(v.o.cartons) || 0; u.shipped += v.shippedInRange;
+            } else if (inDay(v.updated) && v.o.enteredBy) {
+                userRow(v.o.enteredBy).edited++;
+            }
+            if (v.status === 'Cancelled' && inDay(v.updated) && v.o.enteredBy) userRow(v.o.enteredBy).cancelled++;
+        });
         const act = data.activity || {};
         const hours = Array.from({ length: 24 }, (_, h) => (data.hourly || {})[h] || { SCAN: 0, SHIP: 0 });
         const firstH = Math.max(0, hours.findIndex(x => x.SCAN || x.SHIP) - 1);
@@ -2038,6 +2072,12 @@
                     <td class="num">${v.onFloor}${v.expected != null ? ' / ' + v.expected : ''}</td><td class="mono">${esc(v.lanes.join(', '))}</td><td>${esc(v.o.picker || '')}</td><td>${esc(v.o.carrier || '')}</td></tr>`).join('')}
                 </tbody></table></div>` : empty('All released orders are shipped.')}
             </div>
+            <div class="rep-sec">
+                <h3>By user <span>orders each person created or changed this day</span></h3>
+                ${Object.keys(byUser).length ? `<div class="rep-table"><table id="rep-by-user"><thead><tr><th>Entered by</th><th class="num">Orders created</th><th class="num">Pallets</th><th class="num">Cartons</th><th class="num">Other orders edited</th><th class="num">Cancelled</th><th class="num">Their pallets shipped today</th></tr></thead><tbody>
+                ${Object.entries(byUser).sort((a, b) => b[1].created - a[1].created || b[1].edited - a[1].edited).map(([n, x]) => `<tr><td><b>${esc(n)}</b></td><td class="num">${x.created}</td><td class="num">${x.pallets}</td><td class="num">${x.cartons}</td><td class="num">${x.edited}</td><td class="num">${x.cancelled}</td><td class="num">${x.shipped}</td></tr>`).join('')}
+                </tbody><tfoot><tr><td>Total</td>${['created', 'pallets', 'cartons', 'edited', 'cancelled', 'shipped'].map(k => `<td class="num">${Object.values(byUser).reduce((a, x) => a + x[k], 0)}</td>`).join('')}</tr></tfoot></table></div>` : empty('No orders created or changed this day.')}
+            </div>
             <div class="rep-grid">
                 <div class="rep-sec">
                     <h3>Released by customer <span>${released.length} order(s)</span></h3>
@@ -2069,6 +2109,14 @@
             c.orders++; c.pallets += Number(v.o.pallets) || 0; c.shipped += v.shipped;
             if (v.status === 'Shipped') { c.done++; c.totals.push(v.total); }
         });
+        const byUser = {};
+        views.forEach(v => {
+            const u = byUser[v.creator] = byUser[v.creator] || { orders: 0, cancelled: 0, pallets: 0, cartons: 0, done: 0, totals: [] };
+            u.orders++;
+            if (v.status === 'Cancelled') { u.cancelled++; return; }
+            u.pallets += Number(v.o.pallets) || 0; u.cartons += Number(v.o.cartons) || 0;
+            if (v.status === 'Shipped') { u.done++; u.totals.push(v.total); }
+        });
         reportRows = views;
         const lastDay = new Date(to); lastDay.setDate(lastDay.getDate() - 1);
         const fmtD = d => d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
@@ -2085,6 +2133,12 @@
             </div>
             <div class="sub2" style="margin:-6px 0 10px">Pallets on completed orders: ${shp} shipped of ${exp} expected${exp ? ` (${Math.round(shp / exp * 100)}%)` : ''} · ${views.length - active.length} cancelled</div>
             <div class="rep-sec">
+                <h3>By user <span>who entered the orders</span></h3>
+                ${views.length ? `<div class="rep-table"><table id="rep-life-user"><thead><tr><th>Created by</th><th class="num">Orders</th><th class="num">Pallets</th><th class="num">Cartons</th><th class="num">Shipped complete</th><th class="num">Cancelled</th><th>Avg release → shipped</th></tr></thead><tbody>
+                ${Object.entries(byUser).sort((a, b) => b[1].orders - a[1].orders).map(([n, x]) => { const t = avg(x.totals); return `<tr><td><b>${esc(n)}</b></td><td class="num">${x.orders}</td><td class="num">${x.pallets}</td><td class="num">${x.cartons}</td><td class="num">${x.done}</td><td class="num">${x.cancelled}</td><td class="${durClass(t, 24, 48)}">${esc(dur(t) || '—')}</td></tr>`; }).join('')}
+                </tbody></table></div>` : '<div class="rep-empty">No orders released in this period.</div>'}
+            </div>
+            <div class="rep-sec">
                 <h3>By customer</h3>
                 ${active.length ? `<div class="rep-table"><table><thead><tr><th>Customer</th><th class="num">Orders</th><th class="num">Shipped complete</th><th class="num">Pallets expected</th><th class="num">Pallets shipped</th><th>Avg release → shipped</th></tr></thead><tbody>
                 ${Object.entries(byCustomer).sort((a, b) => b[1].orders - a[1].orders).map(([c, x]) => { const t = avg(x.totals); return `<tr><td>${esc(c)}</td><td class="num">${x.orders}</td><td class="num">${x.done}</td><td class="num">${x.pallets}</td><td class="num">${x.shipped}</td><td class="${durClass(t, 24, 48)}">${esc(dur(t) || '—')}</td></tr>`; }).join('')}
@@ -2093,12 +2147,12 @@
             <div class="rep-sec">
                 <h3>Every order, release to shipped <span>${views.length} order(s)</span></h3>
                 ${views.length ? `<div class="rep-table"><table><thead><tr>
-                    <th>Order #</th><th>Customer</th><th>Type</th><th>Reference</th><th>Picker</th><th>Carrier / VRID</th>
+                    <th>Order #</th><th>Customer</th><th>Created by</th><th>Type</th><th>Reference</th><th>Picker</th><th>Carrier / VRID</th>
                     <th>Released</th><th>First staged</th><th>At dock</th><th>Shipped</th>
                     <th>Release → staged</th><th>Staged → shipped</th><th>Total</th>
                     <th class="num">Exp.</th><th class="num">Staged</th><th class="num">Shipped</th><th>Lanes</th><th>Dock</th><th>Status</th></tr></thead><tbody>
                 ${views.map(v => `<tr>
-                    <td class="ono">${esc(v.o.orderNumber)}</td><td>${esc(v.o.customer || '')}</td><td>${esc(v.o.orderType || '')}</td>
+                    <td class="ono">${esc(v.o.orderNumber)}</td><td>${esc(v.o.customer || '')}</td><td>${esc(v.creator)}</td><td>${esc(v.o.orderType || '')}</td>
                     <td>${esc([v.o.refType, v.o.reference].filter(Boolean).join(' '))}</td><td>${esc(v.o.picker || '')}</td>
                     <td>${esc(v.o.carrier || '')}${v.o.vrid ? ` <span class="sub2 mono">${esc(v.o.vrid)}</span>` : ''}</td>
                     <td>${esc(whenShort(v.released))}</td><td>${esc(whenShort(v.firstStaged))}</td><td>${esc(whenShort(v.firstDock))}</td><td>${esc(whenShort(v.lastShip))}</td>
@@ -2115,10 +2169,10 @@
         if (!reportRows.length) { toast('Run a report first.', true); return; }
         const iso = ms => (ms ? new Date(ms).toLocaleString() : '');
         const hours = ms => (ms == null ? '' : (ms / HOUR).toFixed(1));
-        const head = ['Order #', 'Customer', 'Order type', 'Reference type', 'Reference', 'Picker', 'Carrier', 'VRID', 'Released', 'First staged', 'At dock', 'Last shipped',
+        const head = ['Order #', 'Customer', 'Created by', 'Last edited by', 'Order type', 'Reference type', 'Reference', 'Picker', 'Carrier', 'VRID', 'Released', 'First staged', 'At dock', 'Last shipped',
             'Release to staged (h)', 'Staged to shipped (h)', 'Release to shipped (h)', 'Pallets expected', 'Pallets staged', 'Pallets on floor', 'Pallets shipped', 'Over/short', 'Stage lanes', 'Dock', 'Status'];
         const cell = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-        const lines = [head.map(cell).join(',')].concat(reportRows.map(v => [v.o.orderNumber, v.o.customer, v.o.orderType, v.o.refType, v.o.reference, v.o.picker, v.o.carrier, v.o.vrid,
+        const lines = [head.map(cell).join(',')].concat(reportRows.map(v => [v.o.orderNumber, v.o.customer, v.creator, v.o.enteredBy, v.o.orderType, v.o.refType, v.o.reference, v.o.picker, v.o.carrier, v.o.vrid,
             iso(v.released), iso(v.firstStaged), iso(v.firstDock), iso(v.lastShip), hours(v.releaseToStage), hours(v.stageToShip), hours(v.total),
             v.expected, v.staged, v.onFloor, v.shipped, v.variance, v.lanes.join(', '), v.docks.join(', '), v.status].map(cell).join(',')));
         const name = reportKind === 'eod' ? `eod-${$('rep-day').value}` : `order-lifecycle-${$('rep-from').value}-to-${$('rep-to').value}`;
@@ -2183,7 +2237,7 @@
     // Start
     // ===================================================================================
     applyWarehouseLabel();
-    if (currentKey()) { loadOrders(); loadApiStatus(); }
+    if (currentKey()) { loadOrders(); loadApiStatus(); if (!userName) askName(); }
     else showSignIn();
     setInterval(() => { if (currentView === 'orders' && currentKey() && !document.hidden) loadOrders(); }, REFRESH_MS);
 </script>

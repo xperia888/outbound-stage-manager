@@ -789,9 +789,37 @@ test('merge keeps docks and carriers added on either device', () => {
 // ---------------------------------------------------------------------------------------------
 // Order intake (Orders tab)
 // ---------------------------------------------------------------------------------------------
-function intakeGs() {
-    return loadCodeGs({ extraProps: { CS_CODE: 'cs-1', WMS_API_KEY: 'wms-key-1', CS_CODE_CHINO: 'cs-chino', ACCESS_CODE_CHINO: 'chino-1' } });
+function intakeGs({ autoName = true } = {}) {
+    const gs = loadCodeGs({ extraProps: { CS_CODE: 'cs-1', WMS_API_KEY: 'wms-key-1', CS_CODE_CHINO: 'cs-chino', ACCESS_CODE_CHINO: 'chino-1' } });
+    if (autoName) {
+        // The page always sends the user's name; tests that don't care about names get "Tester"
+        const api = gs.ctx.api;
+        gs.ctx.api = req => (req.fn === 'upsertOrders'
+            ? api({ ...req, args: [req.args[0], { enteredBy: 'Tester', ...(req.args[1] || {}) }] })
+            : api(req));
+    }
+    return gs;
 }
+
+test('orders: a name is required to create, import or cancel; Created By is kept from the first save', () => {
+    const { ctx } = intakeGs({ autoName: false });
+    const call = (fn, args, key = 'cs-1') => JSON.parse(JSON.stringify(ctx.api({ fn, key, args })));
+    const noName = call('upsertOrders', [[{ orderNumber: 'N1', customer: 'Acme' }]]);
+    assert.equal(noName.ok, false);
+    assert.equal(noName.needName, true);
+    assert.equal(call('upsertOrders', [[{ orderNumber: 'N1', customer: 'Acme', enteredBy: '  ' }], { enteredBy: '' }]).needName, true, 'blank names do not count');
+    assert.equal(call('upsertOrders', [[{ orderNumber: 'N1', customer: 'Acme' }], { enteredBy: 'Amy' }]).inserted, 1, 'batch-level name');
+    assert.equal(call('upsertOrders', [[{ orderNumber: 'N2', customer: 'Acme', enteredBy: 'Bo' }]]).inserted, 1, 'per-order name');
+    assert.equal(call('upsertOrders', [[{ orderNumber: 'N1', pallets: 4 }], { enteredBy: 'Cy' }]).updated, 1);
+    assert.equal(call('upsertOrders', [[{ orderNumber: 'W1', customer: 'Feed' }]], 'wms-key-1').inserted, 1, 'the WMS key needs no name');
+    assert.equal(call('setOrderStatus', ['N2', 'Cancelled', '']).needName, true);
+    const list = call('listOrders', []).orders;
+    const n1 = list.find(o => o.orderNumber === 'N1');
+    assert.equal(n1.createdBy, 'Amy', 'created by the first person');
+    assert.equal(n1.enteredBy, 'Cy', 'entered by the last person to save');
+    assert.equal(list.find(o => o.orderNumber === 'N2').createdBy, 'Bo');
+    assert.equal(list.find(o => o.orderNumber === 'W1').createdBy, '');
+});
 
 test('orders: CS code and WMS key reach only the order functions; WMS key is not a sign-in code', () => {
     const { ctx } = intakeGs();
@@ -922,7 +950,7 @@ test('orders: stage lanes from the board are written into the Orders tab by Orde
     call('upsertOrders', [[{ orderNumber: 'DN9', customer: 'Late entry' }]]);
     o = Object.fromEntries(call('listOrders', [{ days: 0 }]).orders.map(x => [x.orderNumber, x]));
     assert.equal(o.DN9.stageLanes, 'S51');
-    assert.deepEqual(sheets.get('Orders').rows[0].slice(-5), ['Stage Lanes', 'Dock', 'Pallets On Floor', 'Pallets Shipped', 'Floor Updated']);
+    assert.deepEqual(sheets.get('Orders').rows[0].slice(-6), ['Stage Lanes', 'Dock', 'Pallets On Floor', 'Pallets Shipped', 'Floor Updated', 'Created By']);
 });
 
 test('reports: floor history from the Scan Log per order, activity in range, floor orders missing from intake', () => {

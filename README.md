@@ -104,18 +104,23 @@ Customer service releases orders to the warehouse here: https://xperia888.github
   - **Templates:** **Save as template…** stores the matching, defaults, sheet and header row under a name (e.g. "Amazon VRID report") in the **Import Templates** tab. Everyone in that warehouse can use it. When a file with the same columns is loaded, its template is applied automatically. Templates can be updated or deleted.
   - Rows are checked before importing (new, update, skip, problem). Existing orders are updated by Order #, and blank cells never wipe what was already entered.
 - **API connector:** a WMS or a small script can POST orders as JSON. The **API Connector** tab has the exact request format.
+- **Your name is required.** Sign-in asks for it, and **+ New Order**, **Import** and **Cancel** ask again if it is missing. The server also refuses orders saved without a name (the WMS API key is exempt). The name is saved in two columns:
+  - **Created By:** set once, when the order is first created.
+  - **Entered By:** whoever saved the order last.
 - **Reports** tab (floor leads and customer service), with **Export CSV** and **Print / PDF**. Each report combines intake orders with the staging floor history from the **Scan Log** and the live board:
   - **End of Day** (pick a day; default is today):
     - Totals: orders released, pallets and cartons released, pallets staged, pallets shipped, orders completed, and orders still open.
     - Floor activity by hour.
     - Shipped orders, with dock, last pallet out and the time from release to shipped.
     - Orders still open at end of day, with their age and stage lanes.
+    - **By user:** orders each person created (with pallets and cartons), other orders they edited, orders they cancelled, and their pallets shipped that day.
     - Orders released, by customer and by picker.
     - Exceptions: orders waiting more than 24h, over/short shipments, cancelled orders still on the floor, and floor orders that are missing from intake.
   - **Order Lifecycle** (pick a date range, or a 7 days / 30 days / This month shortcut): every order released in the range, with each milestone:
     - Released, first staged, at dock and shipped.
     - The time between milestones.
     - Pallets expected vs staged vs shipped.
+    - **Created by** for each order, and a **By user** summary: orders, pallets, cartons, shipped complete and average release → shipped.
     - Averages for the whole range and for each customer.
 
 **Access (Script Properties):**
