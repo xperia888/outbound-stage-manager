@@ -17,6 +17,7 @@
 <style>
     /* Same look as the staging app: slate header and page, amber actions, Inter + JetBrains Mono */
     :root {
+        --page-w: 1500px;   /* page width; grows on big and ultra-wide screens (see the end of the styles) */
         --page: #f1f5f9;          /* slate-100 */
         --surface: #ffffff;
         --surface-2: #f8fafc;     /* slate-50 */
@@ -55,7 +56,7 @@
 
     /* Header (like the staging app) */
     header { background: var(--slate-900); color: #fff; border-bottom: 1px solid var(--slate-800); position: sticky; top: 0; z-index: 20; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25); }
-    .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 20px 0; }
+    .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 20px 0; max-width: var(--page-w); margin: 0 auto; }
     .brand { display: flex; align-items: center; gap: 10px; }
     .brand-icon { background: var(--amber); color: #020617; border-radius: 8px; padding: 6px; display: inline-flex; }
     .brand h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
@@ -68,12 +69,12 @@
     .who button { background: var(--slate-800); border: 1px solid #334155; color: #e2e8f0; border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
     .who button:hover { background: #334155; color: #fff; }
     .who #user-btn { color: #e2e8f0; font-weight: 700; font-size: 12px; padding: 5px 4px; }
-    nav.tabs { display: flex; gap: 2px; margin-top: 8px; padding: 0 20px; overflow-x: auto; }
+    nav.tabs { display: flex; gap: 2px; margin: 8px auto 0; padding: 0 20px; overflow-x: auto; max-width: var(--page-w); }
     nav.tabs button { background: transparent; border: none; border-bottom: 3px solid transparent; color: #94a3b8; font-weight: 700; font-size: 13px; padding: 8px 12px 9px; white-space: nowrap; }
     nav.tabs button:hover { color: #fff; }
     nav.tabs button.active { color: #fff; border-bottom-color: var(--amber); }
 
-    main { padding: 16px 20px 40px; max-width: 1500px; margin: 0 auto; }
+    main { padding: 16px 20px 40px; max-width: var(--page-w); margin: 0 auto; }
     .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
     .card + .card { margin-top: 14px; }
     .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -284,6 +285,7 @@
     .rep-sec h3 { font-size: 13px; font-weight: 800; margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
     .rep-sec h3 span { font-size: 12px; font-weight: 600; color: var(--muted); }
     .rep-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+    .rep-grid > * { min-width: 0; }   /* wide tables scroll inside their box instead of widening the page */
     .rep-table { border: 1px solid var(--line); border-radius: 10px; overflow: auto; }
     .rep-table td, .rep-table th { padding: 7px 9px; font-size: 12.5px; }
     .rep-table tfoot td { font-weight: 800; background: var(--surface-2); border-top: 1px solid var(--line); }
@@ -354,6 +356,20 @@
         .who .name-label { display: none; }
         #toast { left: 10px; right: 10px; }
     }
+    @media (max-width: 560px) {
+        .form-grid { grid-template-columns: 1fr; }
+        .stat-row { grid-template-columns: 1fr; }
+        .brand .sub { display: none; }
+        .rep-controls input[type=date] { width: 100%; }
+        .card-head, .card-body { padding-left: 12px; padding-right: 12px; }
+    }
+
+    /* Big and ultra-wide screens: use more of the width, and scale everything up a little so text stays readable */
+    #view-form .card, #view-api .card { max-width: 1280px; margin-left: auto; margin-right: auto; }
+    @media (min-width: 1700px) { :root { --page-w: 1680px; } }
+    @media (min-width: 2200px) { :root { --page-w: 1760px; } body { zoom: 1.2; } }
+    @media (min-width: 3000px) { :root { --page-w: 2300px; } body { zoom: 1.35; } }
+    @media print { body { zoom: 1; } :root { --page-w: none; } }
 </style>
 </head>
 <body>
@@ -2127,7 +2143,7 @@
                 ${kpi(esc(dur(aTotal) || '—'), 'Avg release → shipped')}
             </div>
             <div class="sub2" style="margin:-6px 0 10px">Pallets on completed orders: ${shp} shipped of ${exp} expected${exp ? ` (${Math.round(shp / exp * 100)}%)` : ''} · ${views.length - active.length} cancelled</div>
-            <div class="rep-sec">
+            <div class="rep-grid">            <div class="rep-sec">
                 <h3>By user <span>who entered the orders</span></h3>
                 ${views.length ? `<div class="rep-table"><table id="rep-life-user"><thead><tr><th>Created by</th><th class="num">Orders</th><th class="num">Pallets</th><th class="num">Cartons</th><th class="num">Shipped complete</th><th class="num">Cancelled</th><th>Avg release → shipped</th></tr></thead><tbody>
                 ${Object.entries(byUser).sort((a, b) => b[1].orders - a[1].orders).map(([n, x]) => { const t = avg(x.totals); return `<tr><td><b>${esc(n)}</b></td><td class="num">${x.orders}</td><td class="num">${x.pallets}</td><td class="num">${x.cartons}</td><td class="num">${x.done}</td><td class="num">${x.cancelled}</td><td class="${durClass(t, 24, 48)}">${esc(dur(t) || '—')}</td></tr>`; }).join('')}
@@ -2138,6 +2154,7 @@
                 ${active.length ? `<div class="rep-table"><table><thead><tr><th>Customer</th><th class="num">Orders</th><th class="num">Shipped complete</th><th class="num">Pallets expected</th><th class="num">Pallets shipped</th><th>Avg release → shipped</th></tr></thead><tbody>
                 ${Object.entries(byCustomer).sort((a, b) => b[1].orders - a[1].orders).map(([c, x]) => { const t = avg(x.totals); return `<tr><td>${esc(c)}</td><td class="num">${x.orders}</td><td class="num">${x.done}</td><td class="num">${x.pallets}</td><td class="num">${x.shipped}</td><td class="${durClass(t, 24, 48)}">${esc(dur(t) || '—')}</td></tr>`; }).join('')}
                 </tbody></table></div>` : '<div class="rep-empty">No orders released in this period.</div>'}
+            </div>
             </div>
             <div class="rep-sec">
                 <h3>Every order, release to shipped <span>${views.length} order(s)</span></h3>
