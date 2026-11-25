@@ -91,6 +91,10 @@ Customer service releases orders to the warehouse here: https://xperia888.github
   - Status, source, entered by, created/updated (kept by the server)
   - Picker and VRID are the last two columns of the Orders tab; older tabs get them added automatically
 - **Order list:** shows each order's floor progress, read from the staging board (read only): waiting, partly staged, staged, at dock, or shipped, with lanes and counts. You can search, filter and export to CSV.
+- **Stage lanes from the floor:** orders are matched to the staging board by Order #.
+  - The list has a **Stage Lane** column, live from the board; grey chips mean the order's last lanes after it shipped.
+  - The Orders tab gets **Stage Lanes**, **Dock**, **Pallets On Floor**, **Pallets Shipped** and **Floor Updated** columns.
+  - These columns are filled in whenever the floor changes the board, when the intake page refreshes, or when an order is entered that the floor had already staged.
 - **Cancel:** marks the row Cancelled. Rows are never deleted, so there's always a history, and a cancelled order can be restored.
 - **Import from WMS (any Excel or CSV):**
   - Load any export. Pick the **sheet** and the **header row**; title rows above the headers are found automatically.

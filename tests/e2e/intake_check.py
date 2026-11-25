@@ -129,6 +129,14 @@ async def main():
         record('release time filled in', bool(o.get('Released to Warehouse')))
         row_text = await pg.text_content('tr[data-order="DN-E2E-1"]') or ''
         record('list shows floor progress from the board (At D3, 4/6)', 'At D3' in row_text and '4/6' in row_text, row_text)
+        lane_cell = await pg.evaluate("[...document.querySelectorAll('tr[data-order=\"DN-E2E-1\"] .lane-chip')].map(e => e.textContent).join(',')")
+        record('Stage Lane column shows the floor lanes', lane_cell == 'S51,S52', lane_cell)
+        o = next((x for x in orders_rows() if x.get('Order #') == 'DN-E2E-1'), {})
+        record('stage lanes written back to the Orders tab', o.get('Stage Lanes') == 'S51, S52' and o.get('Dock') == 'D3'
+               and o.get('Pallets On Floor') == 4 and o.get('Pallets Shipped') == 0 and bool(o.get('Floor Updated')), o)
+        await pg.fill('#search', 's52'); await pg.wait_for_timeout(150)
+        record('search by lane finds the order', await pg.locator('#orders-body tr[data-order]').count() == 1)
+        await pg.fill('#search', '')
 
         # second order + "Save & add another"
         await pg.click('#new-btn'); await pg.wait_for_timeout(150); await pg.fill('#f-orderNumber', 'DN-OLD-7'); await pg.fill('#f-customer', 'Hooli'); await pg.fill('#f-pallets', '3')
