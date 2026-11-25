@@ -104,6 +104,7 @@ Customer service releases orders to the warehouse here: https://xperia888.github
   - **Templates:** **Save as template…** stores the matching, defaults, sheet and header row under a name (e.g. "Amazon VRID report") in the **Import Templates** tab. Everyone in that warehouse can use it. When a file with the same columns is loaded, its template is applied automatically. Templates can be updated or deleted.
   - Rows are checked before importing (new, update, skip, problem). Existing orders are updated by Order #, and blank cells never wipe what was already entered.
 - **API connector:** a WMS or a small script can POST orders as JSON. The **API Connector** tab has the exact request format.
+- **Summary tiles** follow the search box, so their totals cover only the matching orders. The **Missing carrier** tile counts open orders (not shipped or cancelled) with no carrier. Click it to list them; they show **No carrier** in the table.
 - **Any screen size:** works from phones up to ultra-wide monitors. On screens 2200px wide and up the page gets wider and scales up a little, so text stays readable.
 - **Name on the sign-in page.** Sign-in asks for the access code and your name. Signing out clears the name, so the next person enters their own. The server refuses orders saved without a name (the WMS API key is exempt). The name is saved in two columns:
   - **Created By:** set once, when the order is first created.

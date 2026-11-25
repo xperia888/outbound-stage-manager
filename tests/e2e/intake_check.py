@@ -328,6 +328,26 @@ async def main():
                and 'wms-e2e' not in api_text)
         await pg.screenshot(path=f'{OUT}/intake_api.png', full_page=True)
 
+        # --- Summary tiles follow the search; missing-carrier count -----------------------------
+        req({'fn': 'upsertOrders', 'warehouse': 'ONT', 'key': 'wms-e2e', 'args': [[{'orderNumber': 'DN-NOCAR-1', 'customer': 'Zeta Supply', 'pallets': 2}], {}]})
+        await pg.click('#tabs button[data-view="orders"]'); await pg.click('#refresh-btn'); await pg.wait_for_timeout(1200)
+        tiles = lambda: pg.evaluate("Object.fromEntries([...document.querySelectorAll('#tiles .tile')].map(t => [t.dataset.tile, +t.querySelector('.n').textContent]))")
+        t_all = await tiles()
+        record('Missing carrier tile counts open orders with no carrier', t_all.get('nocarrier') == 1
+               and await pg.evaluate("document.querySelector('.tile.nocarrier').classList.contains('has')"), t_all)
+        await pg.click('.tile.nocarrier'); await pg.wait_for_timeout(200)
+        rows_nc = await pg.evaluate("[...document.querySelectorAll('#orders-body tr[data-order]')].map(r => r.dataset.order)")
+        record('clicking it lists just those orders, marked No carrier', rows_nc == ['DN-NOCAR-1'] and await pg.is_visible('#orders-body .no-carrier'), rows_nc)
+        await pg.select_option('#status-filter', 'all')
+        await pg.fill('#search', 'amazon'); await pg.wait_for_timeout(200)
+        t_amz = await tiles()
+        note = await pg.text_content('#tiles-note') or ''
+        record('tiles update to the search result', t_amz.get('waiting') == 3 and t_amz.get('nocarrier') == 0 and t_amz.get('shipped') == 0
+               and t_all.get('waiting', 0) > 3 and 'amazon' in note and '3 of' in note, (t_amz, note))
+        await pg.screenshot(path=f'{OUT}/intake_tiles.png', full_page=False)
+        await pg.fill('#search', ''); await pg.wait_for_timeout(200)
+        record('clearing the search restores the totals', await tiles() == t_all and await pg.is_hidden('#tiles-note'))
+
         # --- Name is entered on the sign-in page only ---------------------------------------------
         await pg.click('#tabs button[data-view="orders"]')
         await pg.evaluate("userName = ''; localStorage.removeItem(INTAKE_USER_KEY); applyWarehouseLabel()")
