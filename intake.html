@@ -67,7 +67,7 @@
     .who { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; }
     .who button { background: var(--slate-800); border: 1px solid #334155; color: #e2e8f0; border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
     .who button:hover { background: #334155; color: #fff; }
-    .who button.need-name { background: var(--amber-500, #f59e0b); border-color: #f59e0b; color: #111827; }
+    .who #user-btn { color: #e2e8f0; font-weight: 700; font-size: 12px; padding: 5px 4px; }
     nav.tabs { display: flex; gap: 2px; margin-top: 8px; padding: 0 20px; overflow-x: auto; }
     nav.tabs button { background: transparent; border: none; border-bottom: 3px solid transparent; color: #94a3b8; font-weight: 700; font-size: 13px; padding: 8px 12px 9px; white-space: nowrap; }
     nav.tabs button:hover { color: #fff; }
@@ -370,7 +370,7 @@
         <span class="spacer"></span>
         <div class="who">
             <span class="name-label">Entered by</span>
-            <button type="button" id="user-btn" title="Change your name">—</button>
+            <span id="user-btn">—</span>
             <button type="button" id="signout-btn" title="Forget the code on this device">Sign out</button>
         </div>
     </div>
@@ -681,11 +681,11 @@
             <p>Enter your customer-service (or warehouse) access code. The code picks the warehouse.</p>
             <div class="field">
                 <label for="signin-code">Access code</label>
-                <input type="password" id="signin-code" autocomplete="off" required>
+                <input type="password" id="signin-code" autocomplete="off">
             </div>
             <div class="field">
                 <label for="signin-name">Your name</label>
-                <input type="text" id="signin-name" maxlength="60" placeholder="Required — shown on orders and in the reports">
+                <input type="text" id="signin-name" maxlength="60" placeholder="Your name">
             </div>
             <div class="err-text" id="signin-error" style="margin-top:10px"></div>
         </div>
@@ -868,8 +868,7 @@
         const chip = $('wh-chip');
         chip.textContent = WAREHOUSES[WH].name;
         chip.className = 'wh-chip ' + WAREHOUSES[WH].chip;
-        $('user-btn').textContent = userName || 'Set your name';
-        $('user-btn').classList.toggle('need-name', !userName);
+        $('user-btn').textContent = userName || '—';
         document.title = `Order Intake — ${WAREHOUSES[WH].name}`;
     }
 
@@ -877,15 +876,21 @@
         $('signin').classList.remove('hidden');
         $('signin-error').textContent = message;
         $('signin-name').value = userName;
-        setTimeout(() => $('signin-code').focus(), 50);
+        setTimeout(() => (currentKey() && !userName ? $('signin-name') : $('signin-code')).focus(), 50);
     }
 
     $('signin-form').addEventListener('submit', async e => {
         e.preventDefault();
         const code = $('signin-code').value.trim();
         const name = $('signin-name').value.replace(/\s+/g, ' ').trim();
-        if (!code) return;
-        if (!name) { $('signin-error').textContent = 'Enter your name. It is saved on the orders you create and used in the reports.'; $('signin-name').focus(); return; }
+        if (!name) { $('signin-error').textContent = 'Enter your name.'; $('signin-name').focus(); return; }
+        if (!code && currentKey()) {   // already signed in on this device: only the name was missing
+            userName = name; store.set(INTAKE_USER_KEY, name);
+            $('signin').classList.add('hidden');
+            applyWarehouseLabel();
+            return;
+        }
+        if (!code) { $('signin-error').textContent = 'Enter the access code.'; $('signin-code').focus(); return; }
         const btn = $('signin-btn');
         btn.disabled = true; btn.textContent = 'Checking…';
         const r = await cloud('resolveWarehouse', [], { key: code });
@@ -908,28 +913,18 @@
     $('signout-btn').addEventListener('click', async () => {
         if (!(await confirmBox('Sign out?', 'The access code will be removed from this device.', 'Sign out'))) return;
         store.del(intakeCodeKey(WH));
+        userName = ''; store.del(INTAKE_USER_KEY);   // the next person enters their own name
+        applyWarehouseLabel();
         orders = []; progress = {};
         renderOrders();
         showSignIn();
     });
-    /** Asks for the user's name. Resolves true once a name is set. */
-    async function askName(why) {
-        const name = await promptBox(userName ? 'Change your name' : 'Who is entering orders?',
-            why || 'Your name is saved on every order you create or import, and the reports count work by name.', userName || '');
-        if (!name) return !!userName;
-        userName = name.slice(0, 60);
-        store.set(INTAKE_USER_KEY, userName);
-        applyWarehouseLabel();
-        return true;
-    }
-    /** Every create, import or cancel needs a name first. */
+    /** The name is entered on the sign-in page; without one, send the user back there. */
     async function ensureName() {
         if (userName) return true;
-        const ok = await askName('Enter your name before creating or importing orders. It is saved on each order and used in the reports.');
-        if (!ok) toast('A name is needed to create or import orders.', true);
-        return ok;
+        showSignIn('Enter your name.');
+        return false;
     }
-    $('user-btn').addEventListener('click', () => askName());
 
     // ===================================================================================
     // Tabs
@@ -1216,7 +1211,7 @@
         $('save-btn').disabled = true; $('save-new-btn').disabled = true;
         const r = await cloud('upsertOrders', [[o], { source: 'Manual' }]);
         $('save-btn').disabled = false; $('save-new-btn').disabled = false;
-        if (!r.ok) { if (r.needName) { userName = ''; applyWarehouseLabel(); } $('form-error').textContent = r.error || 'Could not save'; return; }
+        if (!r.ok) { if (r.needName) { userName = ''; applyWarehouseLabel(); showSignIn('Enter your name.'); } $('form-error').textContent = r.error || 'Could not save'; return; }
         if (r.errors && r.errors.length) { $('form-error').textContent = r.errors.map(e => e.error).join(' · '); return; }
         toast(r.inserted ? `Order ${o.orderNumber} released to the warehouse` : `Order ${o.orderNumber} updated`);
         await loadOrders();
@@ -2237,8 +2232,8 @@
     // Start
     // ===================================================================================
     applyWarehouseLabel();
-    if (currentKey()) { loadOrders(); loadApiStatus(); if (!userName) askName(); }
-    else showSignIn();
+    if (currentKey()) { loadOrders(); loadApiStatus(); }
+    if (!currentKey() || !userName) showSignIn();
     setInterval(() => { if (currentView === 'orders' && currentKey() && !document.hidden) loadOrders(); }, REFRESH_MS);
 </script>
 </body>
