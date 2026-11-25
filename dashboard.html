@@ -54,6 +54,12 @@
         --lane-used-border: #98a4b5;
         --spot-border: #d3dae3;
         --docked-ring: var(--accent);
+        /* Section tints: soft backgrounds + a darker accent for labels, kept clear of the status colors */
+        --sec-docks-bg: #edf2f9;  --sec-docks-border: #d3dfee;  --sec-docks-accent: #2f5d9a;
+        --sec-s-bg: #e9f5f2;      --sec-s-border: #cbe5de;      --sec-s-accent: #1d7466;
+        --sec-z1-bg: #f1eef9;     --sec-z1-border: #dcd3ef;     --sec-z1-accent: #6449ad;
+        --sec-z2-bg: #edf4e7;     --sec-z2-border: #d2e3c4;     --sec-z2-accent: #4b742b;
+        --sec-z3-bg: #f6f0e4;     --sec-z3-border: #e7d8bb;     --sec-z3-accent: #85642a;
         --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
         --mono: "JetBrains Mono", "Consolas", "SFMono-Regular", ui-monospace, monospace;
     }
@@ -95,6 +101,11 @@
         --lane-used-border: #55544e;
         --spot-border: #33332f;
         --docked-ring: #9ec5f4;
+        --sec-docks-bg: rgba(90, 140, 210, 0.08);  --sec-docks-border: rgba(90, 140, 210, 0.28);  --sec-docks-accent: #9dbbe6;
+        --sec-s-bg: rgba(60, 170, 150, 0.08);      --sec-s-border: rgba(60, 170, 150, 0.28);      --sec-s-accent: #8fd3c5;
+        --sec-z1-bg: rgba(140, 110, 220, 0.09);    --sec-z1-border: rgba(140, 110, 220, 0.30);    --sec-z1-accent: #c1b0f0;
+        --sec-z2-bg: rgba(120, 170, 80, 0.08);     --sec-z2-border: rgba(120, 170, 80, 0.28);     --sec-z2-accent: #b6d79a;
+        --sec-z3-bg: rgba(200, 160, 90, 0.08);     --sec-z3-border: rgba(200, 160, 90, 0.28);     --sec-z3-accent: #e3c58e;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; background: var(--page-bg); overflow: hidden; }
@@ -176,7 +187,8 @@
     .floor {
         position: relative;
         display: grid;
-        grid-template-rows: 28px auto 24px minmax(0, 1.15fr) 24px minmax(0, 1fr) 22px;
+        grid-template-rows: 26px auto minmax(0, 1.15fr) minmax(0, 1fr) 20px;
+        row-gap: 6px;
         grid-template-columns: minmax(0, 1fr);
         width: 100%; min-width: 0;
         background: var(--surface-1);
@@ -186,19 +198,42 @@
         padding: 8px 16px 10px;
         min-height: 0;
     }
-    .floor-title { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+    .floor-title { display: flex; justify-content: space-between; align-items: center; font-size: 15px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
     .legend { display: flex; gap: 16px; text-transform: none; letter-spacing: 0; font-weight: 500; }
     .legend span { display: inline-flex; align-items: center; gap: 6px; }
     .legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
     .legend i.split { background: linear-gradient(180deg, var(--staged) 0 42%, transparent 42% 58%, var(--staged) 58%); }
     .row-label { display: flex; align-items: flex-end; gap: 10px; font-size: 14px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; padding-bottom: 4px; }
-    .row-label.staging { color: var(--critical-text); }
+    .row-label.staging { color: var(--sec-s-accent); }
+
+    /* Tinted sections: doors, S lanes, each zone */
+    .section {
+        position: relative; min-width: 0; min-height: 0;
+        background: var(--sec-bg); border: 1px solid var(--sec-border); border-radius: 10px;
+        padding: 4px 8px 6px 14px;
+    }
+    .section::before {
+        content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+        border-radius: 10px 0 0 10px; background: var(--sec-accent);
+    }
+    .sec-docks { --sec-bg: var(--sec-docks-bg); --sec-border: var(--sec-docks-border); --sec-accent: var(--sec-docks-accent); padding-top: 0; padding-bottom: 6px; }
+    .sec-s { --sec-bg: var(--sec-s-bg); --sec-border: var(--sec-s-border); --sec-accent: var(--sec-s-accent);
+        display: grid; grid-template-rows: 22px minmax(0, 1fr) 22px; }
+    .sec-z1 { --sec-bg: var(--sec-z1-bg); --sec-border: var(--sec-z1-border); --sec-accent: var(--sec-z1-accent); }
+    .sec-z2 { --sec-bg: var(--sec-z2-bg); --sec-border: var(--sec-z2-border); --sec-accent: var(--sec-z2-accent); }
+    .sec-z3 { --sec-bg: var(--sec-z3-bg); --sec-border: var(--sec-z3-border); --sec-accent: var(--sec-z3-accent); }
+    .sec-tag {
+        display: inline-block; font-family: var(--mono); font-size: 13px; font-weight: 800; letter-spacing: 0.04em;
+        color: #fff; background: var(--sec-accent); border-radius: 4px; padding: 1px 7px; text-transform: uppercase;
+    }
+    .row-label span.sec-tag { color: #fff; letter-spacing: 0.04em; font-weight: 800; }
+    body.dark .sec-tag, body.dark .row-label span.sec-tag { color: #121211; }
     .row-label span { color: var(--text-muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
 
     /* Loading doors along the wall */
     .doors { display: grid; gap: 8px; border-top: 6px solid var(--wall); }
     .door {
-        height: 138px; min-width: 0; overflow: hidden;
+        height: 132px; min-width: 0; overflow: hidden;
         display: flex; flex-direction: column; gap: 2px;
         border: 2px dashed var(--door-border); border-top: none; border-radius: 0 0 12px 12px;
         background: var(--door-bg); padding: 4px 10px 6px;
@@ -252,7 +287,7 @@
     .lane-foot { text-align: center; font-family: var(--mono); font-size: 12px; font-weight: 800; color: var(--accent-text); white-space: nowrap; overflow: hidden; }
 
     /* Which order sits in which lanes (brackets under the lane line) */
-    .order-line { display: grid; gap: 3px; padding-top: 4px; }
+    .order-line { display: grid; gap: 3px; padding-top: 3px; }
     .order-span {
         min-width: 0; border-top: 3px solid var(--staged); border-radius: 2px;
         text-align: center; font-family: var(--mono); font-size: 11px; letter-spacing: -0.05em; font-weight: 800; color: var(--text-secondary);
@@ -262,10 +297,11 @@
     .order-span.blank { border-top-color: transparent; }
 
     /* Other staging zones (N09, W05, W06 …) in a row under the S lanes */
-    .zones { display: grid; gap: 14px; min-height: 0; padding-top: 6px; border-top: 1px dashed var(--line); }
+    .zones { display: grid; gap: 10px; min-height: 0; }
     .zone { display: grid; grid-template-rows: 24px minmax(0, 1fr); min-width: 0; min-height: 0; }
+    .zone-head .zinfo { color: var(--text-secondary); }
     .zone-head { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; }
-    .zone-head .zname { font-family: var(--mono); font-size: 16px; font-weight: 800; color: var(--text-primary); padding: 0 6px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); }
+    .zone-head .zname { font-size: 14px; }
     .zone-head .zinfo { font-size: 13px; color: var(--text-muted); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
     .zone .lane-line { gap: 2px; }
     .zone .lane { grid-template-rows: 30px minmax(0, 1fr) 15px; }
@@ -372,7 +408,7 @@
     <main>
         <section class="floor" aria-label="Staging floor plan">
             <div class="floor-title">
-                <span>Loading doors</span>
+                <span class="sec-tag" style="--sec-accent: var(--sec-docks-accent)">Loading doors</span>
                 <span class="legend">
                     <span><i style="background:var(--staged)"></i>Staged</span>
                     <span><i style="background:var(--accent)"></i>Dock assigned</span>
@@ -382,10 +418,12 @@
                     <span><i style="background:var(--critical)"></i>⛔ Over a week</span>
                 </span>
             </div>
-            <div class="doors" id="docks-row"></div>
-            <div class="row-label staging" id="lanes-label"></div>
-            <div class="lane-line" id="lanes-row"></div>
-            <div class="order-line" id="order-line"></div>
+            <div class="section sec-docks"><div class="doors" id="docks-row"></div></div>
+            <div class="section sec-s">
+                <div class="row-label staging" id="lanes-label"></div>
+                <div class="lane-line" id="lanes-row"></div>
+                <div class="order-line" id="order-line"></div>
+            </div>
             <div class="zones" id="zones-row"></div>
             <div class="floor-foot">
                 <span><b>Doors</b> show what's being loaded · <b>Lanes</b>: 1 box = 1 floor spot · the line under the lanes shows which order is in them</span>
@@ -647,7 +685,7 @@
         const usedLanes = laneCols.filter(c => c && palletsIn(c.id).length).length;
         const first = laneNames[0] || '', last = laneNames[laneNames.length - 1] || '';
         document.getElementById('lanes-label').innerHTML =
-            `Staging lanes ${esc(first)} → ${esc(last)} <span>${laneNames.length} lanes · ${usedLanes} in use</span>`;
+            `<span class="sec-tag">S lanes</span> ${esc(first)} → ${esc(last)} <span>${laneNames.length} lanes · ${usedLanes} in use</span>`;
 
         // Order brackets: neighbouring lanes holding the same order share one bracket
         const spans = [];
@@ -679,13 +717,13 @@
         const zonesRow = document.getElementById('zones-row');
         zonesRow.style.display = zones.length ? '' : 'none';
         zonesRow.style.gridTemplateColumns = zones.map(z => `minmax(0, ${Math.max(1, z.cols.length)}fr)`).join(' ');
-        zonesRow.innerHTML = zones.map(z => {
+        zonesRow.innerHTML = zones.map((z, zi) => {
             const used = z.cols.filter(c => palletsIn(c.id).length).length;
             const spots = z.cols.reduce((t, c) => t + floorSpotsUsed(palletsIn(c.id)), 0);
             const cap = z.cols.reduce((t, c) => t + (Number(c.capacity) || 0), 0);
             const first = z.cols[0] ? zoneSuffix(z.cols[0].name) : '', last = z.cols.length ? zoneSuffix(z.cols[z.cols.length - 1].name) : '';
-            return `<div class="zone">
-                <div class="zone-head"><span class="zname">${esc(z.name)}</span>
+            return `<div class="zone section sec-z${(zi % 3) + 1}">
+                <div class="zone-head"><span class="zname sec-tag">${esc(z.name)}</span>
                     <span class="zinfo">.${esc(first)} → .${esc(last)} · ${z.cols.length} locations · ${used} in use · ${spots}/${cap} spots</span></div>
                 <div class="lane-line" style="grid-template-columns: repeat(${Math.max(1, z.cols.length)}, minmax(0, 1fr))">
                     ${z.cols.map(c => renderLane(c, palletsIn(c.id), c.name, zoneSuffix(c.name))).join('')}
