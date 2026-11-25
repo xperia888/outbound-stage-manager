@@ -801,6 +801,17 @@ function intakeGs({ autoName = true } = {}) {
     return gs;
 }
 
+test('orders: Order Ready Date is saved, updated and listed', () => {
+    const { ctx } = intakeGs();
+    const call = (fn, args, key = 'cs-1') => JSON.parse(JSON.stringify(ctx.api({ fn, key, args })));
+    assert.equal(call('upsertOrders', [[{ orderNumber: 'R1', customer: 'Acme', readyDate: '2026-11-27', shipDate: '2026-11-28' }]]).inserted, 1);
+    assert.equal(call('listOrders', []).orders.find(o => o.orderNumber === 'R1').readyDate, '2026-11-27');
+    call('upsertOrders', [[{ orderNumber: 'R1', readyDate: '2026-11-29' }]], 'wms-key-1');
+    const r1 = call('listOrders', []).orders.find(o => o.orderNumber === 'R1');
+    assert.equal(r1.readyDate, '2026-11-29', 'the WMS can update it too');
+    assert.equal(r1.shipDate, '2026-11-28', 'other fields kept');
+});
+
 test('orders: a name is required to create, import or cancel; Created By is kept from the first save', () => {
     const { ctx } = intakeGs({ autoName: false });
     const call = (fn, args, key = 'cs-1') => JSON.parse(JSON.stringify(ctx.api({ fn, key, args })));
@@ -950,7 +961,7 @@ test('orders: stage lanes from the board are written into the Orders tab by Orde
     call('upsertOrders', [[{ orderNumber: 'DN9', customer: 'Late entry' }]]);
     o = Object.fromEntries(call('listOrders', [{ days: 0 }]).orders.map(x => [x.orderNumber, x]));
     assert.equal(o.DN9.stageLanes, 'S51');
-    assert.deepEqual(sheets.get('Orders').rows[0].slice(-6), ['Stage Lanes', 'Dock', 'Pallets On Floor', 'Pallets Shipped', 'Floor Updated', 'Created By']);
+    assert.deepEqual(sheets.get('Orders').rows[0].slice(-7), ['Stage Lanes', 'Dock', 'Pallets On Floor', 'Pallets Shipped', 'Floor Updated', 'Created By', 'Order Ready Date']);
 });
 
 test('reports: floor history from the Scan Log per order, activity in range, floor orders missing from intake', () => {
