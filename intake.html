@@ -103,9 +103,13 @@
     a { color: var(--sky); font-weight: 700; }
 
     /* Summary tiles */
-    .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .tiles-note { font-size: 12px; color: var(--text-2); margin: -6px 0 10px; }
+    .tiles-note b { font-family: var(--mono); }
+    .tile.selected { box-shadow: 0 0 0 2px var(--slate-900); }
+    .no-carrier { display: inline-block; font-size: 11px; font-weight: 800; color: var(--bad); background: #fef2f2; border: 1px solid #fecaca; border-radius: 5px; padding: 1px 6px; }
     .tile { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--line-strong); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow); text-align: left; }
-    .tile:hover { border-color: var(--line-strong); }
+    .tile:hover { border-left-color: var(--line-strong); border-right-color: var(--line-strong); border-bottom-color: var(--line-strong); }
     .tile .n { font-family: var(--mono); font-size: 24px; font-weight: 800; line-height: 1.15; }
     .tile .t { font-size: 11px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
     .tile.today { border-top-color: var(--violet); }
@@ -113,6 +117,8 @@
     .tile.floor { border-top-color: var(--teal); }
     .tile.dock { border-top-color: var(--sky); }
     .tile.shipped { border-top-color: var(--good); }
+    .tile.nocarrier { border-top-color: var(--bad); }
+    .tile.nocarrier.has .n { color: var(--bad); }
 
     /* Toolbar */
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -342,7 +348,6 @@
         nav.tabs { padding: 0 8px; }
         main { padding: 12px 10px 30px; }
         .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .tiles .tile:last-child { grid-column: 1 / -1; }
         .toolbar input[type=search] { width: 100%; }
         .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .form-grid .span2 { grid-column: 1 / -1; }
@@ -403,6 +408,7 @@
     <!-- ============================== ORDERS ============================== -->
     <section id="view-orders">
         <div class="tiles" id="tiles"></div>
+        <div class="tiles-note hidden" id="tiles-note"></div>
         <div class="card">
             <div class="card-head">
                 <div class="toolbar">
@@ -414,6 +420,7 @@
                         <option value="dock">At dock</option>
                         <option value="shipped">Shipped</option>
                         <option value="cancelled">Cancelled</option>
+                        <option value="nocarrier">Missing carrier</option>
                         <option value="all">All</option>
                     </select>
                     <select id="days-filter" aria-label="Released">
@@ -972,7 +979,6 @@
     let orders = [];
     let progress = {};
     let lastLoadedAt = 0;
-    let tileFilter = '';
 
     /** Floor status of an order, from the staging board's progress. */
     function floorState(o) {
@@ -1001,6 +1007,7 @@
         dock: ['dock'],
         shipped: ['shipped'],
         cancelled: ['cancelled'],
+        nocarrier: ['waiting', 'partial', 'staged', 'dock'],   // open orders with no carrier yet
         all: null
     };
 
@@ -1021,39 +1028,52 @@
         renderOrders();
     }
 
+    /** Open (not shipped, not cancelled) and no carrier entered. */
+    const missingCarrier = o => !String(o.carrier || '').trim() && ['waiting', 'partial', 'staged', 'dock'].includes(floorState(o).key);
+
+    /** Orders that match the search box (the status filter is not applied, so every tile keeps its count). */
+    function searchedOrders() {
+        const q = $('search').value.trim().toLowerCase();
+        if (!q) return orders;
+        return orders.filter(o => [o.orderNumber, o.customer, o.reference, o.carrier, o.proBol, o.destination, o.orderType, o.picker, o.vrid, stageLanesOf(o).lanes.join(' ')]
+            .some(v => String(v || '').toLowerCase().includes(q)));
+    }
+
     function renderTiles() {
         const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
-        const counts = { today: 0, waiting: 0, floor: 0, dock: 0, shipped: 0 };
-        orders.forEach(o => {
+        const counts = { today: 0, waiting: 0, floor: 0, dock: 0, shipped: 0, nocarrier: 0 };
+        const list = searchedOrders();
+        list.forEach(o => {
             const st = floorState(o).key;
             if (Date.parse(o.releasedAt) >= startOfDay.getTime() && o.status !== 'Cancelled') counts.today++;
             if (st === 'waiting') counts.waiting++;
             if (st === 'partial' || st === 'staged') counts.floor++;
             if (st === 'dock') counts.dock++;
             if (st === 'shipped') counts.shipped++;
+            if (missingCarrier(o)) counts.nocarrier++;
         });
-        const tile = (k, n, t) => `<button type="button" class="tile ${k}${tileFilter === k ? ' selected' : ''}" data-tile="${k}"><div class="n">${n}</div><div class="t">${t}</div></button>`;
+        const sel = $('status-filter').value;
+        const tile = (k, n, t, extra = '') => `<button type="button" class="tile ${k}${sel === k ? ' selected' : ''}${extra}" data-tile="${k}"><div class="n">${n}</div><div class="t">${t}</div></button>`;
         $('tiles').innerHTML = tile('today', counts.today, 'Released today') + tile('waiting', counts.waiting, 'Waiting for floor')
-            + tile('floor', counts.floor, 'Staged on floor') + tile('dock', counts.dock, 'At dock') + tile('shipped', counts.shipped, 'Shipped');
+            + tile('floor', counts.floor, 'Staged on floor') + tile('dock', counts.dock, 'At dock') + tile('shipped', counts.shipped, 'Shipped')
+            + tile('nocarrier', counts.nocarrier, 'Missing carrier', counts.nocarrier ? ' has' : '');
+        const q = $('search').value.trim();
+        $('tiles-note').classList.toggle('hidden', !q);
+        $('tiles-note').innerHTML = q ? `Totals for search <b>${esc(q)}</b> · ${list.length} of ${orders.length} order(s)` : '';
     }
     $('tiles').addEventListener('click', e => {
         const t = e.target.closest('[data-tile]');
         if (!t) return;
         const k = t.dataset.tile;
-        if (k === 'today') { $('days-filter').value = '1'; $('status-filter').value = 'all'; loadOrders(); tileFilter = ''; return; }
+        if (k === 'today') { $('days-filter').value = '1'; $('status-filter').value = 'all'; loadOrders(); return; }
         $('status-filter').value = k;
         renderOrders();
     });
 
     function filteredOrders() {
-        const q = $('search').value.trim().toLowerCase();
-        const keys = FILTER_KEYS[$('status-filter').value];
-        return orders.filter(o => {
-            if (keys && !keys.includes(floorState(o).key)) return false;
-            if (!q) return true;
-            return [o.orderNumber, o.customer, o.reference, o.carrier, o.proBol, o.destination, o.orderType, o.picker, o.vrid, stageLanesOf(o).lanes.join(' ')]
-                .some(v => String(v || '').toLowerCase().includes(q));
-        });
+        const sel = $('status-filter').value;
+        const keys = FILTER_KEYS[sel];
+        return searchedOrders().filter(o => (!keys || keys.includes(floorState(o).key)) && (sel !== 'nocarrier' || missingCarrier(o)));
     }
 
     function renderOrders() {
@@ -1090,7 +1110,7 @@
                     <td><span class="chip ${st.key}">${esc(st.label)}</span>${bar}${floorText}</td>
                     <td>${laneCell}</td>
                     <td>${esc(o.picker || '')}</td>
-                    <td>${esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}${o.vrid ? `<div class="sub2 mono">VRID ${esc(o.vrid)}</div>` : ''}</td>
+                    <td>${missingCarrier(o) ? '<span class="no-carrier">No carrier</span>' : esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}${o.vrid ? `<div class="sub2 mono">VRID ${esc(o.vrid)}</div>` : ''}</td>
                     <td>${esc(o.shipDate || '')}</td>
                     <td><span class="chip src">${esc(o.source || '')}</span></td>
                 </tr>`;
