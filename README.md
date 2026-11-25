@@ -92,11 +92,13 @@ Customer service releases orders to the warehouse here: https://xperia888.github
   - Picker and VRID are the last two columns of the Orders tab; older tabs get them added automatically
 - **Order list:** shows each order's floor progress, read from the staging board (read only): waiting, partly staged, staged, at dock, or shipped, with lanes and counts. You can search, filter and export to CSV.
 - **Cancel:** marks the row Cancelled. Rows are never deleted, so there's always a history, and a cancelled order can be restored.
-- **Import from WMS:** load a CSV/TSV or Excel export.
-  - Columns are matched to fields from their names, and you can change any match. The matching is remembered for the next file.
-  - **Default** sets a value for orders whose cell is empty (e.g. Reference type = ARN#).
-  - Rows are checked before importing: new, update, skip, or problem.
-  - Existing orders are updated by Order #. Blank cells never wipe what was already entered.
+- **Import from WMS (any Excel or CSV):**
+  - Load any export. Pick the **sheet** and the **header row**; title rows above the headers are found automatically.
+  - **Drag** each file column onto an order field, or **tap** a column and then a field (phones). Drop two columns on one text field to combine them, e.g. City + State → Destination. Click × to remove a match.
+  - Columns are auto-matched by name where possible (e.g. "Delivery #" → Order #).
+  - **If empty, use** fills a value for empty cells (e.g. Carrier = Amazon Freight).
+  - **Templates:** **Save as template…** stores the matching, defaults, sheet and header row under a name (e.g. "Amazon VRID report") in the **Import Templates** tab. Everyone in that warehouse can use it. When a file with the same columns is loaded, its template is applied automatically. Templates can be updated or deleted.
+  - Rows are checked before importing (new, update, skip, problem). Existing orders are updated by Order #, and blank cells never wipe what was already entered.
 - **API connector:** a WMS or a small script can POST orders as JSON. The **API Connector** tab has the exact request format.
 
 **Access (Script Properties):**

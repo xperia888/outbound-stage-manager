@@ -41,11 +41,16 @@ WAREHOUSES_.CHINO.ordersSheet = 'Orders CHINO';
 WAREHOUSES_.CHINO.csCodeProperty = 'CS_CODE_CHINO';
 WAREHOUSES_.CHINO.apiKeyProperty = 'WMS_API_KEY_CHINO';
 WAREHOUSES_.TEST.ordersSheet = 'Orders TEST';
+WAREHOUSES_.ONT.templatesSheet = 'Import Templates';
+WAREHOUSES_.CHINO.templatesSheet = 'Import Templates CHINO';
+WAREHOUSES_.TEST.templatesSheet = 'Import Templates TEST';
 
 /** What each kind of key may call. */
 const ROLE_FUNCTIONS_ = {
-  floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus'],
-  cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus'],
+  floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
+    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate'],
+  cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
+    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate'],
   api: ['listOrders', 'upsertOrders']
 };
 let ACTIVE_WH_ = WAREHOUSES_.ONT; // set per request by api(); each request runs on its own
@@ -152,6 +157,9 @@ function runRequest_(req, role) {
     case 'setOrderStatus': return setOrderStatus_(args[0], args[1], args[2]);
     case 'orderProgress': return orderProgress_();
     case 'intakeStatus': return intakeStatus_(role);
+    case 'listImportTemplates': return listImportTemplates_();
+    case 'saveImportTemplate': return saveImportTemplate_(args[0], args[1], args[2]);
+    case 'deleteImportTemplate': return deleteImportTemplate_(args[0]);
     default: return { ok: false, error: 'Unknown request: ' + req.fn };
   }
 }
@@ -651,4 +659,107 @@ function intakeStatus_(role) {
     apiKeyProperty: ACTIVE_WH_.apiKeyProperty || null,
     apiKeySet: has(ACTIVE_WH_.apiKeyProperty)
   };
+}
+
+
+// =====================================================================================
+// Import templates: saved column matchings for the portal's import, shared by everyone
+// Tab "Import Templates": Name | Template (JSON) | Updated | Updated By
+// =====================================================================================
+const TEMPLATE_HEADERS_ = ['Name', 'Template', 'Updated', 'Updated By'];
+const TEMPLATE_MAX_CHARS_ = 30000;
+
+function getTemplatesSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(ACTIVE_WH_.templatesSheet);
+  if (!sheet) {
+    sheet = ss.insertSheet(ACTIVE_WH_.templatesSheet);
+    sheet.getRange(1, 1, 1, TEMPLATE_HEADERS_.length).setValues([TEMPLATE_HEADERS_]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function readTemplateRows_(sheet) {
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  return sheet.getRange(2, 1, last - 1, TEMPLATE_HEADERS_.length).getValues();
+}
+
+function cleanTemplateName_(name) {
+  return String(name == null ? '' : name).replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+function listImportTemplates_() {
+  try {
+    const templates = [];
+    readTemplateRows_(getTemplatesSheet_()).forEach(r => {
+      const name = cleanTemplateName_(r[0]);
+      if (!name) return;
+      let template = null;
+      try { template = JSON.parse(String(r[1] || '{}')); } catch (e) { template = null; }
+      if (!template) return;
+      templates.push({
+        name: name,
+        template: template,
+        updatedAt: r[2] instanceof Date ? r[2].toISOString() : String(r[2] || ''),
+        updatedBy: String(r[3] || '')
+      });
+    });
+    templates.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    return { ok: true, templates: templates };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+/** Adds a template, or replaces the one with the same name (case-insensitive). */
+function saveImportTemplate_(name, template, updatedBy) {
+  const clean = cleanTemplateName_(name);
+  if (!clean) return { ok: false, error: 'Give the template a name' };
+  let json = '';
+  try { json = JSON.stringify(template || {}); } catch (e) { return { ok: false, error: 'Template is not valid' }; }
+  if (json.length > TEMPLATE_MAX_CHARS_) return { ok: false, error: 'Template is too large' };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { ok: false, error: 'Busy — try again' };
+  try {
+    const sheet = getTemplatesSheet_();
+    const rows = readTemplateRows_(sheet);
+    const i = rows.findIndex(r => cleanTemplateName_(r[0]).toLowerCase() === clean.toLowerCase());
+    const row = [clean, json, new Date(), String(updatedBy || '').slice(0, 80)];
+    if (i === -1) {
+      const start = Math.max(sheet.getLastRow(), 1) + 1;
+      sheet.getRange(start, 1, 1, 2).setNumberFormat('@');
+      sheet.getRange(start, 1, 1, TEMPLATE_HEADERS_.length).setValues([row]);
+    } else {
+      sheet.getRange(i + 2, 1, 1, TEMPLATE_HEADERS_.length).setValues([row]);
+    }
+    SpreadsheetApp.flush();
+    return { ok: true, name: clean, replaced: i !== -1 };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Removes a template (the row is cleared and the rows below move up). */
+function deleteImportTemplate_(name) {
+  const clean = cleanTemplateName_(name);
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { ok: false, error: 'Busy — try again' };
+  try {
+    const sheet = getTemplatesSheet_();
+    const rows = readTemplateRows_(sheet);
+    const keep = rows.filter(r => cleanTemplateName_(r[0]).toLowerCase() !== clean.toLowerCase() && cleanTemplateName_(r[0]));
+    if (keep.length === rows.filter(r => cleanTemplateName_(r[0])).length) return { ok: false, error: 'Template "' + clean + '" not found' };
+    if (rows.length) sheet.getRange(2, 1, rows.length, TEMPLATE_HEADERS_.length).clearContent();
+    if (keep.length) sheet.getRange(2, 1, keep.length, TEMPLATE_HEADERS_.length).setValues(keep);
+    SpreadsheetApp.flush();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  } finally {
+    lock.releaseLock();
+  }
 }

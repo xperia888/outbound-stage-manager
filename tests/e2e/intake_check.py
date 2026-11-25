@@ -61,6 +61,22 @@ ws.append(['DN-XL-1', 'Stark Industries', 300, 12, 'PO-77', 'Old Dominion', date
 ws.append(['DN-XL-2', 'Wayne Enterprises', 40, 2, 'PO-78', 'XPO Logistics', datetime(2026, 11, 24, 14, 0)])
 wb.save(xlsx_path)
 
+def amazon_report(path, rows):
+    wb2 = openpyxl.Workbook()
+    summ = wb2.active; summ.title = 'Summary'
+    summ.append(['Total orders', len(rows)])
+    ws2 = wb2.create_sheet('Orders Export')
+    ws2.append(['Outbound report - Nov 24'])
+    ws2.append([])
+    ws2.append(['Delivery #', 'Account', 'City', 'State', 'Plt Qty', 'Box Qty', 'Load VRID', 'Pick Associate', 'Remark'])
+    for r in rows: ws2.append(r)
+    wb2.save(path)
+amz1 = os.path.join(OUT, 'amazon_report_1.xlsx')
+amazon_report(amz1, [['DN-AMZ-1', 'Amazon ONT8', 'Reno', 'NV', 10, 400, '115abc', 'Luis', ''],
+                     ['DN-AMZ-2', 'Amazon LGB8', 'Rialto', 'CA', 4, 120, '116def', 'Kim', 'Floor load']])
+amz2 = os.path.join(OUT, 'amazon_report_2.xlsx')
+amazon_report(amz2, [['DN-AMZ-3', 'Amazon SBD1', 'Bloomington', 'CA', 7, 260, '117ghi', 'Luis', '']])
+
 async def to_gas(route):
     data = route.request.post_data or ''
     resp = await asyncio.to_thread(lambda: urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{GAS_PORT}/exec', data=data.encode(), method='POST')).read())
@@ -156,7 +172,8 @@ async def main():
         await pg.click('#tabs button[data-view="import"]')
         await pg.screenshot(path=f'{OUT}/intake_import_start.png')
         await pg.set_input_files('#imp-file', csv_path); await pg.wait_for_timeout(500)
-        mapped = await pg.evaluate("Object.fromEntries([...document.querySelectorAll('select[data-map]')].map(s => [s.dataset.map, s.value === '' ? '' : s.options[s.selectedIndex].text]))")
+        MAPPED = "Object.fromEntries(Object.entries(imp.mapping).map(([k, v]) => [k, v.map(i => imp.headers[i]).join(' + ')]))"
+        mapped = await pg.evaluate(MAPPED)
         want = {'orderNumber': 'Delivery No', 'customer': 'Ship To Name', 'cartons': 'Ctns', 'pallets': 'Plts', 'reference': 'ARN', 'carrier': 'Ship Via', 'releasedAt': 'Created Date', 'notes': 'Remarks', 'picker': 'Picked By', 'vrid': 'VRID'}
         record('columns matched from WMS header names', all(mapped.get(k) == v for k, v in want.items()), mapped)
         await pg.fill('input[data-default="refType"]', 'ARN#')
@@ -192,6 +209,8 @@ async def main():
         # --- Excel import -----------------------------------------------------------------------
         await pg.click('#imp-change-file')
         await pg.set_input_files('#imp-file', xlsx_path); await pg.wait_for_timeout(1200)
+        await pg.select_option('#tpl-select', '')  # no template: plain name matching
+        await pg.wait_for_timeout(200)
         record('Excel file read', '2 row(s)' in (await pg.text_content('#imp-row-count') or ''))
         await pg.fill('input[data-default="refType"]', 'PO#')
         await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(300)
@@ -199,6 +218,73 @@ async def main():
         x = {r['Order #']: r for r in orders_rows()}.get('DN-XL-1', {})
         record('Excel order saved (dates and numbers)', x.get('Customer') == 'Stark Industries' and x.get('Pallets') == 12 and x.get('Reference') == 'PO-77'
                and x.get('Reference Type') == 'PO#' and str(x.get('Released to Warehouse', '')).startswith('2026-11-24'), x)
+
+        # --- Any Excel layout: drag-and-match, combine, save as template ------------------------
+        await pg.click('#imp-back-btn'); await pg.wait_for_timeout(150)
+        await pg.click('#imp-change-file')
+        await pg.set_input_files('#imp-file', amz1); await pg.wait_for_timeout(1500)
+        info = await pg.evaluate("({ sheet: imp.sheet, sheets: imp.sheetNames, header: +document.getElementById('imp-header-row').value, rows: imp.rows.length })")
+        record('Excel: picks the data sheet and finds the header row under a title', info['sheet'] == 'Orders Export' and info['header'] == 3 and info['rows'] == 2, info)
+        mapped = await pg.evaluate(MAPPED)
+        record('auto-match finds what it can (Delivery #, Account, VRID, Associate)', mapped.get('orderNumber') == 'Delivery #' and mapped.get('customer') == 'Account'
+               and mapped.get('vrid') == 'Load VRID' and mapped.get('picker') == 'Pick Associate' and 'pallets' not in mapped, mapped)
+        col = lambda name: pg.locator(f'.col-chip[title="{name}"]')
+        await pg.set_viewport_size({'width': 1440, 'height': 2200})  # whole matching screen visible, so the mouse drag doesn't scroll
+        async def dnd(src, dst):
+            # Exact HTML5 drag events (dragstart → dragover → drop), like a browser sends them
+            dt = await pg.evaluate_handle('new DataTransfer()')
+            await src.dispatch_event('dragstart', {'dataTransfer': dt})
+            await dst.dispatch_event('dragover', {'dataTransfer': dt})
+            await dst.dispatch_event('drop', {'dataTransfer': dt})
+            await pg.wait_for_timeout(120)
+        await pg.evaluate('window.scrollTo(0, 0)')
+        # drag "Plt Qty" → Pallets, City and State → Destination (combined)
+        await col('Plt Qty').drag_to(pg.locator('[data-drop="pallets"]')); await pg.wait_for_timeout(150)
+        await dnd(col('City'), pg.locator('[data-drop="destination"]'))
+        await dnd(col('State'), pg.locator('[data-drop="destination"]'))
+        # tap-to-match: "Box Qty" → Cartons
+        await col('Box Qty').click(); await pg.locator('[data-drop="cartons"]').click(); await pg.wait_for_timeout(150)
+        # a mistaken drop, then removed with ×
+        await dnd(col('Remark'), pg.locator('[data-drop="reference"]'))
+        await pg.click('[data-unmatch="reference"]'); await pg.wait_for_timeout(150)
+        await dnd(col('Remark'), pg.locator('[data-drop="notes"]'))
+        await pg.fill('input[data-default="orderType"]', 'FTL'); await pg.fill('input[data-default="carrier"]', 'Amazon Freight')
+        mapped = await pg.evaluate(MAPPED)
+        record('drag-and-drop and tap matched the columns', mapped.get('pallets') == 'Plt Qty' and mapped.get('cartons') == 'Box Qty'
+               and mapped.get('destination') == 'City + State' and mapped.get('notes') == 'Remark' and 'reference' not in mapped, mapped)
+        dest_ex = await pg.text_content('[data-field="destination"] .ex')
+        record('combined example shows "Reno, NV"', 'Reno, NV' in (dest_ex or ''), dest_ex)
+        await pg.set_viewport_size({'width': 1440, 'height': 900})
+        await pg.screenshot(path=f'{OUT}/intake_dnd.png', full_page=True)
+        await pg.click('#tpl-save'); await pg.wait_for_timeout(150)
+        await pg.fill('#prompt-input', 'Amazon VRID report'); await pg.click('#prompt-yes'); await pg.wait_for_timeout(1500)
+        tdump = dump().get('Import Templates', [])
+        record('template saved to the Import Templates tab', len(tdump) == 2 and tdump[1][0] == 'Amazon VRID report' and tdump[1][3] == 'Amy', tdump[:2])
+        await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(300)
+        await pg.click('#imp-go-btn'); await pg.wait_for_timeout(1800)
+        a1 = {r['Order #']: r for r in orders_rows()}.get('DN-AMZ-1', {})
+        record('Amazon rows imported with combined and default values', a1.get('Destination') == 'Reno, NV' and a1.get('Pallets') == 10 and a1.get('Cartons') == 400
+               and a1.get('VRID') == '115ABC' and a1.get('Picker') == 'Luis' and a1.get('Order Type') == 'FTL' and a1.get('Carrier') == 'Amazon Freight'
+               and a1.get('Source') == 'Import: Amazon VRID report', a1)
+
+        # A new device / later day: same report layout → template applied by itself
+        await pg.reload(); await pg.wait_for_timeout(1200)
+        await pg.evaluate("localStorage.removeItem('outbound_intake_import_map_v1')")
+        await pg.click('#tabs button[data-view="import"]'); await pg.wait_for_timeout(800)
+        await pg.set_input_files('#imp-file', amz2); await pg.wait_for_timeout(1800)
+        sel = await pg.input_value('#tpl-select')
+        mapped = await pg.evaluate(MAPPED)
+        record('saved template applied automatically to a matching file', sel == 'Amazon VRID report' and mapped.get('destination') == 'City + State'
+               and mapped.get('pallets') == 'Plt Qty' and (await pg.input_value('input[data-default="carrier"]')) == 'Amazon Freight', (sel, mapped))
+        await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(300)
+        await pg.click('#imp-go-btn'); await pg.wait_for_timeout(1800)
+        a3 = {r['Order #']: r for r in orders_rows()}.get('DN-AMZ-3', {})
+        record('second file imported with the template', a3.get('Destination') == 'Bloomington, CA' and a3.get('Pallets') == 7, a3)
+        # Delete the template
+        await pg.click('#imp-back-btn'); await pg.wait_for_timeout(150)
+        await pg.click('#tpl-delete'); await pg.click('#confirm-yes'); await pg.wait_for_timeout(1500)
+        names = [r[0] for r in dump().get('Import Templates', [])[1:] if r and r[0]]
+        record('template deleted', names == [] and (await pg.input_value('#tpl-select')) == '', names)
 
         # --- WMS API push -----------------------------------------------------------------------
         r = req({'fn': 'upsertOrders', 'warehouse': 'ONT', 'key': 'wms-e2e', 'args': [[{'orderNumber': 'DN-API-9', 'customer': 'Cyberdyne', 'pallets': 9, 'carrier': 'ABF Freight'}], {}]})
