@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Outbound Staging — Live Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
 <!--
   Big-screen (TV) dashboard for the outbound staging board.
   Read-only: it loads the same board the app saves to Google Sheets and refreshes itself.
@@ -16,96 +19,97 @@
 -->
 <style>
     :root {
-        /* Light theme: bright, high-contrast for TVs in a lit warehouse */
-        --surface-0: #e9edf2;       /* page */
+        /* Light theme: the Outbound Staging app's colours (slate, amber, sky), bright for TVs in a lit warehouse */
+        --surface-0: #f1f5f9;       /* page — slate-100 */
         --surface-1: #ffffff;       /* panels */
-        --surface-2: #f2f5f9;       /* rows / boxes inside panels */
-        --surface-3: #e1e7ee;
-        --line: #cfd7e1;
-        --text-primary: #101828;
-        --text-secondary: #3d4a5c;
-        --text-muted: #667085;
-        --accent: #1f6fd1;          /* dock assigned / loading */
-        --accent-text: #1559b0;
-        --accent-soft: rgba(31, 111, 209, 0.12);
-        --staged: #7d8a9c;
-        --good: #12a150;
-        --warning: #f2a900;
-        --warning-text: #8f5a00;
-        --serious: #e8692e;
-        --serious-text: #b8420f;
-        --critical: #d12c2c;
-        --critical-text: #b42318;
-        --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
-        --page-bg: #d5dbe3;
-        --header-bg: #10294a;
-        --header-surface: #1b3a62;
-        --header-surface-3: #2a4c78;
-        --header-line: #2f5384;
-        --header-border: var(--accent);
-        --wall: #344054;
-        --door-bg: #f7f9fc;
-        --door-border: #b4bfcc;
-        --door-active-bg: linear-gradient(180deg, #dcebff, #f3f8ff);
-        --door-active-name: #0f3f80;
+        --surface-2: #f8fafc;       /* rows / boxes inside panels — slate-50 */
+        --surface-3: #e2e8f0;       /* slate-200 */
+        --line: #e2e8f0;
+        --text-primary: #0f172a;    /* slate-900 */
+        --text-secondary: #334155;  /* slate-700 */
+        --text-muted: #64748b;      /* slate-500 */
+        --accent: #0284c7;          /* dock assigned / loading — sky-600, as in the app */
+        --accent-text: #0369a1;     /* sky-700 */
+        --accent-soft: rgba(2, 132, 199, 0.12);
+        --brand: #f59e0b;           /* amber-500, the app's primary */
+        --staged: #94a3b8;          /* slate-400 */
+        --good: #059669;            /* emerald-600 */
+        --warning: #f59e0b;         /* amber-500 */
+        --warning-text: #b45309;    /* amber-700 */
+        --serious: #f97316;         /* orange-500 */
+        --serious-text: #c2410c;
+        --critical: #dc2626;        /* red-600 */
+        --critical-text: #b91c1c;
+        --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.06);
+        --page-bg: #e2e8f0;
+        --header-bg: #0f172a;       /* slate-900, like the app header */
+        --header-surface: #1e293b;  /* slate-800 */
+        --header-surface-3: #334155;
+        --header-line: #334155;
+        --header-border: #1e293b;
+        --wall: #334155;
+        --door-bg: #f8fafc;
+        --door-border: #cbd5e1;
+        --door-active-bg: linear-gradient(180deg, #e0f2fe, #f0f9ff);
+        --door-active-name: #075985;
         --lane-bg: #f8fafc;
-        --lane-border: #d5dce5;
+        --lane-border: #e2e8f0;
         --lane-used-bg: #ffffff;
-        --lane-used-border: #98a4b5;
-        --spot-border: #d3dae3;
+        --lane-used-border: #94a3b8;
+        --spot-border: #cbd5e1;
         --docked-ring: var(--accent);
-        /* Section tints: soft backgrounds + a darker accent for labels, kept clear of the status colors */
-        --sec-docks-bg: #edf2f9;  --sec-docks-border: #d3dfee;  --sec-docks-accent: #2f5d9a;
-        --sec-s-bg: #e9f5f2;      --sec-s-border: #cbe5de;      --sec-s-accent: #1d7466;
-        --sec-z1-bg: #f1eef9;     --sec-z1-border: #dcd3ef;     --sec-z1-accent: #6449ad;
-        --sec-z2-bg: #edf4e7;     --sec-z2-border: #d2e3c4;     --sec-z2-accent: #4b742b;
-        --sec-z3-bg: #f6f0e4;     --sec-z3-border: #e7d8bb;     --sec-z3-accent: #85642a;
+        /* Section tints: soft backgrounds + a darker accent for labels, kept clear of the status colours */
+        --sec-docks-bg: #f0f9ff;  --sec-docks-border: #bae6fd;  --sec-docks-accent: #0369a1;   /* sky */
+        --sec-s-bg: #f0fdfa;      --sec-s-border: #99f6e4;      --sec-s-accent: #0f766e;       /* teal */
+        --sec-z1-bg: #f5f3ff;     --sec-z1-border: #ddd6fe;     --sec-z1-accent: #6d28d9;      /* violet */
+        --sec-z2-bg: #f7fee7;     --sec-z2-border: #d9f99d;     --sec-z2-accent: #4d7c0f;      /* lime */
+        --sec-z3-bg: #fdf4ff;     --sec-z3-border: #f5d0fe;     --sec-z3-accent: #a21caf;      /* fuchsia */
         --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
         --mono: "JetBrains Mono", "Consolas", "SFMono-Regular", ui-monospace, monospace;
     }
-    /* Dark theme (the original look) */
+    /* Dark theme: the same slate palette, dark */
     body.dark {
-        --surface-0: #121211;
-        --surface-1: #1a1a19;
-        --surface-2: #242422;
-        --surface-3: #2f2f2c;
-        --line: #3d3d39;
-        --text-primary: #f0efec;
-        --text-secondary: #c3c2b7;
-        --text-muted: #8f8e86;
-        --accent: #3987e5;
-        --accent-text: #9ec5f4;
-        --accent-soft: rgba(57, 135, 229, 0.18);
-        --staged: #6b6a64;
-        --warning: #fab219;
-        --warning-text: #fab219;
-        --serious: #ec835a;
-        --serious-text: #ec835a;
-        --critical: #d03b3b;
-        --critical-text: #f3a5a5;
+        --surface-0: #0b1220;
+        --surface-1: #0f172a;       /* slate-900 */
+        --surface-2: #1e293b;       /* slate-800 */
+        --surface-3: #334155;
+        --line: #334155;
+        --text-primary: #f1f5f9;
+        --text-secondary: #cbd5e1;
+        --text-muted: #94a3b8;
+        --accent: #0ea5e9;          /* sky-500 */
+        --accent-text: #7dd3fc;     /* sky-300 */
+        --accent-soft: rgba(14, 165, 233, 0.18);
+        --staged: #64748b;
+        --warning: #fbbf24;
+        --warning-text: #fbbf24;
+        --serious: #fb923c;
+        --serious-text: #fb923c;
+        --critical: #ef4444;
+        --critical-text: #fca5a5;
         --shadow: none;
-        --page-bg: #000000;
-        --header-bg: #1a1a19;
-        --header-surface: #242422;
-        --header-surface-3: #2f2f2c;
-        --header-line: #3d3d39;
-        --header-border: #3d3d39;
-        --wall: #6d6c66;
-        --door-bg: #1c1c1a;
-        --door-border: #4a4945;
-        --door-active-bg: linear-gradient(180deg, rgba(57,135,229,0.24), rgba(57,135,229,0.06));
-        --door-active-name: #cde2fb;
-        --lane-bg: #1b1b19;
-        --lane-border: #34342f;
-        --lane-used-bg: #20201e;
-        --lane-used-border: #55544e;
-        --spot-border: #33332f;
-        --docked-ring: #9ec5f4;
-        --sec-docks-bg: rgba(90, 140, 210, 0.08);  --sec-docks-border: rgba(90, 140, 210, 0.28);  --sec-docks-accent: #9dbbe6;
-        --sec-s-bg: rgba(60, 170, 150, 0.08);      --sec-s-border: rgba(60, 170, 150, 0.28);      --sec-s-accent: #8fd3c5;
-        --sec-z1-bg: rgba(140, 110, 220, 0.09);    --sec-z1-border: rgba(140, 110, 220, 0.30);    --sec-z1-accent: #c1b0f0;
-        --sec-z2-bg: rgba(120, 170, 80, 0.08);     --sec-z2-border: rgba(120, 170, 80, 0.28);     --sec-z2-accent: #b6d79a;
-        --sec-z3-bg: rgba(200, 160, 90, 0.08);     --sec-z3-border: rgba(200, 160, 90, 0.28);     --sec-z3-accent: #e3c58e;
+        --page-bg: #020617;
+        --header-bg: #020617;       /* slate-950 */
+        --header-surface: #1e293b;
+        --header-surface-3: #334155;
+        --header-line: #334155;
+        --header-border: #1e293b;
+        --wall: #64748b;
+        --door-bg: #111a2e;
+        --door-border: #475569;
+        --door-active-bg: linear-gradient(180deg, rgba(14,165,233,0.24), rgba(14,165,233,0.06));
+        --door-active-name: #e0f2fe;
+        --lane-bg: #111a2e;
+        --lane-border: #263247;
+        --lane-used-bg: #16213a;
+        --lane-used-border: #475569;
+        --spot-border: #2b3850;
+        --docked-ring: #7dd3fc;
+        --sec-docks-bg: rgba(14, 165, 233, 0.08);  --sec-docks-border: rgba(14, 165, 233, 0.28);  --sec-docks-accent: #7dd3fc;
+        --sec-s-bg: rgba(20, 184, 166, 0.08);      --sec-s-border: rgba(20, 184, 166, 0.28);      --sec-s-accent: #5eead4;
+        --sec-z1-bg: rgba(139, 92, 246, 0.09);     --sec-z1-border: rgba(139, 92, 246, 0.30);     --sec-z1-accent: #c4b5fd;
+        --sec-z2-bg: rgba(132, 204, 22, 0.08);     --sec-z2-border: rgba(132, 204, 22, 0.28);     --sec-z2-accent: #bef264;
+        --sec-z3-bg: rgba(217, 70, 239, 0.08);     --sec-z3-border: rgba(217, 70, 239, 0.28);     --sec-z3-accent: #f0abfc;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; background: var(--page-bg); overflow: hidden; }
@@ -135,24 +139,32 @@
         border-bottom: 4px solid var(--header-border);
         /* the header keeps light-on-dark text */
         --text-primary: #ffffff;
-        --text-secondary: #c8d5e6;
-        --text-muted: #9fb2ca;
+        --text-secondary: #cbd5e1;
+        --text-muted: #94a3b8;
         --surface-2: var(--header-surface);
         --surface-3: var(--header-surface-3);
         --line: var(--header-line);
-        --critical: #ff7b7b;
+        --critical: #f87171;
         color: var(--text-primary);
     }
-    .brand { display: flex; flex-direction: column; gap: 6px; }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand-mark {
+        width: 56px; height: 56px; border-radius: 13px; flex: none;
+        background: var(--brand); color: #020617;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    }
+    .brand-mark svg { width: 34px; height: 34px; }
+    .brand-text { display: flex; flex-direction: column; gap: 6px; }
     .brand h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; }
     .brand .sub { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--text-secondary); }
     .wh-chip {
         font-family: var(--mono); font-weight: 800; font-size: 16px;
         padding: 3px 10px; border-radius: 6px;
-        background: rgba(57, 135, 229, 0.16); color: #9ec5f4; border: 1px solid rgba(57, 135, 229, 0.45);
+        background: rgba(14, 165, 233, 0.2); color: #7dd3fc; border: 1px solid rgba(14, 165, 233, 0.4);   /* as in the app */
     }
-    .wh-chip.chino { background: rgba(250, 178, 25, 0.16); color: #fcd27a; border-color: rgba(250, 178, 25, 0.5); }
-    .wh-chip.test { background: rgba(208, 59, 59, 0.2); color: #f3a5a5; border-color: rgba(208, 59, 59, 0.55); }
+    .wh-chip.chino { background: rgba(245, 158, 11, 0.18); color: #fcd34d; border-color: rgba(245, 158, 11, 0.5); }
+    .wh-chip.test { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border-color: rgba(239, 68, 68, 0.55); }
     .theme-btn {
         display: inline-flex; align-items: center; gap: 6px;
         font: 700 14px var(--font); color: var(--text-secondary);
@@ -166,11 +178,11 @@
         min-width: 136px; padding: 10px 14px; border-radius: 12px;
         background: var(--surface-2); border: 1px solid var(--line);
     }
-    .kpi .label { font-size: 14px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+    .kpi .label { white-space: nowrap; font-size: 14px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
     .kpi .value { font-size: 38px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
     .kpi .value small { font-size: 20px; font-weight: 700; color: var(--text-secondary); }
     .kpi .meter { height: 6px; border-radius: 3px; background: var(--surface-3); margin-top: 6px; overflow: hidden; }
-    .kpi .meter > i { display: block; height: 100%; background: #5aa2f5; border-radius: 3px; }
+    .kpi .meter > i { display: block; height: 100%; background: var(--brand); border-radius: 3px; }
     .kpi.alert .value { color: var(--critical); }
     .clock { text-align: right; }
     .clock .time { font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
@@ -228,7 +240,7 @@
         color: #fff; background: var(--sec-accent); border-radius: 4px; padding: 1px 7px; text-transform: uppercase;
     }
     .row-label span.sec-tag { color: #fff; letter-spacing: 0.04em; font-weight: 800; }
-    body.dark .sec-tag, body.dark .row-label span.sec-tag { color: #121211; }
+    body.dark .sec-tag, body.dark .row-label span.sec-tag { color: #020617; }
     .row-label span { color: var(--text-muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
 
     /* Loading doors along the wall */
@@ -277,7 +289,7 @@
     .tile {
         flex: 1 1 0; min-height: 0; border-radius: 4px; background: var(--staged);
         display: flex; align-items: center; justify-content: center;
-        font-size: 13px; line-height: 1; color: #1a1a19;
+        font-size: 13px; line-height: 1; color: #0f172a;
     }
     .tile.docked { background: var(--accent); }
     .tile.lvl-warning { background: var(--warning); }
@@ -367,11 +379,11 @@
     #banner {
         position: absolute; left: 50%; top: 120px; transform: translateX(-50%);
         padding: 10px 22px; border-radius: 12px; font-size: 18px; font-weight: 700;
-        background: rgba(250,178,25,0.95); color: #1a1a19; display: none; z-index: 5;
+        background: rgba(245, 158, 11, 0.95); color: #0f172a; display: none; z-index: 5;
     }
     #signin {
         position: fixed; inset: 0; z-index: 10; display: none;
-        align-items: center; justify-content: center; background: rgba(0,0,0,0.75);
+        align-items: center; justify-content: center; background: rgba(2, 6, 23, 0.78);
     }
     #signin form {
         width: 520px; background: var(--surface-1); border: 1px solid var(--line); border-radius: 18px; padding: 28px;
@@ -383,11 +395,12 @@
         font-size: 22px; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--line);
         background: var(--surface-2); color: var(--text-primary); font-family: var(--mono);
     }
-    #signin input:focus { outline: none; border-color: var(--accent); }
+    #signin input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25); }
     #signin button {
         font-size: 18px; font-weight: 800; padding: 12px; border-radius: 12px; border: none; cursor: pointer;
-        background: var(--accent); color: #fff;
+        background: var(--brand); color: #0f172a;   /* amber, like the app's main buttons */
     }
+    #signin button:hover { background: #d97706; }
     #signin button:disabled { opacity: 0.6; }
     #signin .err { color: var(--critical-text); font-weight: 700; font-size: 16px; min-height: 20px; }
 
@@ -401,6 +414,9 @@
         display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 14px 16px;
     }
     body.phone .brand h1 { font-size: 22px; }
+    body.phone .brand { gap: 12px; }
+    body.phone .brand-mark { width: 44px; height: 44px; border-radius: 10px; }
+    body.phone .brand-mark svg { width: 26px; height: 26px; }
     body.phone .brand .sub { flex-wrap: wrap; font-size: 13px; gap: 8px; }
     body.phone .clock { order: -1; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; text-align: left; }
     body.phone .clock .time { font-size: 26px; }
@@ -408,7 +424,7 @@
     body.phone .sync { margin: 0; font-size: 13px; }
     body.phone .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
     body.phone .kpi { min-width: 0; padding: 8px 10px; border-radius: 10px; }
-    body.phone .kpi .label { font-size: 10px; letter-spacing: 0.03em; line-height: 1.2; min-height: 24px; }
+    body.phone .kpi .label { white-space: normal; font-size: 10px; letter-spacing: 0.03em; line-height: 1.2; min-height: 24px; }
     body.phone .row-label::after, body.phone .zone-head::after {
         content: "swipe ⇆"; margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none;
         color: var(--text-muted);
@@ -456,9 +472,19 @@
 <div id="stage">
     <header>
         <div class="brand">
-            <h1>Outbound Staging — Live</h1>
-            <div class="sub"><span class="wh-chip" id="wh-chip">ONUS-ONT</span><span>Staging area &amp; loading docks</span>
-                <button type="button" class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Switch light / dark (shortcut: T)"></button></div>
+            <div class="brand-mark" aria-hidden="true">
+                <!-- "boxes" icon, as in the app header -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"/><path d="m7 16.5-4.74-2.85"/><path d="m7 16.5 5-3"/><path d="M7 16.5v5.17"/>
+                    <path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"/><path d="m17 16.5-5-3"/><path d="m17 16.5 4.74-2.85"/><path d="M17 16.5v5.17"/>
+                    <path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"/><path d="M12 8 7.26 5.15"/><path d="m12 8 4.74-2.85"/><path d="M12 13.5V8"/>
+                </svg>
+            </div>
+            <div class="brand-text">
+                <h1>Outbound Staging — Live</h1>
+                <div class="sub"><span class="wh-chip" id="wh-chip">ONUS-ONT</span><span>Staging area &amp; loading docks</span>
+                    <button type="button" class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Switch light / dark (shortcut: T)"></button></div>
+            </div>
         </div>
         <div class="kpis" id="kpis"></div>
         <div class="clock">
