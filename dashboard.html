@@ -218,7 +218,8 @@
     }
     .sec-docks { --sec-bg: var(--sec-docks-bg); --sec-border: var(--sec-docks-border); --sec-accent: var(--sec-docks-accent); padding-top: 0; padding-bottom: 6px; }
     .sec-s { --sec-bg: var(--sec-s-bg); --sec-border: var(--sec-s-border); --sec-accent: var(--sec-s-accent);
-        display: grid; grid-template-rows: 22px minmax(0, 1fr) 22px; }
+        display: grid; grid-template-rows: 22px minmax(0, 1fr); }
+    .lane-scroll { display: grid; grid-template-rows: minmax(0, 1fr) 22px; min-width: 0; min-height: 0; }
     .sec-z1 { --sec-bg: var(--sec-z1-bg); --sec-border: var(--sec-z1-border); --sec-accent: var(--sec-z1-accent); }
     .sec-z2 { --sec-bg: var(--sec-z2-bg); --sec-border: var(--sec-z2-border); --sec-accent: var(--sec-z2-accent); }
     .sec-z3 { --sec-bg: var(--sec-z3-bg); --sec-border: var(--sec-z3-border); --sec-accent: var(--sec-z3-accent); }
@@ -299,6 +300,7 @@
     /* Other staging zones (N09, W05, W06 …) in a row under the S lanes */
     .zones { display: grid; gap: 10px; min-height: 0; }
     .zone { display: grid; grid-template-rows: 24px minmax(0, 1fr); min-width: 0; min-height: 0; }
+    .lane-scroll-x { display: grid; min-width: 0; min-height: 0; }
     .zone-head .zinfo { color: var(--text-secondary); }
     .zone-head { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; }
     .zone-head .zname { font-size: 14px; }
@@ -388,6 +390,66 @@
     }
     #signin button:disabled { opacity: 0.6; }
     #signin .err { color: var(--critical-text); font-weight: 700; font-size: 16px; min-height: 20px; }
+
+    /* ---------- Phone layout (narrow screens): normal scrolling page instead of the scaled TV stage ---------- */
+    body.phone, html:has(body.phone) { overflow: auto; height: auto; }
+    body.phone #stage {
+        position: static; transform: none !important; width: 100%; height: auto;
+        display: block; overflow: visible;
+    }
+    body.phone header {
+        display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 14px 16px;
+    }
+    body.phone .brand h1 { font-size: 22px; }
+    body.phone .brand .sub { flex-wrap: wrap; font-size: 13px; gap: 8px; }
+    body.phone .clock { order: -1; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; text-align: left; }
+    body.phone .clock .time { font-size: 26px; }
+    body.phone .clock .date { font-size: 13px; margin: 0; }
+    body.phone .sync { margin: 0; font-size: 13px; }
+    body.phone .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    body.phone .kpi { min-width: 0; padding: 8px 10px; border-radius: 10px; }
+    body.phone .kpi .label { font-size: 10px; letter-spacing: 0.03em; line-height: 1.2; min-height: 24px; }
+    body.phone .row-label::after, body.phone .zone-head::after {
+        content: "swipe ⇆"; margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none;
+        color: var(--text-muted);
+    }
+    body.phone .kpi .value { font-size: 24px; }
+    body.phone .kpi .value small { font-size: 13px; }
+
+    body.phone main { padding: 10px 10px 0; display: block; }
+    body.phone .floor { display: block; padding: 10px; border-radius: 12px; }
+    body.phone .floor > * + * { margin-top: 10px; }
+    body.phone .floor-title { flex-direction: column; align-items: flex-start; gap: 8px; }
+    body.phone .legend { flex-wrap: wrap; gap: 6px 12px; font-size: 12px; }
+    body.phone .legend i { width: 12px; height: 12px; }
+
+    body.phone .doors { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 6px; }
+    body.phone .door { height: auto; min-height: 104px; }
+    body.phone .door .name { font-size: 20px; }
+    body.phone .door .count b { font-size: 24px; }
+
+    body.phone .sec-s { display: block; }
+    body.phone .row-label { flex-wrap: wrap; font-size: 12px; padding-bottom: 6px; }
+    body.phone .lane-scroll, body.phone .lane-scroll-x { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+    body.phone .lane-line, body.phone .order-line {
+        grid-template-columns: repeat(var(--n), 38px) !important; width: max-content;
+    }
+    body.phone .sec-s .lane-line { height: 230px; }
+    body.phone .zones { display: block; }
+    body.phone .zone { display: block; }
+    body.phone .zone + .zone { margin-top: 10px; }
+    body.phone .zone-head { flex-wrap: wrap; white-space: normal; padding-bottom: 6px; }
+    body.phone .zone .lane-line { height: 190px; }
+    body.phone .floor-foot { flex-direction: column; align-items: flex-start; gap: 2px; font-size: 12px; }
+
+    body.phone aside { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 20px; }
+    body.phone .panel { overflow: visible; }
+    body.phone .orders { grid-template-columns: 1fr; }
+    body.phone .alert-counts { gap: 6px; }
+    body.phone .alert-count .t { font-size: 11px; }
+    body.phone #banner { position: fixed; top: 10px; width: max-content; max-width: 92vw; font-size: 14px; }
+    body.phone #signin form { width: auto; max-width: 92vw; padding: 20px; }
+    body.phone .theme-btn { font-size: 12px; }
 </style>
 </head>
 <body>
@@ -421,8 +483,10 @@
             <div class="section sec-docks"><div class="doors" id="docks-row"></div></div>
             <div class="section sec-s">
                 <div class="row-label staging" id="lanes-label"></div>
-                <div class="lane-line" id="lanes-row"></div>
-                <div class="order-line" id="order-line"></div>
+                <div class="lane-scroll">
+                    <div class="lane-line" id="lanes-row"></div>
+                    <div class="order-line" id="order-line"></div>
+                </div>
             </div>
             <div class="zones" id="zones-row"></div>
             <div class="floor-foot">
@@ -681,6 +745,7 @@
         const gridCols = `repeat(${Math.max(1, laneCols.length)}, minmax(0, 1fr))`;
         const lanesRow = document.getElementById('lanes-row');
         lanesRow.style.gridTemplateColumns = gridCols;
+        lanesRow.style.setProperty('--n', Math.max(1, laneCols.length));
         lanesRow.innerHTML = laneCols.map((col, i) => renderLane(col, col ? palletsIn(col.id) : [], laneNames[i])).join('');
         const usedLanes = laneCols.filter(c => c && palletsIn(c.id).length).length;
         const first = laneNames[0] || '', last = laneNames[laneNames.length - 1] || '';
@@ -702,6 +767,7 @@
         });
         const orderLine = document.getElementById('order-line');
         orderLine.style.gridTemplateColumns = gridCols;
+        orderLine.style.setProperty('--n', Math.max(1, laneCols.length));
         orderLine.innerHTML = spans.map(sp => {
             if (!sp.label) return `<div class="order-span blank" style="grid-column: span ${sp.n}"></div>`;
             // A one-lane bracket only has room for the last digits of the order number
@@ -725,9 +791,9 @@
             return `<div class="zone section sec-z${(zi % 3) + 1}">
                 <div class="zone-head"><span class="zname sec-tag">${esc(z.name)}</span>
                     <span class="zinfo">.${esc(first)} → .${esc(last)} · ${z.cols.length} locations · ${used} in use · ${spots}/${cap} spots</span></div>
-                <div class="lane-line" style="grid-template-columns: repeat(${Math.max(1, z.cols.length)}, minmax(0, 1fr))">
+                <div class="lane-scroll-x"><div class="lane-line" style="--n: ${Math.max(1, z.cols.length)}; grid-template-columns: repeat(${Math.max(1, z.cols.length)}, minmax(0, 1fr))">
                     ${z.cols.map(c => renderLane(c, palletsIn(c.id), c.name, zoneSuffix(c.name))).join('')}
-                </div>
+                </div></div>
             </div>`;
         }).join('');
 
@@ -741,7 +807,7 @@
             <div class="alert-count ${l}"><div class="n">${levels[l].length}</div>
             <div class="t"><i></i>${{ warning: '⚠ Aging', overdue: '⏱ Overdue', overweek: '⛔ Over a week' }[l]}</div></div>`).join('');
         const worst = [...levels.overweek, ...levels.overdue, ...levels.warning]
-            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).slice(0, 3);
+            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).slice(0, document.body.classList.contains('phone') ? 8 : 3);
         document.getElementById('alert-list').innerHTML = worst.length
             ? worst.map(p => {
                 const l = dwellLevel(p);
@@ -760,7 +826,7 @@
             return { ono, list, docks, lanes, carrier: carriers[0] || '', oldest };
         }).sort((a, b) => (b.docks.length > 0) - (a.docks.length > 0) || a.oldest - b.oldest);
         document.getElementById('orders-count').textContent = `${orderRows.length} order${orderRows.length === 1 ? '' : 's'}`;
-        const MAX_ORDERS = 4;
+        const MAX_ORDERS = document.body.classList.contains('phone') ? 12 : 4;
         document.getElementById('orders').innerHTML = orderRows.length
             ? orderRows.slice(0, MAX_ORDERS).map(o => `
                 <div class="order-row${o.docks.length ? ' at-dock' : ''}">
@@ -948,9 +1014,15 @@
     // ===================================================================================
     // Fit to screen, clock, refresh loop
     // ===================================================================================
+    /** TVs and computers: the 1920×1080 stage scaled to fit. Phones (< 900px wide): a normal scrolling page. */
+    const PHONE_MAX_WIDTH = 900;
     function fit() {
+        const phone = window.innerWidth < PHONE_MAX_WIDTH;
+        document.body.classList.toggle('phone', phone);
+        const stage = document.getElementById('stage');
+        if (phone) { stage.style.transform = ''; return; }
         const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-        document.getElementById('stage').style.transform = `translate(-50%, -50%) scale(${s})`;
+        stage.style.transform = `translate(-50%, -50%) scale(${s})`;
     }
     window.addEventListener('resize', fit);
     fit();

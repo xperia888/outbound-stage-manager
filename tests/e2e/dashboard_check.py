@@ -47,7 +47,7 @@ threading.Thread(target=site.serve_forever,daemon=True).start()
 async def main():
     async with async_playwright() as p:
         b=await p.chromium.launch(executable_path='/usr/bin/google-chrome',args=['--no-sandbox'])
-        for (w,h) in [(1920,1080),(1366,768)]:
+        for (w,h) in [(1920,1080),(1366,768),(390,844)]:
             ctx=await b.new_context(viewport={'width':w,'height':h})
             async def to_gas(route):
                 data=route.request.post_data or ''
@@ -59,10 +59,13 @@ async def main():
             signin=await pg.is_visible('#signin')
             await pg.fill('#signin-code','ont-e2e'); await pg.click('#signin-btn'); await pg.wait_for_timeout(2500)
             over=await pg.evaluate("""() => [...document.querySelectorAll('.door .ord, .door .name, .order-span, .order-row .ono, .lane-head .lname, .lane-head .count, .kpi .value')].filter(e => e.scrollWidth > e.clientWidth + 1).map(e => e.textContent.trim()).slice(0,10)""")
+            if w < 900:
+                ph=await pg.evaluate("() => ({phone: document.body.classList.contains('phone'), pageOverflow: document.documentElement.scrollWidth - innerWidth, laneW: Math.round(document.querySelector('#lanes-row .lane').getBoundingClientRect().width), sScrolls: document.querySelector('.sec-s .lane-scroll').scrollWidth > document.querySelector('.sec-s .lane-scroll').clientWidth, kpiFont: getComputedStyle(document.querySelector('.kpi .value')).fontSize})")
+                print('    phone layout:', ph)
             print(f'{w}x{h}: signin shown={signin} errors={errs[:2]} truncated={over} sync=', await pg.text_content('#sync-text'))
             info=await pg.evaluate("() => ({docks:[...document.querySelectorAll('.door .name')].map(e=>e.textContent), lanes:document.querySelectorAll('.lane').length, first:document.querySelector('.lane .lname').textContent, laneW:Math.round(document.querySelector('.lane').getBoundingClientRect().width), spans:[...document.querySelectorAll('.order-span:not(.blank)')].map(e=>e.textContent), other:document.getElementById('other-lanes').textContent})")
             print('   ',info)
-            await pg.screenshot(path=f'{E2E}/out/dashboard_{w}x{h}.png')
+            await pg.screenshot(path=f'{E2E}/out/dashboard_{w}x{h}.png', full_page=(w < 900))
             # Theme button switches to dark and back
             await pg.click('#theme-btn'); await pg.wait_for_timeout(300)
             dark=await pg.evaluate("document.body.classList.contains('dark')")
