@@ -3349,9 +3349,14 @@
             return m ? Number(m[1]) : Infinity;
         }
 
-        /** Keeps lanes in number order (S30, S31 … S80) everywhere: board, lane lists, sync. */
+        /**
+         * Keeps lanes in order everywhere: S lanes by number (S30, S31 … S80) first, then the other
+         * locations by name (N09.5 … N09.23, W05.89 … W05.112, W06.61 …).
+         */
         function sortColumnsByLaneNumber(cols) {
-            return cols.sort((a, b) => laneNumberOf(a) - laneNumberOf(b)
+            const isSLane = c => /^S\s*-?\s*\d+$/i.test(String(c && c.name || '').trim());
+            return cols.sort((a, b) => (isSLane(b) - isSLane(a))
+                || (isSLane(a) ? laneNumberOf(a) - laneNumberOf(b) : 0)
                 || String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }));
         }
 

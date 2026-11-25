@@ -60,6 +60,7 @@ Board state is saved to the `StateChunks` tab, split across rows to stay under t
 - **Layout:** it follows the warehouse floor, left to right.
   - **Loading doors:** D9 → D1, then the ramp. Each shows the order being loaded, its carrier, pallet count and the lanes it's coming from.
   - **Staging lanes:** every lane named S + number (now S30–S80) in **one line**, as on the floor. Each lane is a column of floor spots, with every pallet in its spot, 2x stacks split in two, dwell alerts (⚠ aging, ⏱ overdue, ⛔ over a week), and the door it's assigned to underneath.
+  - **Other zones:** N09, W05 and W06 locations sit in a row under the S lanes, one block per zone, in location-number order. Locations holding 12 show their spots in two columns. Zones are set in `FLOOR_LAYOUT.zones`.
   - **Order line:** a bracket under the lanes shows which order sits in which lanes.
   - **New lanes:** lanes added in the app appear on the dashboard automatically.
 - **Top and bottom:** KPIs across the top; orders on the floor, dwell alerts and today's totals along the bottom.

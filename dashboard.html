@@ -108,7 +108,7 @@
         transform-origin: center center;
         background: var(--surface-0);
         display: grid;
-        grid-template-rows: 112px minmax(0, 1fr) 286px;
+        grid-template-rows: 112px minmax(0, 1fr) 236px;
         grid-template-columns: minmax(0, 1fr);
         overflow: hidden;
     }
@@ -176,7 +176,7 @@
     .floor {
         position: relative;
         display: grid;
-        grid-template-rows: 28px auto 26px minmax(0, 1fr) 26px 22px;
+        grid-template-rows: 28px auto 24px minmax(0, 1.15fr) 24px minmax(0, 1fr) 22px;
         grid-template-columns: minmax(0, 1fr);
         width: 100%; min-width: 0;
         background: var(--surface-1);
@@ -198,24 +198,24 @@
     /* Loading doors along the wall */
     .doors { display: grid; gap: 8px; border-top: 6px solid var(--wall); }
     .door {
-        height: 168px; min-width: 0; overflow: hidden;
-        display: flex; flex-direction: column; gap: 3px;
+        height: 138px; min-width: 0; overflow: hidden;
+        display: flex; flex-direction: column; gap: 2px;
         border: 2px dashed var(--door-border); border-top: none; border-radius: 0 0 12px 12px;
-        background: var(--door-bg); padding: 6px 10px 8px;
+        background: var(--door-bg); padding: 4px 10px 6px;
     }
     .door.active { border: 2px solid var(--accent); border-top: none; background: var(--door-active-bg); }
     .door .head { display: flex; justify-content: space-between; align-items: baseline; }
-    .door .name { font-family: var(--mono); font-size: 26px; font-weight: 800; color: var(--text-secondary); }
+    .door .name { font-family: var(--mono); font-size: 24px; line-height: 1.15; font-weight: 800; color: var(--text-secondary); }
     .door.active .name { color: var(--door-active-name); }
     .door .state { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
     .door.active .state { color: var(--accent-text); }
-    .door .ord { font-family: var(--mono); font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .door .line { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .door .count { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
-    .door .count b { font-size: 34px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+    .door .ord { font-family: var(--mono); font-size: 16px; line-height: 1.25; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .door .line { font-size: 13px; line-height: 1.3; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .door .count { display: flex; align-items: baseline; gap: 8px; margin-top: 1px; line-height: 1.1; }
+    .door .count b { font-size: 28px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
     .door .count span { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .door .count .from { font-family: var(--mono); font-weight: 700; color: var(--accent-text); }
-    .door .lvl { font-size: 13px; font-weight: 800; }
+    .door .lvl { font-size: 13px; line-height: 1.3; font-weight: 800; }
     .door .lvl.warning { color: var(--warning-text); } .door .lvl.overdue { color: var(--serious-text); } .door .lvl.overweek { color: var(--critical-text); }
     .door .empty { margin: auto 0; text-align: center; font-size: 15px; color: var(--text-muted); }
 
@@ -260,6 +260,19 @@
     }
     .order-span.at-dock { border-top-color: var(--accent); color: var(--accent-text); }
     .order-span.blank { border-top-color: transparent; }
+
+    /* Other staging zones (N09, W05, W06 …) in a row under the S lanes */
+    .zones { display: grid; gap: 14px; min-height: 0; padding-top: 6px; border-top: 1px dashed var(--line); }
+    .zone { display: grid; grid-template-rows: 24px minmax(0, 1fr); min-width: 0; min-height: 0; }
+    .zone-head { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; }
+    .zone-head .zname { font-family: var(--mono); font-size: 16px; font-weight: 800; color: var(--text-primary); padding: 0 6px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); }
+    .zone-head .zinfo { font-size: 13px; color: var(--text-muted); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+    .zone .lane-line { gap: 2px; }
+    .zone .lane { grid-template-rows: 30px minmax(0, 1fr) 15px; }
+    .zone .lane-head .lname { font-size: 12px; }
+    .zone .lane-head .count { font-size: 10px; letter-spacing: -0.06em; }
+    .zone .lane-foot { font-size: 11px; }
+    .spots.two { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(0, 1fr); gap: 2px; }
     .floor-foot { display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: var(--text-muted); padding-top: 2px; }
     .floor-foot b { color: var(--text-secondary); }
 
@@ -287,7 +300,7 @@
     .alert-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
     .alert-count { border-radius: 10px; background: var(--surface-2); padding: 8px 10px; }
     .alert-count { padding: 6px 10px; }
-    .alert-count .n { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .alert-count .n { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
     .alert-count .t { font-size: 13px; font-weight: 700; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; }
     .alert-count.warning .t i { background: var(--warning); }
     .alert-count.overdue .t i { background: var(--serious); }
@@ -295,7 +308,7 @@
     .alert-count .t i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
     .alert-list { display: flex; flex-direction: column; gap: 5px; }
     .alert-list { display: grid; grid-template-columns: 1fr; gap: 4px; }
-    .alert-item { display: grid; grid-template-columns: 22px 1fr auto auto; gap: 8px; align-items: center; font-size: 15px; padding: 5px 8px; border-radius: 8px; background: var(--surface-2); }
+    .alert-item { display: grid; grid-template-columns: 22px 1fr auto auto; gap: 8px; align-items: center; font-size: 15px; padding: 3px 8px; border-radius: 8px; background: var(--surface-2); }
     .alert-item .ico { font-size: 15px; text-align: center; }
     .alert-item .slp { font-family: var(--mono); font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .alert-item .where { font-family: var(--mono); color: var(--text-secondary); }
@@ -373,6 +386,7 @@
             <div class="row-label staging" id="lanes-label"></div>
             <div class="lane-line" id="lanes-row"></div>
             <div class="order-line" id="order-line"></div>
+            <div class="zones" id="zones-row"></div>
             <div class="floor-foot">
                 <span><b>Doors</b> show what's being loaded · <b>Lanes</b>: 1 box = 1 floor spot · the line under the lanes shows which order is in them</span>
                 <span id="floor-foot-right"></span>
@@ -424,11 +438,15 @@
      * stagingLanes: null = every lane on the board named S + number, in one line, sorted by number;
      *               or list the lane names in floor order yourself, e.g. ['S80', 'S79', …].
      * laneDirection: 'ascending' puts the lowest lane number on the left, 'descending' on the right.
+     * zones: the other locations, in a row under the S lanes (see below).
      */
     const FLOOR_LAYOUT = {
         loadingDocks: ['DOCK-09', 'DOCK-08', 'DOCK-07', 'DOCK-06', 'DOCK-05', 'DOCK-04', 'DOCK-03', 'DOCK-02', 'DOCK-01', 'RAMP'],
         stagingLanes: null,
-        laneDirection: 'ascending'
+        laneDirection: 'ascending',
+        // Other locations, drawn in a row under the S lanes, one block per zone. A location belongs to a
+        // zone by the part of its name before the dot (W05.89 → W05). null = every zone on the board, A→Z.
+        zones: ['N09', 'W05', 'W06']
     };
 
     // Shared with the staging app (same site → same saved code and warehouse on this device)
@@ -655,6 +673,26 @@
             return `<div class="order-span${sp.docked ? ' at-dock' : ''}" style="grid-column: span ${sp.n}" title="${esc(sp.label)}">${esc(text)}</div>`;
         }).join('');
 
+        // ---- Other zones (N09, W05, W06 …) under the S lanes ----
+        const zones = zoneColumns(cols, mappedColIds);
+        zones.forEach(z => z.cols.forEach(c => mappedColIds.add(c.id)));
+        const zonesRow = document.getElementById('zones-row');
+        zonesRow.style.display = zones.length ? '' : 'none';
+        zonesRow.style.gridTemplateColumns = zones.map(z => `minmax(0, ${Math.max(1, z.cols.length)}fr)`).join(' ');
+        zonesRow.innerHTML = zones.map(z => {
+            const used = z.cols.filter(c => palletsIn(c.id).length).length;
+            const spots = z.cols.reduce((t, c) => t + floorSpotsUsed(palletsIn(c.id)), 0);
+            const cap = z.cols.reduce((t, c) => t + (Number(c.capacity) || 0), 0);
+            const first = z.cols[0] ? zoneSuffix(z.cols[0].name) : '', last = z.cols.length ? zoneSuffix(z.cols[z.cols.length - 1].name) : '';
+            return `<div class="zone">
+                <div class="zone-head"><span class="zname">${esc(z.name)}</span>
+                    <span class="zinfo">.${esc(first)} → .${esc(last)} · ${z.cols.length} locations · ${used} in use · ${spots}/${cap} spots</span></div>
+                <div class="lane-line" style="grid-template-columns: repeat(${Math.max(1, z.cols.length)}, minmax(0, 1fr))">
+                    ${z.cols.map(c => renderLane(c, palletsIn(c.id), c.name, zoneSuffix(c.name))).join('')}
+                </div>
+            </div>`;
+        }).join('');
+
         document.getElementById('floor-foot-right').innerHTML =
             `updated <b>${new Date(lastOkAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>`;
 
@@ -665,7 +703,7 @@
             <div class="alert-count ${l}"><div class="n">${levels[l].length}</div>
             <div class="t"><i></i>${{ warning: '⚠ Aging', overdue: '⏱ Overdue', overweek: '⛔ Over a week' }[l]}</div></div>`).join('');
         const worst = [...levels.overweek, ...levels.overdue, ...levels.warning]
-            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).slice(0, 4);
+            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).slice(0, 3);
         document.getElementById('alert-list').innerHTML = worst.length
             ? worst.map(p => {
                 const l = dwellLevel(p);
@@ -684,7 +722,7 @@
             return { ono, list, docks, lanes, carrier: carriers[0] || '', oldest };
         }).sort((a, b) => (b.docks.length > 0) - (a.docks.length > 0) || a.oldest - b.oldest);
         document.getElementById('orders-count').textContent = `${orderRows.length} order${orderRows.length === 1 ? '' : 's'}`;
-        const MAX_ORDERS = 6;
+        const MAX_ORDERS = 4;
         document.getElementById('orders').innerHTML = orderRows.length
             ? orderRows.slice(0, MAX_ORDERS).map(o => `
                 <div class="order-row${o.docks.length ? ' at-dock' : ''}">
@@ -725,6 +763,29 @@
         return lanes;
     }
 
+    /** Zone of a location: the part before the dot (W05.89 → W05). */
+    const zoneOf = name => { const m = /^([A-Za-z]+\d*)[.\-]/.exec(String(name || '').trim()); return m ? m[1].toUpperCase() : ''; };
+    const zoneSuffix = name => String(name || '').trim().replace(/^[A-Za-z]+\d*[.\-]/, '');
+
+    /** [{ name, cols }] for the zones under the S lanes, each sorted by location number. */
+    function zoneColumns(cols, alreadyMapped) {
+        const byZone = new Map();
+        cols.forEach(c => {
+            if (alreadyMapped.has(c.id)) return;
+            const z = zoneOf(c.name);
+            if (!z) return;
+            if (!byZone.has(z)) byZone.set(z, []);
+            byZone.get(z).push(c);
+        });
+        const names = Array.isArray(FLOOR_LAYOUT.zones)
+            ? FLOOR_LAYOUT.zones.map(z => String(z).toUpperCase()).filter(z => byZone.has(z))
+            : [...byZone.keys()].sort();
+        return names.map(name => ({
+            name,
+            cols: byZone.get(name).sort((a, b) => String(zoneSuffix(a.name)).localeCompare(String(zoneSuffix(b.name)), undefined, { numeric: true }))
+        }));
+    }
+
     const dockLabel = d => String(d).replace(/^DOCK-?0*(?=\d)/i, 'D').replace(/^RAMP$/i, 'Ramp');
 
     /** A loading door and what's being loaded there. */
@@ -749,7 +810,7 @@
         </div>`;
     }
 
-    function renderLane(col, inLane, laneName) {
+    function renderLane(col, inLane, laneName, shortName = null) {
         const num = parseInt(String(laneName).replace(/\D/g, ''), 10);
         const tens = num % 10 === 0 ? ' tens' : '';
         if (!col) {
@@ -774,8 +835,8 @@
         }
         const docks = [...new Set(inLane.map(p => norm(p.dockNumber)).filter(Boolean))];
         return `<div class="lane${used ? ' used' : ''}${over ? ' over' : ''}${tens}">
-            <div class="lane-head"><span class="lname">${esc(col.name)}</span><span class="count">${used}/${capacity}</span></div>
-            <div class="spots">${spotsHtml}</div>
+            <div class="lane-head" title="${esc(col.name)}"><span class="lname">${esc(shortName || col.name)}</span><span class="count">${used}/${capacity}</span></div>
+            <div class="spots${rows > 8 ? ' two' : ''}">${spotsHtml}</div>
             <div class="lane-foot" title="${esc(docks.join(', '))}">${esc(docks.length ? dockLabel(docks[0]) + (docks.length > 1 ? '+' : '') : '')}</div>
         </div>`;
     }

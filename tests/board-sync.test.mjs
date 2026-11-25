@@ -635,6 +635,12 @@ test('board: lanes in number order; search shows only lanes with a match', () =>
                              ${JSON.stringify(pallet('b', 'SO-2-01', { columnId: 'c62', orderNumber: 'SO-2', carrier: 'Estes Express' }))}];
          searchQuery = ''; selectedCarrierFilter = ''; renderBoard();`);
     assert.deepEqual(JSON.parse(run('JSON.stringify(appState.columns.map(c => c.name))')), ['S5', 'S30', 'S51', 'S62']);
+    run(`const zoneCols = appState.columns.slice(); appState.columns = [{ id: 'w1', name: 'W05.100', capacity: 4 }, { id: 'n1', name: 'N09.12', capacity: 12 },
+         { id: 'w2', name: 'W05.89', capacity: 4 }, ...zoneCols, { id: 'n2', name: 'N09.5', capacity: 4 }, { id: 'w3', name: 'W06.61', capacity: 4 }];
+         sortColumnsByLaneNumber(appState.columns);`);
+    assert.deepEqual(JSON.parse(run('JSON.stringify(appState.columns.map(c => c.name))')),
+        ['S5', 'S30', 'S51', 'S62', 'N09.5', 'N09.12', 'W05.89', 'W05.100', 'W06.61'], 'S lanes first, then zones in order');
+    run(`appState.columns = appState.columns.filter(c => /^S/.test(c.name));`);
     const lanesIn = () => [...board.innerHTML.matchAll(/id="lane-card-([^"]+)"/g)].map(m => m[1]);
     assert.deepEqual(lanesIn(), ['c5', 'c30', 'c51', 'c62']);
     run(`searchQuery = 'estes'; renderBoard();`);
