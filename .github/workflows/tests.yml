@@ -1,0 +1,88 @@
+# 每次推送到 main、每次提 PR 时自动跑测试。
+# 也可以在 Actions 页面手动点 "Run workflow" 触发。
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: 逻辑测试 (board-sync)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run node tests
+        run: node --test tests/board-sync.test.mjs
+
+  e2e:
+    name: 网页点击测试 (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 测试脚本直接用 GitHub 机器上自带的 /usr/bin/google-chrome，不用另外下载浏览器
+      - name: Install dependencies
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          pip install playwright
+
+      - name: Click-through test (run_e2e.py)
+        working-directory: tests/e2e
+        run: |
+          mkdir -p out
+          python3 run_e2e.py 3 2>&1 | grep -v '"GET \|"POST ' | tee out/run_e2e.log
+          # 脚本本身不返回失败码，这里读 results.json，有任何一项失败就让这一步变红
+          python3 -c "
+          import json, sys
+          r = json.load(open('out/results.json'))
+          bad = [x for x in r if not x['ok']]
+          print(f'{len(r) - len(bad)}/{len(r)} checks passed')
+          for x in bad: print('FAIL', x['warehouse'], x['round'], x['step'], x['detail'])
+          sys.exit(1 if bad or not r else 0)
+          "
+
+      - name: Stalled-request check
+        if: success() || failure()
+        working-directory: tests/e2e
+        run: |
+          python3 stalled_request_check.py 2>&1 | grep -v '"GET \|"POST ' | tee out/stalled_request.log
+          grep -q 'RESULT: PASS' out/stalled_request.log
+
+      - name: Intake page check
+        if: success() || failure()
+        working-directory: tests/e2e
+        run: python3 intake_check.py 2>&1 | tee out/intake_check.log
+
+      # 只截图、不判断对错，截图放进下面的 Artifacts 里人工查看
+      - name: Dashboard screenshots
+        if: success() || failure()
+        working-directory: tests/e2e
+        run: python3 dashboard_check.py 2>&1 | tee out/dashboard_check.log
+
+      # 不管测试成功还是失败，都把截图和日志存下来，在这次运行页面最下方的 Artifacts 下载
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots-and-logs
+          path: tests/e2e/out/
+          retention-days: 14
