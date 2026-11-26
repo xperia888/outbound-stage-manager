@@ -220,6 +220,10 @@ async def main():
         await pg.screenshot(path=f'{OUT}/intake_import_map_1024.png', full_page=True)
         await pg.set_viewport_size({'width': 1440, 'height': 900})
         await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(300)
+        await pg.set_viewport_size({'width': 1280, 'height': 720})
+        pv = await pg.evaluate("(e => e.scrollWidth - e.clientWidth)(document.querySelector('.preview-wrap'))")
+        record('import preview fits a 1280px laptop', pv <= 0, pv)
+        await pg.set_viewport_size({'width': 1440, 'height': 900})
         counts = await pg.get_attribute('#imp-counts', 'data-summary') or ''
         record('preview: 2 new, 1 update, 3 problems', counts == '2 new · 1 update · 0 skip · 3 with problems', counts)
         await pg.screenshot(path=f'{OUT}/intake_import_preview.png', full_page=True)
@@ -462,6 +466,20 @@ async def main():
                 if w in (360, 1024, 2560, 3440):
                     await pg.screenshot(path=f'{OUT}/size_{w}_{name}.png', full_page=False)
         record('no sideways scrolling on any view, 360px to 3440px', not bad, bad)
+        # Laptop screens: the tables themselves fit too (no scrolling inside them)
+        wide = []
+        for w, h in [(1280, 720), (1366, 768), (1440, 900), (1536, 864)]:
+            await pg.set_viewport_size({'width': w, 'height': h})
+            for name, js in views:
+                await pg.evaluate(js); await pg.wait_for_timeout(900 if name in ('eod', 'life') else 150)
+                m = await pg.evaluate("[...document.querySelectorAll('.table-wrap, .rep-table, .preview-wrap')].filter(e => e.offsetParent).map(e => e.scrollWidth - e.clientWidth)")
+                if any(x > 0 for x in m): wide.append((w, name, m))
+            if w == 1366:
+                await pg.evaluate("showView('orders')"); await pg.wait_for_timeout(200)
+                await pg.screenshot(path=f'{OUT}/laptop_1366_orders.png')
+                await pg.evaluate("showView('reports'); setReportKind('life')"); await pg.wait_for_timeout(900)
+                await pg.screenshot(path=f'{OUT}/laptop_1366_life.png', full_page=True)
+        record('laptop screens (1280-1536px): every table fits without sideways scrolling', not wide, wide)
         await pg.set_viewport_size({'width': 1440, 'height': 900})
         await pg.evaluate("showView('orders')")
 
