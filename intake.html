@@ -155,6 +155,8 @@
     .copy-btn.done { color: var(--good); border-color: var(--good); }
     .copy-btn svg { width: 12px; height: 12px; }
     .sub2.shipped-at { color: var(--good); font-weight: 700; }
+    .sub2.since { color: var(--text-2); font-weight: 600; }
+    .sub2.since.late { color: var(--bad); }
     .cust { font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
     .sub2 { font-size: 11.5px; color: var(--muted); }
     .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
@@ -1157,6 +1159,13 @@
                 const shippedAt = shipped && p.lastShippedAt && o.status !== 'Cancelled'
                     ? `<div class="sub2 shipped-at" title="${esc(new Date(p.lastShippedAt).toLocaleString())}">${st.key === 'shipped' ? 'Shipped' : 'Last shipped'} ${esc(fmtShort(p.lastShippedAt))}</div>`
                     : '';
+                // Waiting since the release; on the floor since the first pallet was staged
+                const rel = Date.parse(o.releasedAt);
+                const since = st.key === 'waiting' && rel
+                    ? `<div class="sub2 since${Date.now() - rel > 24 * 3600000 ? ' late' : ''}" title="Released ${esc(new Date(rel).toLocaleString())} · waiting ${esc(ageText(rel))}">Waiting since ${esc(fmtShort(rel))}</div>`
+                    : ['partial', 'staged', 'dock'].includes(st.key) && p.firstStagedAt
+                        ? `<div class="sub2 since" title="First pallet staged ${esc(new Date(p.firstStagedAt).toLocaleString())} · on the floor ${esc(ageText(p.firstStagedAt))}">On floor since ${esc(fmtShort(p.firstStagedAt))}</div>`
+                        : '';
                 const sl = stageLanesOf(o);
                 const laneCell = sl.lanes.length
                     ? `<div class="lanes" title="${sl.live ? 'On the floor now' : 'Last staged in (shipped / removed)'}">${sl.lanes.map(l => `<span class="lane-chip${sl.live ? '' : ' past'}">${esc(l)}</span>`).join('')}</div>`
@@ -1167,7 +1176,7 @@
                     <td class="w-cust"><div class="cust" title="${esc(o.customer)}">${esc(o.customer)}</div>${o.destination ? `<div class="sub2">${esc(o.destination)}</div>` : ''}</td>
                     <td class="w-mid">${o.reference ? `<span class="sub2">${esc(o.refType || '')}</span> <span class="mono">${esc(o.reference)}</span>` : (o.refType ? esc(o.refType) : '')}</td>
                     <td class="num nw">${o.pallets == null ? '' : `<b>${o.pallets}</b>`}${o.cartons == null ? '' : `<div class="sub2">${o.cartons} ctn</div>`}</td>
-                    <td class="nw"><span class="chip ${st.key}">${esc(st.label)}</span>${bar}${floorText}${shippedAt}</td>
+                    <td class="nw"><span class="chip ${st.key}">${esc(st.label)}</span>${bar}${floorText}${since}${shippedAt}</td>
                     <td>${laneCell}</td>
                     <td class="w-mid">${esc(o.picker || '')}</td>
                     <td class="w-mid">${missingCarrier(o) ? '<span class="no-carrier">No carrier</span>' : esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}${o.vrid ? `<div class="sub2 mono">VRID ${esc(o.vrid)}</div>` : ''}</td>
@@ -1189,6 +1198,11 @@
         try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
         ta.remove();
         return ok;
+    }
+    /** How long ago, as "3h" / "2d 4h". */
+    function ageText(ms) {
+        const h = Math.floor(Math.max(0, Date.now() - ms) / 3600000);
+        return h < 1 ? `${Math.max(0, Math.round((Date.now() - ms) / 60000))}m` : h < 24 ? `${h}h` : `${Math.floor(h / 24)}d ${h % 24}h`;
     }
     function fmtShort(ms) { const d = new Date(ms); return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`; }
 
@@ -1225,11 +1239,11 @@
         const labels = cols.map(k => (FIELDS.find(f => f.key === k) || { label: k === 'source' ? 'Source' : 'Entered by' }).label);
         const cell = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
         const list = filteredOrders();
-        const lines = [[...labels, 'Floor status', 'Stage lanes', 'Pallets on floor', 'Pallets shipped', 'Shipped at'].map(cell).join(',')].concat(list.map(o => {
+        const lines = [[...labels, 'Floor status', 'Stage lanes', 'Pallets on floor', 'Pallets shipped', 'Staged on floor at', 'Shipped at'].map(cell).join(',')].concat(list.map(o => {
             const p = progress[norm(o.orderNumber)] || {};
             const rel = o.releasedAt ? toLocalInput(o.releasedAt).split('T') : ['', ''];
             const val = k => (k === 'releaseDate' ? rel[0] : k === 'releaseTime' ? (o.releaseWindow || rel[1]) : o[k]);
-            return [...cols.map(val), floorState(o).label, stageLanesOf(o).lanes.join(', '), p.staged || 0, p.shipped || 0, p.shipped && p.lastShippedAt ? new Date(p.lastShippedAt).toLocaleString() : ''].map(cell).join(',');
+            return [...cols.map(val), floorState(o).label, stageLanesOf(o).lanes.join(', '), p.staged || 0, p.shipped || 0, p.firstStagedAt ? new Date(p.firstStagedAt).toLocaleString() : '', p.shipped && p.lastShippedAt ? new Date(p.lastShippedAt).toLocaleString() : ''].map(cell).join(',');
         }));
         downloadText(`orders-${WAREHOUSES[WH].name}-${new Date().toISOString().slice(0, 10)}.csv`, lines.join('\r\n'));
     });
