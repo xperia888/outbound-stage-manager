@@ -127,6 +127,19 @@
 
     /* Tables */
     .table-wrap { overflow-x: auto; }
+    /* Tables that must fit a laptop screen: text cells wrap instead of widening the table */
+    table.fit td, table.fit th { white-space: normal; }
+    table.fit th { vertical-align: bottom; }
+    table.fit td .ono, table.fit td .chip, table.fit td .mono, table.fit .nw { white-space: nowrap; }
+    table.fit .w-cust { max-width: 210px; min-width: 120px; overflow-wrap: anywhere; }
+    table.fit .w-mid { max-width: 160px; overflow-wrap: anywhere; }
+    table.fit .lanes { flex-wrap: wrap; max-width: 150px; }
+    .two { display: block; line-height: 1.35; }
+    @media (max-width: 1500px) {
+        table.fit td, table.fit th { padding-left: 7px; padding-right: 7px; }
+        table.fit td { font-size: 12.5px; }
+    }
+    @media (max-width: 1750px) { .rep-grid.split-wide { grid-template-columns: minmax(0, 1fr); } }
     table { width: 100%; border-collapse: collapse; }
     th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 800; padding: 9px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; z-index: 1; }
     td { padding: 9px 10px; border-bottom: 1px solid #eef2f6; vertical-align: middle; white-space: nowrap; font-size: 13px; }
@@ -439,11 +452,11 @@
                 </div>
             </div>
             <div class="table-wrap">
-                <table>
+                <table class="fit" id="orders-table">
                     <thead>
                         <tr>
-                            <th>Released</th><th>Order #</th><th>Customer</th><th>Type</th><th>Reference</th>
-                            <th class="num">Cartons</th><th class="num">Pallets</th><th>Floor</th><th>Stage Lane</th><th>Picker</th><th>Carrier / VRID</th><th>Ready</th><th>Ship / Appt</th><th>Source</th>
+                            <th>Released</th><th>Order # / Type</th><th>Customer</th><th>Reference</th>
+                            <th class="num">Plt / Ctn</th><th>Floor</th><th>Stage Lane</th><th>Picker</th><th>Carrier / VRID</th><th>Ready / Ship</th>
                         </tr>
                     </thead>
                     <tbody id="orders-body"></tbody>
@@ -645,8 +658,8 @@
                 <div id="imp-step3" class="hidden">
                     <div class="stat-row" id="imp-counts"></div>
                     <div class="preview-wrap">
-                        <table>
-                            <thead><tr><th>Row</th><th>Result</th><th>Order #</th><th>Customer</th><th class="num">Cartons</th><th class="num">Pallets</th><th>Reference</th><th>Type</th><th>Carrier</th><th>VRID</th><th>Picker</th><th>Released</th></tr></thead>
+                        <table class="fit">
+                            <thead><tr><th>Row</th><th>Result</th><th>Order #</th><th>Customer</th><th class="num">Plt / Ctn</th><th>Reference</th><th>Type</th><th>Carrier / VRID</th><th>Picker</th><th>Released</th></tr></thead>
                             <tbody id="imp-preview-body"></tbody>
                         </table>
                     </div>
@@ -812,6 +825,21 @@
     const norm = v => String(v == null ? '' : v).trim().toUpperCase();
     const headerKey = v => String(v == null ? '' : v).toLowerCase().replace(/#/g, 'number').replace(/[^a-z0-9]/g, '');
     const pad = n => String(n).padStart(2, '0');
+
+    /** "2026-11-25" (or any date text) → "Nov 25"; anything unreadable is shown as written. */
+    function shortDay(v) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || '').trim());
+        const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+        return d && !isNaN(d) ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : String(v || '');
+    }
+    /** Release date on one line, window (or time) under it. */
+    function releasedCell(o) {
+        if (!o.releasedAt) return '';
+        const d = new Date(o.releasedAt);
+        if (isNaN(d)) return esc(o.releasedAt);
+        const when = o.releaseWindow || d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        return `${esc(d.toLocaleDateString([], { month: 'short', day: 'numeric' }))}<div class="sub2 mono">${esc(when)}</div>`;
+    }
 
     function fmtDateTime(iso) {
         const d = new Date(iso);
@@ -1105,7 +1133,7 @@
         const list = filteredOrders();
         const body = $('orders-body');
         if (!list.length) {
-            body.innerHTML = `<tr><td colspan="14" class="empty">${orders.length ? 'No orders match these filters.' : 'No orders yet. Use “+ New Order” or “Import from WMS”.'}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="10" class="empty">${orders.length ? 'No orders match these filters.' : 'No orders yet. Use “+ New Order” or “Import from WMS”.'}</td></tr>`;
         } else {
             body.innerHTML = list.map(o => {
                 const st = floorState(o);
@@ -1124,20 +1152,16 @@
                     ? `<div class="lanes" title="${sl.live ? 'On the floor now' : 'Last staged in (shipped / removed)'}">${sl.lanes.map(l => `<span class="lane-chip${sl.live ? '' : ' past'}">${esc(l)}</span>`).join('')}</div>`
                     : '<span class="sub2">—</span>';
                 return `<tr data-order="${esc(o.orderNumber)}" class="${o.status === 'Cancelled' ? 'cancelled' : ''}">
-                    <td>${o.releaseWindow && o.releasedAt ? `${esc(new Date(o.releasedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }))} <span class="mono">${esc(o.releaseWindow)}</span>` : esc(fmtDateTime(o.releasedAt))}<div class="sub2">${esc(o.enteredBy || '')}</div></td>
-                    <td><span class="ono">${esc(o.orderNumber)}</span></td>
-                    <td><div class="cust" title="${esc(o.customer)}">${esc(o.customer)}</div>${o.destination ? `<div class="sub2">${esc(o.destination)}</div>` : ''}</td>
-                    <td>${esc(o.orderType || '')}</td>
-                    <td>${o.reference ? `<span class="sub2">${esc(o.refType || '')}</span> <span class="mono">${esc(o.reference)}</span>` : (o.refType ? esc(o.refType) : '')}</td>
-                    <td class="num">${o.cartons == null ? '' : o.cartons}</td>
-                    <td class="num">${o.pallets == null ? '' : o.pallets}</td>
-                    <td><span class="chip ${st.key}">${esc(st.label)}</span>${bar}${floorText}</td>
+                    <td class="nw">${releasedCell(o)}<div class="sub2">${esc(o.enteredBy || '')}</div></td>
+                    <td><span class="ono">${esc(o.orderNumber)}</span><div class="sub2 nw">${esc(o.orderType || '')}${o.orderType && o.source ? ' · ' : ''}${esc(o.source || '')}</div></td>
+                    <td class="w-cust"><div class="cust" title="${esc(o.customer)}">${esc(o.customer)}</div>${o.destination ? `<div class="sub2">${esc(o.destination)}</div>` : ''}</td>
+                    <td class="w-mid">${o.reference ? `<span class="sub2">${esc(o.refType || '')}</span> <span class="mono">${esc(o.reference)}</span>` : (o.refType ? esc(o.refType) : '')}</td>
+                    <td class="num nw">${o.pallets == null ? '' : `<b>${o.pallets}</b>`}${o.cartons == null ? '' : `<div class="sub2">${o.cartons} ctn</div>`}</td>
+                    <td class="nw"><span class="chip ${st.key}">${esc(st.label)}</span>${bar}${floorText}</td>
                     <td>${laneCell}</td>
-                    <td>${esc(o.picker || '')}</td>
-                    <td>${missingCarrier(o) ? '<span class="no-carrier">No carrier</span>' : esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}${o.vrid ? `<div class="sub2 mono">VRID ${esc(o.vrid)}</div>` : ''}</td>
-                    <td>${esc(o.readyDate || '')}</td>
-                    <td>${esc(o.shipDate || '')}</td>
-                    <td><span class="chip src">${esc(o.source || '')}</span></td>
+                    <td class="w-mid">${esc(o.picker || '')}</td>
+                    <td class="w-mid">${missingCarrier(o) ? '<span class="no-carrier">No carrier</span>' : esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}${o.vrid ? `<div class="sub2 mono">VRID ${esc(o.vrid)}</div>` : ''}</td>
+                    <td class="nw">${o.readyDate ? `<span class="two"><span class="sub2">Ready</span> ${esc(shortDay(o.readyDate))}</span>` : ''}${o.shipDate ? `<span class="two"><span class="sub2">Ship</span> ${esc(shortDay(o.shipDate))}</span>` : ''}</td>
                 </tr>`;
             }).join('');
         }
@@ -1955,17 +1979,15 @@
         $('imp-preview-body').innerHTML = show.map(p => `<tr>
             <td>${p.line}</td>
             <td style="white-space:normal">${p.result === 'error' ? `<span class="chip error">Problem</span> <span class="err-text">${esc(p.problems.join('; '))}</span>` : label[p.result]}</td>
-            <td class="ono">${esc(p.o.orderNumber || '')}</td>
-            <td>${esc(p.o.customer == null ? '' : p.o.customer)}</td>
-            <td class="num">${p.o.cartons == null ? '' : esc(p.o.cartons)}</td>
-            <td class="num">${p.o.pallets == null ? '' : esc(p.o.pallets)}</td>
-            <td>${esc([p.o.refType, p.o.reference].filter(Boolean).join(' '))}</td>
+            <td><span class="ono">${esc(p.o.orderNumber || '')}</span></td>
+            <td class="w-cust">${esc(p.o.customer == null ? '' : p.o.customer)}</td>
+            <td class="num nw">${p.o.pallets == null ? '' : `<b>${esc(p.o.pallets)}</b>`}${p.o.cartons == null ? '' : `<div class="sub2">${esc(p.o.cartons)} ctn</div>`}</td>
+            <td class="w-mid">${esc([p.o.refType, p.o.reference].filter(Boolean).join(' '))}</td>
             <td>${esc(p.o.orderType || '')}</td>
-            <td>${esc(p.o.carrier || '')}</td>
-            <td class="mono">${esc(p.o.vrid || '')}</td>
-            <td>${esc(p.o.picker || '')}</td>
-            <td>${p.o.releasedAt ? esc(fmtDateTime(p.o.releasedAt)) : ''}</td>
-        </tr>`).join('') + (imp.parsed.length > show.length ? `<tr><td colspan="12" class="sub2">…and ${imp.parsed.length - show.length} more row(s)</td></tr>` : '');
+            <td class="w-mid">${esc(p.o.carrier || '')}${p.o.vrid ? `<div class="sub2 mono">${esc(p.o.vrid)}</div>` : ''}</td>
+            <td class="w-mid">${esc(p.o.picker || '')}</td>
+            <td class="nw">${releasedCell(p.o)}</td>
+        </tr>`).join('') + (imp.parsed.length > show.length ? `<tr><td colspan="10" class="sub2">…and ${imp.parsed.length - show.length} more row(s)</td></tr>` : '');
         const n = c.new + c.update;
         $('imp-go-btn').textContent = n ? `Import ${n} order(s)` : 'Nothing to import';
         $('imp-go-btn').disabled = !n;
@@ -2045,6 +2067,13 @@
         const d = new Date(ms);
         const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         return refDay && d.toDateString() === refDay.toDateString() ? t : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${t}`;
+    }
+
+    /** A milestone as two short lines: "Nov 24" over "2:05 PM". */
+    function whenTwo(ms) {
+        if (!ms) return '';
+        const d = new Date(ms);
+        return `${esc(d.toLocaleDateString([], { month: 'short', day: 'numeric' }))}<div class="sub2">${esc(d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</div>`;
     }
 
     /** One order with its floor history merged in. */
@@ -2290,7 +2319,7 @@
                 ${kpi(esc(dur(aTotal) || '—'), 'Avg release → shipped')}
             </div>
             <div class="sub2" style="margin:-6px 0 10px">Pallets on completed orders: ${shp} shipped of ${exp} expected${exp ? ` (${Math.round(shp / exp * 100)}%)` : ''} · ${views.length - active.length} cancelled</div>
-            <div class="rep-grid">            <div class="rep-sec">
+            <div class="rep-grid split-wide">            <div class="rep-sec">
                 <h3>By user <span>who entered the orders</span></h3>
                 ${views.length ? `<div class="rep-table"><table id="rep-life-user"><thead><tr><th>Created by</th><th class="num">Orders</th><th class="num">Pallets</th><th class="num">Cartons</th><th class="num">Shipped complete</th><th class="num">Cancelled</th><th>Avg release → shipped</th></tr></thead><tbody>
                 ${Object.entries(byUser).sort((a, b) => b[1].orders - a[1].orders).map(([n, x]) => { const t = avg(x.totals); return `<tr><td><b>${esc(n)}</b></td><td class="num">${x.orders}</td><td class="num">${x.pallets}</td><td class="num">${x.cartons}</td><td class="num">${x.done}</td><td class="num">${x.cancelled}</td><td class="${durClass(t, 24, 48)}">${esc(dur(t) || '—')}</td></tr>`; }).join('')}
@@ -2304,22 +2333,24 @@
             </div>
             </div>
             <div class="rep-sec">
-                <h3>Every order, release to shipped <span>${views.length} order(s)</span></h3>
-                ${views.length ? `<div class="rep-table"><table><thead><tr>
-                    <th>Order #</th><th>Customer</th><th>Created by</th><th>Type</th><th>Reference</th><th>Picker</th><th>Carrier / VRID</th>
-                    <th>Released</th><th>First staged</th><th>At dock</th><th>Shipped</th>
-                    <th>Release → staged</th><th>Staged → shipped</th><th>Total</th>
-                    <th class="num">Exp.</th><th class="num">Staged</th><th class="num">Shipped</th><th>Lanes</th><th>Dock</th><th>Status</th></tr></thead><tbody>
+                <h3>Every order, release to shipped <span>${views.length} order(s) · “+” = time since the step before</span></h3>
+                ${views.length ? `<div class="rep-table"><table class="fit" id="rep-life-orders"><thead><tr>
+                    <th>Order # / Customer</th><th>Created by / Picker</th><th>Type / Ref</th><th>Carrier / VRID</th>
+                    <th>Released</th><th>First staged</th><th>At dock</th><th>Shipped</th><th>Total</th>
+                    <th class="num">Plt exp / stg / shp</th><th>Lanes / Dock</th><th>Status</th></tr></thead><tbody>
                 ${views.map(v => `<tr>
-                    <td class="ono">${esc(v.o.orderNumber)}</td><td>${esc(v.o.customer || '')}</td><td>${esc(v.creator)}</td><td>${esc(v.o.orderType || '')}</td>
-                    <td>${esc([v.o.refType, v.o.reference].filter(Boolean).join(' '))}</td><td>${esc(v.o.picker || '')}</td>
-                    <td>${esc(v.o.carrier || '')}${v.o.vrid ? ` <span class="sub2 mono">${esc(v.o.vrid)}</span>` : ''}</td>
-                    <td>${esc(whenShort(v.released))}</td><td>${esc(whenShort(v.firstStaged))}</td><td>${esc(whenShort(v.firstDock))}</td><td>${esc(whenShort(v.lastShip))}</td>
-                    <td class="${durClass(v.releaseToStage, 8, 24)}">${esc(dur(v.releaseToStage))}</td><td class="${durClass(v.stageToShip, 24, 48)}">${esc(dur(v.stageToShip))}</td>
-                    <td class="${durClass(v.total, 24, 48)}">${esc(dur(v.total))}</td>
-                    <td class="num">${v.expected == null ? '' : v.expected}</td><td class="num">${v.staged}</td>
-                    <td class="num">${v.shipped}${v.variance ? ` <span class="dur-bad">(${v.variance > 0 ? '+' : ''}${v.variance})</span>` : ''}</td>
-                    <td class="mono">${esc(v.lanes.join(', '))}</td><td class="mono">${esc(v.docks.join(', '))}</td><td>${statusChip(v.status)}</td></tr>`).join('')}
+                    <td class="w-cust"><span class="ono">${esc(v.o.orderNumber)}</span><div class="sub2">${esc(v.o.customer || '')}</div></td>
+                    <td class="w-mid">${esc(v.creator)}${v.o.picker ? `<div class="sub2">Picker ${esc(v.o.picker)}</div>` : ''}</td>
+                    <td class="w-mid">${esc(v.o.orderType || '')}<div class="sub2">${esc([v.o.refType, v.o.reference].filter(Boolean).join(' '))}</div></td>
+                    <td class="w-mid">${esc(v.o.carrier || '')}${v.o.vrid ? `<div class="sub2 mono">${esc(v.o.vrid)}</div>` : ''}</td>
+                    <td class="nw">${whenTwo(v.released)}</td>
+                    <td class="nw">${whenTwo(v.firstStaged)}${v.releaseToStage != null ? `<div class="sub2 ${durClass(v.releaseToStage, 8, 24)}">+${esc(dur(v.releaseToStage))}</div>` : ''}</td>
+                    <td class="nw">${whenTwo(v.firstDock)}</td>
+                    <td class="nw">${whenTwo(v.lastShip)}${v.stageToShip != null ? `<div class="sub2 ${durClass(v.stageToShip, 24, 48)}">+${esc(dur(v.stageToShip))}</div>` : ''}</td>
+                    <td class="nw ${durClass(v.total, 24, 48)}">${esc(dur(v.total))}</td>
+                    <td class="num nw">${v.expected == null ? '–' : v.expected} / ${v.staged} / ${v.shipped}${v.variance ? ` <span class="dur-bad">(${v.variance > 0 ? '+' : ''}${v.variance})</span>` : ''}</td>
+                    <td><span class="mono">${esc(v.lanes.join(', '))}</span>${v.docks.length ? `<div class="sub2 mono">${esc(v.docks.join(', '))}</div>` : ''}</td>
+                    <td class="nw">${statusChip(v.status)}</td></tr>`).join('')}
                 </tbody></table></div>` : '<div class="rep-empty">No orders released in this period.</div>'}
             </div>`;
     }
