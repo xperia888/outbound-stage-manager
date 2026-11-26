@@ -82,7 +82,7 @@ Customer service releases orders to the warehouse here: https://xperia888.github
 - **Fields:**
   - Order # (must match what the floor scans)
   - Customer
-  - Released-to-warehouse time (defaults to now)
+  - **Release date** and **release time**, as two fields (both default to now). In imports they are two matching slots: a file with one date-and-time column goes on Release date; a file with separate columns uses both (times like `2:05 PM`, `14:05`, `1405` or Excel times). Matchings and templates saved before this change still work.
   - Cartons, expected pallets and picker
   - Reference type + reference (ARN#, Repack, PO#…)
   - Order type

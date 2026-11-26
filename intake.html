@@ -95,7 +95,7 @@
     .field label { display: block; font-size: 11.5px; font-weight: 700; color: var(--text-2); margin-bottom: 4px; }
     .field label .req { color: var(--bad); }
     .field .hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
-    input[type=text], input[type=number], input[type=search], input[type=datetime-local], input[type=date], input[type=password], select, textarea {
+    input[type=text], input[type=number], input[type=search], input[type=datetime-local], input[type=date], input[type=time], input[type=password], select, textarea {
         width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 7px 10px; background: #fff; font-size: 13.5px;
     }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25); }
@@ -471,14 +471,19 @@
                         <label for="f-orderNumber">Order # <span class="req">*</span></label>
                         <input type="text" id="f-orderNumber" class="mono" placeholder="e.g. DN2611190307" required>
                     </div>
-                    <div class="field span2">
+                    <div class="field">
                         <label for="f-customer">Customer name <span class="req">*</span></label>
                         <input type="text" id="f-customer" list="customer-list" placeholder="Customer" required>
                     </div>
                     <div class="field">
-                        <label for="f-releasedAt">Released to warehouse</label>
-                        <input type="datetime-local" id="f-releasedAt">
-                        <div class="hint">When CS handed the order out</div>
+                        <label for="f-releaseDate">Release date</label>
+                        <input type="date" id="f-releaseDate">
+                        <div class="hint">Day CS released the order to the warehouse</div>
+                    </div>
+                    <div class="field">
+                        <label for="f-releaseTime">Release time</label>
+                        <input type="time" id="f-releaseTime">
+                        <div class="hint">Time it was handed out</div>
                     </div>
                     <div class="field">
                         <label for="f-orderType">Order type</label>
@@ -774,7 +779,9 @@
     const FIELDS = [
         { key: 'orderNumber', label: 'Order #', type: 'text', required: true, synonyms: ['order', 'ordernumber', 'orderno', 'ordernum', 'order#', 'dn', 'dnnumber', 'deliverynumber', 'delivery', 'so', 'sonumber', 'salesorder', 'shipmentnumber', 'shipment', 'outboundorder', 'pickticket', 'pickticketnumber'] },
         { key: 'customer', label: 'Customer', type: 'text', required: true, synonyms: ['customer', 'customername', 'client', 'clientname', 'account', 'accountname', 'shipto', 'shiptoname', 'consignee', 'soldto'] },
-        { key: 'releasedAt', label: 'Released to warehouse', type: 'datetime', synonyms: ['released', 'releasedat', 'releasedate', 'releasetime', 'releasedatetime', 'createddate', 'orderdate', 'ordertime', 'handoff', 'handout', 'cstime'] },
+        // Release to warehouse = a date and a time; a file may have them in one column (put it on the date) or two
+        { key: 'releaseDate', label: 'Release date', type: 'reldate', synonyms: ['releasedate', 'released', 'releasedat', 'releasedon', 'releasedatetime', 'releasedtowarehouse', 'createddate', 'orderdate', 'handoffdate', 'handoutdate', 'handoff', 'handout'] },
+        { key: 'releaseTime', label: 'Release time', type: 'reltime', synonyms: ['releasetime', 'releasedtime', 'ordertime', 'createdtime', 'handofftime', 'handouttime', 'cstime'] },
         { key: 'readyDate', label: 'Order ready date', type: 'date', synonyms: ['readydate', 'orderready', 'orderreadydate', 'ready', 'readyby', 'readyon', 'readytime', 'readytoship', 'pickcomplete', 'pickcompletedate', 'completiondate', 'stagedate'] },
         { key: 'cartons', label: 'Cartons', type: 'int', synonyms: ['cartons', 'carton', 'ctns', 'ctn', 'cartonqty', 'cartoncount', 'boxes', 'cases', 'casecount', 'qtycartons'] },
         { key: 'pallets', label: 'Pallets', type: 'int', synonyms: ['pallets', 'pallet', 'plts', 'plt', 'palletqty', 'palletcount', 'skids', 'lpn', 'lpncount'] },
@@ -1147,13 +1154,15 @@
     }
 
     $('export-btn').addEventListener('click', () => {
-        const cols = ['orderNumber', 'customer', 'releasedAt', 'cartons', 'pallets', 'picker', 'refType', 'reference', 'orderType', 'carrier', 'scac', 'proBol', 'vrid', 'readyDate', 'shipDate', 'destination', 'notes', 'status', 'source', 'enteredBy'];
+        const cols = ['orderNumber', 'customer', 'releaseDate', 'releaseTime', 'cartons', 'pallets', 'picker', 'refType', 'reference', 'orderType', 'carrier', 'scac', 'proBol', 'vrid', 'readyDate', 'shipDate', 'destination', 'notes', 'status', 'source', 'enteredBy'];
         const labels = cols.map(k => (FIELDS.find(f => f.key === k) || { label: k === 'source' ? 'Source' : 'Entered by' }).label);
         const cell = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
         const list = filteredOrders();
         const lines = [[...labels, 'Floor status', 'Stage lanes', 'Pallets on floor', 'Pallets shipped'].map(cell).join(',')].concat(list.map(o => {
             const p = progress[norm(o.orderNumber)] || {};
-            return [...cols.map(k => o[k]), floorState(o).label, stageLanesOf(o).lanes.join(', '), p.staged || 0, p.shipped || 0].map(cell).join(',');
+            const rel = o.releasedAt ? toLocalInput(o.releasedAt).split('T') : ['', ''];
+            const val = k => (k === 'releaseDate' ? rel[0] : k === 'releaseTime' ? rel[1] : o[k]);
+            return [...cols.map(val), floorState(o).label, stageLanesOf(o).lanes.join(', '), p.staged || 0, p.shipped || 0].map(cell).join(',');
         }));
         downloadText(`orders-${WAREHOUSES[WH].name}-${new Date().toISOString().slice(0, 10)}.csv`, lines.join('\r\n'));
     });
@@ -1171,7 +1180,7 @@
     // ===================================================================================
     // New / edit form
     // ===================================================================================
-    const FORM_KEYS = ['orderNumber', 'customer', 'releasedAt', 'orderType', 'cartons', 'pallets', 'picker', 'refType', 'reference', 'carrier', 'scac', 'proBol', 'vrid', 'readyDate', 'shipDate', 'destination', 'notes'];
+    const FORM_KEYS = ['orderNumber', 'customer', 'releaseDate', 'releaseTime', 'orderType', 'cartons', 'pallets', 'picker', 'refType', 'reference', 'carrier', 'scac', 'proBol', 'vrid', 'readyDate', 'shipDate', 'destination', 'notes'];
     let editing = null; // the order being edited, or null for a new one
 
     function openForm(order) {
@@ -1184,8 +1193,11 @@
         FORM_KEYS.forEach(k => {
             const el = $('f-' + k);
             const v = order ? order[k] : '';
-            if (k === 'releasedAt') el.value = toLocalInput(order ? order.releasedAt : null);
-            else if (el.tagName === 'SELECT') {
+            if (k === 'releaseDate' || k === 'releaseTime') {
+                // New orders start at "now"; an order saved without a release time stays blank
+                const local = order ? (order.releasedAt ? toLocalInput(order.releasedAt) : '') : toLocalInput(null);
+                el.value = local ? local.split('T')[k === 'releaseDate' ? 0 : 1] : '';
+            } else if (el.tagName === 'SELECT') {
                 if (v && ![...el.options].some(o => o.value === v)) el.add(new Option(v, v));
                 el.value = v || '';
             } else el.value = v == null ? '' : v;
@@ -1219,16 +1231,20 @@
         const o = {};
         FORM_KEYS.forEach(k => {
             const v = $('f-' + k).value.trim();
-            if (k === 'releasedAt') o[k] = v ? new Date(v).toISOString() : '';
-            else if (k === 'orderNumber') o[k] = norm(v);
+            if (k === 'orderNumber') o[k] = norm(v);
             else if (k === 'scac' || k === 'vrid') o[k] = v.toUpperCase();
             else o[k] = v;
         });
+        // Release date + time → one release timestamp
+        const rd = o.releaseDate, rt = o.releaseTime;
+        o.releasedAt = rd && rt ? new Date(`${rd}T${rt}`).toISOString() : '';
         return o;
     }
 
     function validateForm(o) {
         const bad = [];
+        if (o.releaseDate && !o.releaseTime) bad.push(['releaseTime', 'Enter the release time']);
+        if (!o.releaseDate && o.releaseTime) bad.push(['releaseDate', 'Enter the release date']);
         if (!o.orderNumber) bad.push(['orderNumber', 'Order # is required']);
         if (!o.customer) bad.push(['customer', 'Customer name is required']);
         ['cartons', 'pallets'].forEach(k => {
@@ -1251,7 +1267,8 @@
         if (!(await ensureName())) return;
         o.enteredBy = userName;
         $('save-btn').disabled = true; $('save-new-btn').disabled = true;
-        const r = await cloud('upsertOrders', [[o], { source: 'Manual' }]);
+        const send = Object.assign({}, o); delete send.releaseDate; delete send.releaseTime;
+        const r = await cloud('upsertOrders', [[send], { source: 'Manual' }]);
         $('save-btn').disabled = false; $('save-new-btn').disabled = false;
         if (!r.ok) { if (r.needName) { userName = ''; applyWarehouseLabel(); showSignIn('Enter your name.'); } $('form-error').textContent = r.error || 'Could not save'; return; }
         if (r.errors && r.errors.length) { $('form-error').textContent = r.errors.map(e => e.error).join(' · '); return; }
@@ -1311,7 +1328,7 @@
     let templatesError = '';
     const JOIN = { destination: ', ' };
     const SLOT_GROUPS = [
-        ['Order', ['orderNumber', 'customer', 'releasedAt', 'readyDate', 'orderType', 'status']],
+        ['Order', ['orderNumber', 'customer', 'releaseDate', 'releaseTime', 'readyDate', 'orderType', 'status']],
         ['Quantities & picker', ['cartons', 'pallets', 'picker']],
         ['Reference', ['refType', 'reference']],
         ['Carrier', ['carrier', 'scac', 'proBol', 'vrid', 'shipDate']],
@@ -1460,12 +1477,14 @@
         const savedNames = [].concat(...Object.values(saved.mapping || {}).map(v => [].concat(v)));
         const present = savedNames.filter(h => imp.headers.some(x => sameHeader(x, h))).length;
         const sameReport = savedNames.length > 0 && present >= savedNames.length * 0.6;
-        const savedMap = sameReport ? (saved.mapping || {}) : {};
-        if (useSaved) imp.defaults = sameReport ? Object.assign({}, saved.defaults || {}) : {};
+        const savedMap = sameReport ? upgradeKeys(saved.mapping || {}) : {};
+        if (useSaved) imp.defaults = sameReport ? upgradeKeys(Object.assign({}, saved.defaults || {})) : {};
         imp.mapping = {};
         const used = new Set();
         const hk = imp.headers.map(headerKey);
-        FIELDS.forEach(f => {
+        // Release time is matched before release date, so a "Release Time" column never lands on the date
+        const order = FIELDS.slice().sort((a, b) => (a.key === 'releaseTime' ? -1 : b.key === 'releaseTime' ? 1 : 0));
+        order.forEach(f => {
             const fromSaved = [].concat(savedMap[f.key] || []).map(h => imp.headers.findIndex(x => sameHeader(x, h))).filter(i => i !== -1);
             if (fromSaved.length) { imp.mapping[f.key] = fromSaved; fromSaved.forEach(i => used.add(i)); return; }
             let idx = hk.findIndex((h, i) => !used.has(i) && (h === headerKey(f.label) || f.synonyms.map(headerKey).includes(h)));
@@ -1496,9 +1515,18 @@
         };
     }
 
+    /** Matchings saved before release date/time were split used one "releasedAt" field: it becomes the date. */
+    function upgradeKeys(obj) {
+        if (obj && obj.releasedAt != null && obj.releaseDate == null) { obj.releaseDate = obj.releasedAt; }
+        if (obj) delete obj.releasedAt;
+        return obj;
+    }
+
     /** Applies a template; returns the column names it could not find in this file. */
     function applyTemplate(t) {
-        const tpl = t.template || {};
+        const tpl = Object.assign({}, t.template || {});
+        tpl.mapping = upgradeKeys(Object.assign({}, tpl.mapping || {}));
+        tpl.defaults = upgradeKeys(Object.assign({}, tpl.defaults || {}));
         const sheet = tpl.sheetName && imp.sheets[tpl.sheetName] ? tpl.sheetName : imp.sheet;
         loadSheet(sheet, tpl.headerRow || null);
         imp.mapping = {};
@@ -1652,18 +1680,20 @@
             <div class="slots${imp.selectedCol != null ? ' placing' : ''}">${keys.map(k => {
                 const f = fieldOf(k);
                 const idxs = imp.mapping[k] || [];
-                const kind = { text: idxs.length > 1 ? 'combined text' : 'text', int: 'number', datetime: 'date & time', date: 'date', status: 'Released / Cancelled' }[f.type];
+                const kind = { text: idxs.length > 1 ? 'combined text' : 'text', int: 'number', datetime: 'date & time', date: 'date', reldate: 'date', reltime: 'time', status: 'Released / Cancelled' }[f.type];
                 const chips = idxs.map((i, n) => `${n ? '<span class="plus">+</span>' : ''}<span class="mchip"><span class="l">${esc(imp.letters[i])}</span><span class="n">${esc(imp.headers[i])}</span><button type="button" data-unmatch="${k}" data-col="${i}" aria-label="Remove ${esc(imp.headers[i])} from ${esc(f.label)}">×</button></span>`).join('');
                 const sample = combinedSample(k);
                 let exBad = false;
                 if (sample && f.type === 'int') exBad = !/^\d+$/.test(sample.replace(/,/g, ''));
-                if (sample && f.type === 'datetime') exBad = !parseWhen(imp.rows.map(r => r.cells[idxs[0]]).find(v => cellText(v) !== ''));
+                const firstCell = () => imp.rows.map(r => r.cells[idxs[0]]).find(v => cellText(v) !== '');
+                if (sample && (f.type === 'datetime' || f.type === 'reldate')) exBad = !parseWhen(firstCell());
+                if (sample && f.type === 'reltime') exBad = !parseTimeOfDay(firstCell());
                 const missing = f.required && !idxs.length;
                 return `<div class="slot${idxs.length ? ' filled' : ''}${missing ? ' missing' : ''}" data-field="${k}">
                     <div class="slot-label"><span>${esc(f.label)}${f.required ? ' <span class="req">*</span>' : ''}</span><span class="kind">${kind}</span></div>
                     <div class="slot-drop" data-drop="${k}">${chips || `<span class="ph">${missing ? 'Required — drop the column here' : 'Drop a column here'}</span>`}</div>
                     <div class="ex${exBad ? ' bad' : ''}" title="${esc(sample)}">${sample ? '→ ' + esc(sample) + (exBad ? ' (not a valid ' + kind + ')' : '') : ''}</div>
-                    ${k === 'orderNumber' ? '' : `<input type="text" data-default="${k}" value="${esc(imp.defaults[k] || '')}" placeholder="${k === 'releasedAt' ? 'If empty: now' : 'If empty, use…'}" aria-label="Default for ${esc(f.label)}">`}
+                    ${k === 'orderNumber' ? '' : `<input type="text" data-default="${k}" value="${esc(imp.defaults[k] || '')}" placeholder="${k === 'releaseDate' ? 'If empty: today' : k === 'releaseTime' ? 'If empty: from the date, else now' : 'If empty, use…'}" aria-label="Default for ${esc(f.label)}">`}
                 </div>`;
             }).join('')}</div>`).join('');
         renderTemplateBar();
@@ -1766,10 +1796,31 @@
         return isNaN(t) ? null : new Date(t);
     }
 
+    /** A time of day from a cell: "2:05 PM", "14:05", "1405", an Excel time, or a full date & time. Returns {h, m, s} or null. */
+    function parseTimeOfDay(v) {
+        if (v instanceof Date) return isNaN(v) ? null : { h: v.getHours(), m: v.getMinutes(), s: v.getSeconds() };
+        const s = String(v == null ? '' : v).trim();
+        if (!s) return null;
+        if (/^0?\.\d+$|^0$/.test(s)) {   // Excel stores a time as a fraction of a day
+            const secs = Math.round(Number(s) * 86400);
+            return { h: Math.floor(secs / 3600) % 24, m: Math.floor(secs / 60) % 60, s: secs % 60 };
+        }
+        let m = /^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*([ap])\.?\s*m?\.?$/i.exec(s) || /^(\d{1,2}):(\d{2})(?::(\d{2}))?()$/.exec(s);
+        if (!m && /^\d{3,4}$/.test(s)) m = [s, s.slice(0, -2), s.slice(-2), '0', ''];
+        if (m) {
+            let h = Number(m[1]); const mi = Number(m[2] || 0), sec = Number(m[3] || 0), ap = m[4];
+            if (ap) { if (h < 1 || h > 12) return null; const pm = /p/i.test(ap); if (pm && h < 12) h += 12; if (!pm && h === 12) h = 0; }
+            return h < 24 && mi < 60 && sec < 60 ? { h, m: mi, s: sec } : null;
+        }
+        const d = parseWhen(s);
+        return d ? { h: d.getHours(), m: d.getMinutes(), s: d.getSeconds() } : null;
+    }
+
     /** Builds an order from one file row, using only mapped columns and defaults. */
     function rowToOrder(row) {
         const o = {};
         const problems = [];
+        const rel = {};
         FIELDS.forEach(f => {
             const idxs = imp.mapping[f.key] || [];
             let raw;
@@ -1793,6 +1844,8 @@
                 const d = parseWhen(raw);
                 if (!d) problems.push(`${f.label} "${raw}" is not a date/time`);
                 else o[f.key] = d.toISOString();
+            } else if (f.type === 'reldate' || f.type === 'reltime') {
+                rel[f.type] = raw;   // combined below
             } else if (f.type === 'date') {
                 const d = parseWhen(raw);
                 o[f.key] = d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` : String(raw).trim();
@@ -1804,6 +1857,17 @@
                 o[f.key] = String(raw instanceof Date ? raw.toLocaleDateString() : raw).trim();
             }
         });
+        // Release date + release time → one release timestamp
+        if (rel.reldate != null || rel.reltime != null) {
+            const d = rel.reldate != null ? parseWhen(rel.reldate) : new Date();
+            const t = rel.reltime != null ? parseTimeOfDay(rel.reltime) : null;
+            if (!d) problems.push(`Release date "${cellText(rel.reldate)}" is not a date`);
+            else if (rel.reltime != null && !t) problems.push(`Release time "${cellText(rel.reltime)}" is not a time`);
+            else {
+                if (t) d.setHours(t.h, t.m, t.s, 0);
+                o.releasedAt = d.toISOString();
+            }
+        }
         if (o.orderNumber != null) o.orderNumber = norm(o.orderNumber);
         if (o.scac) o.scac = o.scac.toUpperCase();
         if (o.vrid) o.vrid = o.vrid.toUpperCase();
@@ -1905,7 +1969,7 @@
     $('imp-go-btn').addEventListener('click', runImport);
     $('template-btn').addEventListener('click', () => {
         const head = FIELDS.map(f => f.label === 'Status (Released / Cancelled)' ? 'Status' : f.label);
-        const sample = { orderNumber: 'DN2611190307', customer: 'Acme Corp', releasedAt: '11/24/2026 2:05 PM', cartons: '1200', pallets: '16', picker: 'Jose M.',
+        const sample = { orderNumber: 'DN2611190307', customer: 'Acme Corp', releaseDate: '11/24/2026', releaseTime: '2:05 PM', cartons: '1200', pallets: '16', picker: 'Jose M.',
             refType: 'ARN#', reference: 'ARN-88921', orderType: 'LTL', carrier: 'Saia', scac: 'SAIA', proBol: '', vrid: '', readyDate: '11/25/2026', shipDate: '11/26/2026',
             destination: 'Phoenix, AZ', notes: '', status: 'Released' };
         const ex = FIELDS.map(f => sample[f.key] || '');
