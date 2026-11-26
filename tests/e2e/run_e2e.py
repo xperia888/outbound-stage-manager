@@ -478,6 +478,64 @@ async def run_round(browser, wh, rnd, devices):
     record(wh, rnd, 'Grouped order cards show the order age', len(g_ages) > 0 and all(a.startswith('Age ') for a in g_ages), g_ages[:5])
     await A.click('#card-mode-pallets-btn'); await A.wait_for_timeout(200)
     record(wh, rnd, 'Grouped / SLPs view toggle', grouped == 'grouped', grouped)
+    if rnd == 1:
+        # --- Small parcel lanes -----------------------------------------------------------------
+        sp_cases = await A.evaluate("['UPS', 'UPS Ground', 'FedEx', 'Fed Ex Home', 'USPS Priority', 'DHL Express', 'FedEx Freight', 'UPS Freight', 'Saia', 'Groups Inc', ''].map(isSmallParcelCarrier)")
+        record(wh, rnd, 'small parcel carriers: UPS / FedEx / USPS / DHL (not their freight)', sp_cases == [True, True, True, True, True, True, False, False, False, False, False], sp_cases)
+        sp_col = await A.evaluate("appState.columns.find(c => !appState.pallets.some(p => p.columnId === c.id)).id")
+        await A.evaluate(f"openLocationModal({json.dumps(sp_col)})")
+        await A.check('#location-small-parcel-chk')
+        if wh == 'ONT': await A.screenshot(path=str(OUT / 'parcel_setting.png'))
+        await A.click('#location-modal button[type=submit]'); await A.wait_for_timeout(300)
+        if wh == 'ONT': await A.locator(f'#lane-card-{sp_col}').screenshot(path=str(OUT / 'parcel_lane.png'))
+        sp_name = await A.evaluate(f"(c => c && c.smallParcel ? c.name : '')(appState.columns.find(c => c.id === {json.dumps(sp_col)}))")
+        record(wh, rnd, 'Edit Location: mark a lane as Small parcel (PARCEL badge)', bool(sp_name)
+               and await A.locator(f'#lane-card-{sp_col} .sp-badge').count() == 1, sp_name)
+        pick = await A.evaluate("['Saia', 'UPS Ground', 'FedEx Freight', 'DHL'].map(c => (getBestAvailableLocationForOrder('SP-TEST-' + c.length, false, c) || {col: {}}).col.id)")
+        record(wh, rnd, 'suggested lane: parcel lane only for UPS/FedEx/USPS/DHL orders', pick[1] == sp_col and pick[3] == sp_col and pick[0] != sp_col and pick[2] != sp_col, (pick, sp_col))
+        # Overflow never spills into the parcel lane for a non-parcel order
+        spill = await A.evaluate(f"""(() => {{
+            const lanes = lanesFrom(appState.columns[0].id); const at = lanes.findIndex(c => c.id === {json.dumps(sp_col)});
+            const start = lanes[(at - 1 + lanes.length) % lanes.length];
+            const a = planShipmentLanes(start.id, 60, false, 'SP-SPILL-1', 'Saia').plan.map(x => x.col.id);
+            const b = planShipmentLanes(start.id, 60, false, 'SP-SPILL-2', 'UPS').plan.map(x => x.col.id);
+            return [a.includes({json.dumps(sp_col)}), b.includes({json.dumps(sp_col)}), b[1] === {json.dumps(sp_col)} || b[0] === {json.dumps(sp_col)}];
+        }})()""")
+        record(wh, rnd, 'spreading a big shipment: parcel lane skipped for LTL, used first for parcel', spill == [False, True, True], spill)
+        # Consolidate leaves parcel lanes and parcel pallets alone (simulated on a copy of the board)
+        reorg = await A.evaluate("""(() => {
+            const saved = appState;
+            const col = (id, cap, sp) => ({ id, name: id, capacity: cap, ...(sp ? { smallParcel: true } : {}) });
+            const plt = (id, ord, colId, carrier) => ({ id, slp: id, orderNumber: ord, columnId: colId, carrier, createdAt: Date.now() });
+            appState = Object.assign({}, saved, {
+                columns: [col('L1', 8), col('L2', 8), col('L3', 2), col('P1', 8, true), col('L4', 8)],
+                pallets: [plt('a1', 'ORD-A', 'L1', 'Saia'), plt('a2', 'ORD-A', 'L2', 'Saia'),
+                          plt('u1', 'ORD-U', 'L4', 'UPS'), plt('u2', 'ORD-U', 'P1', 'UPS')]
+            });
+            try {
+                const plan = computeReorganizePlan({ allowDownsizeToEmptySmallCap: true, onlyFullLineClears: true });
+                return plan.moves.map(m => [m.orderNumber, m.fromColumnId, m.toColumnId]);
+            } finally { appState = saved; }
+        })()""")
+        record(wh, rnd, 'Consolidate: no small parcel pallets moved, parcel lane never a target', len(reorg) > 0
+               and all(m[0] != 'ORD-U' and 'P1' not in (m[1], m[2]) for m in reorg), reorg)
+        await A.evaluate(f"(c => {{ delete c.smallParcel; saveState(); renderBoard(); }})(appState.columns.find(c => c.id === {json.dumps(sp_col)}))")
+        # --- Locate: the order glows, everything else fades -------------------------------------
+        loc_ord = await A.evaluate("normalizeOrderNumber(appState.pallets[0].orderNumber)")
+        await A.evaluate(f"toggleOrderHighlight({json.dumps(loc_ord)})"); await A.wait_for_timeout(300)
+        glow = await A.evaluate("""(() => {
+            const on = [...document.querySelectorAll('.order-highlight-ring')];
+            const off = document.querySelector('.board-card:not(.order-highlight-ring)');
+            return { located: document.body.classList.contains('order-located'), glowing: on.length,
+                     shadow: on[0] ? getComputedStyle(on[0]).boxShadow : '', z: on[0] ? getComputedStyle(on[0]).zIndex : '',
+                     dim: off ? Number(getComputedStyle(off).opacity) : 0, lanes: document.querySelectorAll('.lane-has-located').length };
+        })()""")
+        record(wh, rnd, 'Locate: order glows amber above the rest, other cards fade, its lanes outlined', glow['located'] and glow['glowing'] > 0
+               and 'rgba(245, 158, 11' in glow['shadow'] and glow['z'] == '30', glow)
+        record(wh, rnd, 'Locate: other cards fade and the lane is outlined', (glow['dim'] == 0 or glow['dim'] < 0.5) and glow['lanes'] >= 1, glow)
+        await A.screenshot(path=str(OUT / 'locate_glow.png'))
+        await A.evaluate("clearOrderHighlight()"); await A.wait_for_timeout(200)
+        record(wh, rnd, 'clearing the highlight restores the board', not await A.evaluate("document.body.classList.contains('order-located')"))
     lm_before = await state(A, "appState.layoutMode")
     await click_fn(A, 'toggleLayoutMode'); lm_after = await state(A, "appState.layoutMode")
     await click_fn(A, 'toggleLayoutMode')

@@ -159,6 +159,20 @@ No SLP barcodes are needed. A shipment is an order number plus a number of palle
 - **Lane:** the lane box picks a lane automatically (same order first, then an empty lane), or choose one yourself.
 - **Edit order:** use **Add pallets** to add more to an existing order.
 
+## Small parcel lanes
+
+Open a lane's settings (the sliders icon) and tick **Small parcel lane**. The lane gets a purple **PARCEL** badge.
+
+- **Suggestions:** a parcel lane is only suggested for orders whose carrier is **UPS, FedEx, USPS or DHL**. The carrier comes from the order's pallets or Order Intake. The freight services of those companies (e.g. "FedEx Freight") count as regular freight.
+- Small parcel orders try parcel lanes first, after their own lane, and fall back to regular lanes when the parcel lanes are full.
+- When a big shipment is spread over several lanes, a regular order never spills into a parcel lane. You can still pick a parcel lane yourself.
+- **Find Space:** with an order typed in, parcel lanes only show for small parcel orders. With no order, they show last, marked "Small parcel only".
+- **Consolidate:** leaves small parcel pallets and parcel lanes alone (nothing is moved out of or into them).
+
+## Locate
+
+**Locate** (in Alerts, Consolidate, or a card's order chip) makes the order's cards glow amber and lifts them above the rest, outlines its lanes, and fades every other card. Clear it with the **×** on the "Highlighted Order" chip.
+
 ## Pallet age on cards
 
 Each pallet card shows how long that pallet has been on the floor: minutes, then hours, then days + hours (`2d 14h`). The colour follows the dwell alert levels: grey when normal, amber when aging, red when overdue, purple when over a week. In **Grouped** view, each order card shows **Age** = the age of the order's oldest pallet on the floor.
