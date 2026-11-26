@@ -159,6 +159,22 @@ No SLP barcodes are needed. A shipment is an order number plus a number of palle
 - **Lane:** the lane box picks a lane automatically (same order first, then an empty lane), or choose one yourself.
 - **Edit order:** use **Add pallets** to add more to an existing order.
 
+## Smart lane suggestion (short lanes first)
+
+**Auto** in the quick bar, **Select Order** and **Find Space** suggest a lane for the whole shipment, using the number of pallets and whether they are single or 2x stacked (2x = 2 pallets per floor spot). The order of preference:
+
+1. The lane already holding this order, if it takes the whole shipment.
+2. Small parcel orders: a parcel lane that takes it all.
+3. The **shortest empty lane** (smallest capacity) that takes it all, leaving as few spots unused as possible.
+4. The order is already on the floor but its lane is too small: keep going in its own lane; the rest is spread over the next lanes.
+5. Any lane that takes it all (least left over).
+6. Nothing takes it all: start in the lane with the most room; the rest is spread over the next lanes.
+
+Pallet count used:
+- **Quick bar:** the Pallets box, or what Order Intake says is still left. Changing the count or 2x re-suggests, but a lane you picked by hand stays until you change the order or press **Auto**.
+- **Select Order:** the "Pallets to stage now" box.
+- **Find Space:** "Pallets to Stage", with the new default sort **Best Fit (short lanes first)**. The top lane is marked ★ Best fit.
+
 ## Small parcel lanes
 
 Open a lane's settings (the sliders icon) and tick **Small parcel lane**. The lane gets a purple **PARCEL** badge.

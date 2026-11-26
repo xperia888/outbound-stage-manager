@@ -346,6 +346,7 @@
                 <select
                     id="quick-scan-location"
                     aria-label="Target Staging Location"
+                    onchange="quickLaneManual = true"
                     class="px-2 py-1.5 bg-slate-100 border border-slate-300 rounded-lg font-mono-code text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
                 ></select>
 
@@ -386,6 +387,7 @@
                     inputmode="numeric"
                     placeholder="Pallets"
                     aria-label="Number of pallets"
+                    oninput="autoPickBestAvailableLocation(true)"
                     class="w-20 px-2.5 py-1.5 bg-amber-50/70 border border-amber-300 rounded-lg font-mono-code text-xs font-extrabold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition-all"
                 >
 
@@ -394,7 +396,7 @@
                     class="inline-flex items-center gap-1 bg-cyan-50 hover:bg-cyan-100 border border-cyan-300 text-cyan-950 font-mono-code font-extrabold text-[11px] px-2 py-1.5 rounded-lg cursor-pointer select-none shrink-0"
                     title="Pallets are double-stacked (2 pallets = 1 floor spot)"
                 >
-                    <input type="checkbox" id="quick-doublestack-chk" onchange="updateAutoSuggestBadges(document.getElementById('quick-order-input')?.value || '')" class="accent-cyan-700 rounded">
+                    <input type="checkbox" id="quick-doublestack-chk" onchange="autoPickBestAvailableLocation(true)" class="accent-cyan-700 rounded">
                     <span>2x Stack</span>
                 </label>
 
@@ -561,7 +563,7 @@
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     <div>
                         <label for="order-picker-count-input" class="block text-[11px] font-bold text-slate-700 mb-1">Pallets to stage now</label>
-                        <input type="number" id="order-picker-count-input" min="1" max="200" inputmode="numeric" class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-code text-sm font-extrabold focus:ring-2 focus:ring-amber-500 outline-none">
+                        <input type="number" id="order-picker-count-input" min="1" max="200" inputmode="numeric" oninput="suggestOrderPickerLane()" class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono-code text-sm font-extrabold focus:ring-2 focus:ring-amber-500 outline-none">
                     </div>
                     <div>
                         <label for="order-picker-lane" class="block text-[11px] font-bold text-slate-700 mb-1">Staging lane</label>
@@ -1329,6 +1331,7 @@
                                 onchange="renderAvailableLocationsResults()"
                                 class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-bold bg-white focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer"
                             >
+                                <option value="best_fit" selected>Best Fit (short lanes first)</option>
                                 <option value="most_free">Most Free Floor Spots</option>
                                 <option value="empty_first">Empty Lanes First</option>
                                 <option value="name_asc">Lane Number (S30 → S80)</option>
@@ -3997,92 +4000,99 @@
         /** Is this lane allowed as a suggestion for this order? Parcel lanes only take small parcel orders. */
         const laneSuitsOrder = (col, smallParcel) => !col.smallParcel || smallParcel;
 
-        function getBestAvailableLocationForOrder(orderNumberRaw = '', isDoubleStacked = false, carrierHint = '') {
+        /**
+         * Smart lane pick for a whole shipment (count pallets, single or 2x):
+         *   1. a lane already holding this order that fits all of it
+         *   2. small parcel orders: a parcel lane that fits all of it
+         *   3. an empty lane that fits all of it — SHORTEST lane first (smallest capacity), then least left over
+         *   4. any lane that fits all of it (least left over)
+         *   5. nothing fits it all → the lane with the most room; the rest is spread over the next lanes
+         * Parcel lanes are only used for UPS / FedEx / USPS / DHL orders.
+         */
+        function getBestAvailableLocationForOrder(orderNumberRaw = '', isDoubleStacked = false, carrierHint = '', countRaw = 1) {
             if (!Array.isArray(appState.columns) || appState.columns.length === 0) return null;
             const normOrd = normalizeOrderNumber(orderNumberRaw);
             const sp = isSmallParcelCarrier(carrierForOrder(normOrd, carrierHint));
+            const count = Math.max(1, Math.min(200, parseInt(countRaw, 10) || 1));
+            const is2x = Boolean(isDoubleStacked);
+            const lanesByNumber = lanesFrom(appState.columns[0].id);
 
-            const laneStats = appState.columns.filter(col => laneSuitsOrder(col, sp)).map((col, idx) => {
+            const laneStats = appState.columns.filter(col => laneSuitsOrder(col, sp)).map(col => {
                 const colPallets = appState.pallets.filter(p => p.columnId === col.id);
                 const cap = Number(col.capacity) || 8;
                 const usedSpots = computeFloorSpotsUsed(colPallets);
                 const freeSpots = Math.max(0, cap - usedSpots);
-                const doubleCount = colPallets.filter(p => p.doubleStacked).length;
-                const hasOddDoubleSlot = Boolean(isDoubleStacked && (doubleCount % 2 === 1));
-                const canFitOneMore = freeSpots >= 1 || hasOddDoubleSlot;
+                const room = palletRoomInLane(col, is2x);
                 const sameOrderPeers = normOrd !== 'UNASSIGNED'
                     ? colPallets.filter(p => normalizeOrderNumber(p.orderNumber) === normOrd).length
                     : 0;
-
                 return {
                     col,
-                    idx,
+                    idx: lanesByNumber.findIndex(c => c.id === col.id),
                     cap,
                     usedSpots,
                     freeSpots,
+                    room,
+                    fitsAll: room >= count,
+                    // floor spots left in the lane after the whole shipment goes in
+                    leftover: Math.max(0, freeSpots - spotsNeededInLane(col, count, is2x)),
                     slpCount: colPallets.length,
                     isEmpty: colPallets.length === 0,
-                    canFitOneMore,
+                    canFitOneMore: room >= 1,
                     sameOrderPeers,
                     isParcelLane: Boolean(col.smallParcel)
                 };
             });
             if (laneStats.length === 0) return null;
             const spTag = sp ? 'Small parcel · ' : '';
+            const what = `${count} ${is2x ? '2x ' : ''}pallet${count === 1 ? '' : 's'}`;
+            const tight = (a, b) => a.cap - b.cap || a.leftover - b.leftover || a.idx - b.idx;   // short lane first
+            const pick = (s, why) => ({ ...s, count, reason: `${spTag}${why} → ${s.col.name} (fits ${what}${s.leftover ? `, ${s.leftover} spot${s.leftover === 1 ? '' : 's'} left` : ', exact fit'})` });
 
-            // 1. Co-locate with exact same Order # if that lane can fit another pallet
+            // 1. With its own pallets, if the lane takes the whole shipment
             if (normOrd !== 'UNASSIGNED') {
-                const sameOrderCandidates = laneStats
-                    .filter(s => s.sameOrderPeers > 0 && s.canFitOneMore)
-                    .sort((a, b) => b.sameOrderPeers - a.sameOrderPeers || b.freeSpots - a.freeSpots || a.idx - b.idx);
-                if (sameOrderCandidates.length > 0) {
-                    return {
-                        ...sameOrderCandidates[0],
-                        reason: `${spTag}Co-locate ${normOrd} → ${sameOrderCandidates[0].col.name}`
-                    };
-                }
+                const same = laneStats.filter(s => s.sameOrderPeers > 0 && s.fitsAll)
+                    .sort((a, b) => b.sameOrderPeers - a.sameOrderPeers || a.leftover - b.leftover || a.idx - b.idx);
+                if (same.length) return pick(same[0], `Co-locate ${normOrd}`);
             }
-
-            // 1b. Small parcel orders: a parcel lane with room (fullest first, to keep parcels together)
+            // 2. Small parcel: a parcel lane that takes it all (tightest first, keeps parcels together)
             if (sp) {
-                const parcel = laneStats.filter(s => s.isParcelLane && s.canFitOneMore)
-                    .sort((a, b) => a.freeSpots - b.freeSpots || a.idx - b.idx);
-                if (parcel.length > 0) {
-                    return { ...parcel[0], reason: `Small parcel lane → ${parcel[0].col.name} (${parcel[0].freeSpots} free)` };
-                }
+                const parcel = laneStats.filter(s => s.isParcelLane && s.fitsAll).sort((a, b) => a.leftover - b.leftover || a.idx - b.idx);
+                if (parcel.length) return pick(parcel[0], 'Small parcel lane');
             }
-
-            // 2. Empty-lane-first strategy for new orders
-            const emptyCandidates = laneStats
-                .filter(s => s.isEmpty && s.canFitOneMore)
-                .sort((a, b) => b.freeSpots - a.freeSpots || a.idx - b.idx);
-            if (emptyCandidates.length > 0) {
-                return {
-                    ...emptyCandidates[0],
-                    reason: `${spTag}Empty Lane → ${emptyCandidates[0].col.name} (${emptyCandidates[0].freeSpots} free)`
-                };
+            // 3. Shortest empty lane that takes it all
+            const empty = laneStats.filter(s => s.isEmpty && s.fitsAll).sort(tight);
+            if (empty.length) return pick(empty[0], 'Short lane');
+            // 3b. The order is already on the floor but its lane can't take it all: keep going in its own lane
+            //     (the rest spreads over the next lanes) rather than mixing into another order's lane
+            const ownPartial = laneStats.filter(s => s.sameOrderPeers > 0 && s.canFitOneMore).sort((a, b) => b.room - a.room || a.idx - b.idx);
+            if (ownPartial.length) {
+                return { ...ownPartial[0], count, reason: `${spTag}Continue ${normOrd} in ${ownPartial[0].col.name} (room for ${ownPartial[0].room} of ${what}), rest spread over the next lanes` };
             }
-
-            // 3. Fallback: lane with most available floor spots
-            const openCandidates = laneStats
-                .filter(s => s.canFitOneMore)
-                .sort((a, b) => b.freeSpots - a.freeSpots || a.idx - b.idx);
-            if (openCandidates.length > 0) {
-                return {
-                    ...openCandidates[0],
-                    reason: `${spTag}Best Open → ${openCandidates[0].col.name} (${openCandidates[0].freeSpots} free)`
-                };
+            // 4. Any lane that takes it all, least left over
+            const open = laneStats.filter(s => s.fitsAll).sort((a, b) => a.leftover - b.leftover || a.cap - b.cap || a.idx - b.idx);
+            if (open.length) return pick(open[0], 'Best fit');
+            // 5. No single lane fits it all: start in the lane with the most room (own lane, then empty first)
+            const most = laneStats.filter(s => s.canFitOneMore)
+                .sort((a, b) => b.room - a.room || (b.sameOrderPeers ? 1 : 0) - (a.sameOrderPeers ? 1 : 0) || (b.isEmpty ? 1 : 0) - (a.isEmpty ? 1 : 0) || a.idx - b.idx);
+            if (most.length) {
+                return { ...most[0], count, reason: `${spTag}No lane fits all ${what} → start in ${most[0].col.name} (room for ${most[0].room}), rest spread over the next lanes` };
             }
+            return { ...laneStats[0], count, reason: `${laneStats[0].col.name} (Full)` };
+        }
 
-            return {
-                ...laneStats[0],
-                reason: `${laneStats[0].col.name} (Full)`
-            };
+        /** Pallets of the shipment being entered in the quick bar: the count box, else what Order Intake says is left. */
+        function quickShipmentCount(orderRaw) {
+            const typed = parseInt(document.getElementById('quick-pallet-count')?.value || '', 10);
+            if (typed >= 1) return typed;
+            const ord = normalizeOrderNumber(orderRaw || '');
+            const intake = ord !== 'UNASSIGNED' && typeof findIntakeOrder === 'function' ? findIntakeOrder(ord) : null;
+            return (intake && intakeRemaining(intake)) || 1;
         }
 
         function updateAutoSuggestBadges(orderNumberRaw = '') {
             const is2x = Boolean(document.getElementById('quick-doublestack-chk')?.checked);
-            const rec = getBestAvailableLocationForOrder(orderNumberRaw, is2x);
+            const rec = getBestAvailableLocationForOrder(orderNumberRaw, is2x, '', quickShipmentCount(orderNumberRaw));
             const quickBadge = document.getElementById('quick-auto-suggest-badge');
             const quickLabel = document.getElementById('quick-auto-suggest-label');
             if (quickBadge && quickLabel && rec) {
@@ -4091,13 +4101,17 @@
             }
         }
 
+        // A lane picked by hand stays picked while the count / 2x change; a new order or the Auto button resets it
+        let quickLaneManual = false;
+
         function autoPickBestAvailableLocation(silent = false) {
             const ordRaw = document.getElementById('quick-order-input')?.value || '';
             const is2x = Boolean(document.getElementById('quick-doublestack-chk')?.checked);
-            const rec = getBestAvailableLocationForOrder(ordRaw, is2x);
+            const rec = getBestAvailableLocationForOrder(ordRaw, is2x, '', quickShipmentCount(ordRaw));
             if (rec && rec.col) {
                 const sel = document.getElementById('quick-scan-location');
-                if (sel) sel.value = rec.col.id;
+                if (!silent) quickLaneManual = false;
+                if (sel && !quickLaneManual) sel.value = rec.col.id;
                 updateAutoSuggestBadges(ordRaw);
                 if (!silent) {
                     showToast(`Auto-selected ${rec.reason}`, 'info');
@@ -4123,8 +4137,9 @@
             }
             if (raw) {
                 const is2x = Boolean(document.getElementById('quick-doublestack-chk')?.checked);
-                const rec = getBestAvailableLocationForOrder(raw, is2x);
+                const rec = getBestAvailableLocationForOrder(raw, is2x, '', quickShipmentCount(raw));
                 const sel = document.getElementById('quick-scan-location');
+                quickLaneManual = false;
                 if (rec && rec.col && sel) sel.value = rec.col.id;
             }
 
@@ -4228,6 +4243,13 @@
                 if (!taken.has(label)) labels.push(label);
             }
             return labels;
+        }
+
+        /** Floor spots a shipment of n pallets takes in this lane (a 2x pallet can top an odd 2x stack). */
+        function spotsNeededInLane(col, n, is2x) {
+            if (!is2x) return n;
+            const odd = appState.pallets.filter(p => p.columnId === col.id && p.doubleStacked).length % 2;
+            return Math.ceil(Math.max(0, n - odd) / 2);
         }
 
         /** How many more pallets fit in a lane (2x pallets pair up, 2 per floor spot). */
@@ -4633,7 +4655,8 @@
         function suggestOrderPickerLane() {
             if (!orderPickerSelected) return;
             const is2x = Boolean(document.getElementById('order-picker-2x')?.checked);
-            const rec = getBestAvailableLocationForOrder(orderPickerSelected.orderNumber, is2x, orderPickerSelected.carrier || '');
+            const n = parseInt(document.getElementById('order-picker-count-input')?.value || '', 10) || orderPickerSelected.remaining || 1;
+            const rec = getBestAvailableLocationForOrder(orderPickerSelected.orderNumber, is2x, orderPickerSelected.carrier || '', n);
             const laneSel = document.getElementById('order-picker-lane');
             if (rec && rec.col && laneSel) laneSel.value = rec.col.id;
             const hint = document.getElementById('order-picker-hint');
@@ -5745,7 +5768,7 @@
         function renderAvailableLocationsResults() {
             const minSlots = Math.max(1, Number(document.getElementById('finder-min-slots-input')?.value) || 1);
             const filterMode = document.getElementById('finder-filter-mode-select')?.value || 'any_space';
-            const sortMode = document.getElementById('finder-sort-select')?.value || 'most_free';
+            const sortMode = document.getElementById('finder-sort-select')?.value || 'best_fit';
             const targetOrd = normalizeOrderNumber(document.getElementById('finder-new-order-input')?.value || '');
             const statsEl = document.getElementById('finder-summary-stats');
             const listEl = document.getElementById('finder-results-list');
@@ -5762,7 +5785,9 @@
                 const free = Math.max(0, cap - usedSpots);
                 const room = palletRoomInLane(col, is2x);
                 const hasTargetOrder = targetOrd !== 'UNASSIGNED' && colPallets.some(p => normalizeOrderNumber(p.orderNumber) === targetOrd);
-                return { col, slpCount: colPallets.length, usedSpots, cap, free, room, hasTargetOrder };
+                const leftover = Math.max(0, free - spotsNeededInLane(col, minSlots, is2x));
+                const onlyTarget = colPallets.every(p => normalizeOrderNumber(p.orderNumber) === targetOrd);
+                return { col, slpCount: colPallets.length, usedSpots, cap, free, room, hasTargetOrder, leftover, onlyTarget };
             }).filter(item => {
                 if (item.room < minSlots) return false;
                 if (filterMode === 'empty_only' && item.slpCount > 0) return false;
@@ -5770,7 +5795,13 @@
                 return true;
             });
 
-            if (sortMode === 'empty_first') {
+            if (sortMode === 'best_fit') {
+                // This order's own lane, then empty / own-order lanes shortest first, then lanes shared with
+                // other orders; least left over breaks ties
+                const rank = m => (m.hasTargetOrder ? 0 : m.slpCount === 0 || m.onlyTarget ? 1 : 2);
+                matches.sort((a, b) => rank(a) - rank(b) || (rank(a) === 1 ? a.cap - b.cap : 0) || a.leftover - b.leftover || a.cap - b.cap
+                    || a.col.name.localeCompare(b.col.name, undefined, { numeric: true }));
+            } else if (sortMode === 'empty_first') {
                 matches.sort((a, b) => (a.slpCount === 0 ? -1 : 1) - (b.slpCount === 0 ? -1 : 1) || b.free - a.free);
             } else if (sortMode === 'name_asc') {
                 matches.sort((a, b) => a.col.name.localeCompare(b.col.name, undefined, { numeric: true }));
@@ -5782,11 +5813,12 @@
 
             if (statsEl) statsEl.textContent = `Found ${matches.length} lane(s) with room for ${minSlots} ${is2x ? 'double-stacked ' : ''}pallet(s)${is2x ? ` (${spotsNeeded} floor spot${spotsNeeded === 1 ? '' : 's'})` : ''}.`;
 
-            listEl.innerHTML = matches.map(m => `
+            listEl.innerHTML = matches.map((m, i) => `
                 <div class="border border-slate-200 bg-white rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
                     <div>
                         <div class="flex items-center gap-2 flex-wrap">
                             <span class="font-mono-code font-extrabold text-sm text-slate-900">${escapeHtml(m.col.name)}</span>
+                            ${i === 0 && sortMode === 'best_fit' ? `<span class="best-fit-badge font-mono-code font-extrabold bg-amber-400 text-slate-900 px-2 py-0.2 rounded" title="Shortest lane that takes all ${minSlots} pallet(s)">★ Best fit${m.leftover ? ` · ${m.leftover} left` : ' · exact'}</span>` : ''}
                             ${m.col.smallParcel ? '<span class="font-mono-code font-extrabold bg-violet-100 text-violet-800 border border-violet-300 px-1.5 py-0.2 rounded" title="Only for UPS, FedEx, USPS and DHL orders">Small parcel only</span>' : ''}
                             <span class="font-mono-code font-extrabold bg-emerald-100 text-emerald-900 px-2 py-0.2 rounded">${m.free} spot(s) free</span>
                             ${is2x ? `<span class="font-mono-code font-extrabold bg-cyan-100 text-cyan-900 px-2 py-0.2 rounded">fits ${m.room === Infinity ? 'any' : m.room} 2x pallets</span>` : ''}
