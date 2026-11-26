@@ -182,6 +182,24 @@ async def main():
         sa = await pg.text_content('tr[data-order="DN-OLD-7"] .shipped-at') if await pg.locator('tr[data-order="DN-OLD-7"] .shipped-at').count() else ''
         want_sa = await pg.evaluate("fmtShort(progress['DN-OLD-7'].lastShippedAt)")
         record('shipped order shows when it shipped', sa == f'Shipped {want_sa}', (sa, want_sa))
+        await pg.select_option('#status-filter', 'all'); await pg.wait_for_timeout(200)
+        old_rel = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 50 * 3600))
+        req({'fn': 'upsertOrders', 'warehouse': 'ONT', 'key': 'wms-e2e', 'args': [[{'orderNumber': 'DN-WAIT-2D', 'customer': 'Slow Co', 'carrier': 'Saia', 'releasedAt': old_rel}], {}]})
+        await pg.click('#refresh-btn'); await pg.wait_for_timeout(1200)
+        fl = await pg.evaluate("""(() => {
+            const e = document.querySelector('tr[data-order="DN-E2E-1"] .since');
+            const wrow = [...document.querySelectorAll('#orders-body tr[data-order]')].find(r => r.querySelector('.chip.waiting'));
+            const o = wrow && orders.find(x => x.orderNumber === wrow.dataset.order);
+            const w = wrow && wrow.querySelector('.since');
+            const rel = o && Date.parse(o.releasedAt);
+            return {
+                staged: e ? e.textContent : null, stagedWant: 'On floor since ' + fmtShort(progress['DN-E2E-1'].firstStagedAt),
+                waiting: w ? w.textContent : null, waitingWant: rel ? 'Waiting since ' + fmtShort(rel) : '',
+                late: w ? w.classList.contains('late') : null, lateWant: rel ? Date.now() - rel > 24 * 3600000 : null, order: o && o.orderNumber
+            };
+        })()""")
+        record('staged order shows "On floor since" (first pallet staged)', fl['staged'] == fl['stagedWant'], fl)
+        record('waiting order shows "Waiting since" its release (red after 24h)', fl['order'] and fl['waiting'] == fl['waitingWant'] and fl['late'] == fl['lateWant'], fl)
         await pg.context.grant_permissions(['clipboard-read', 'clipboard-write'])
         await pg.click('tr[data-order="DN-OLD-7"] .copy-btn'); await pg.wait_for_timeout(250)
         clip = await pg.evaluate("navigator.clipboard.readText()")
