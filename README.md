@@ -82,7 +82,12 @@ Customer service releases orders to the warehouse here: https://xperia888.github
 - **Fields:**
   - Order # (must match what the floor scans)
   - Customer
-  - **Release date** and **release time**, as two fields (both default to now). In imports they are two matching slots: a file with one date-and-time column goes on Release date; a file with separate columns uses both (times like `2:05 PM`, `14:05`, `1405` or Excel times). Matchings and templates saved before this change still work.
+  - **Release date** and **release time window**. The time is a drop-down of the CS hand-out windows: `8:30am-10:00am`, `10:00am-12:00pm`, `12:30pm-14:00pm`, `14:00pm-16:00pm` (same as the CS sheet).
+    - A new order starts on today and the current window. Outside the windows, pick one.
+    - Saved as **Released to Warehouse** = date + window start, plus a **Release Window** column with the label.
+    - Older orders outside every window keep their exact time ("Other: 5:10 PM").
+    - **Import:** the Release time slot takes the window labels as written in the CS sheet (spaces don't matter), or a plain time, which is put in its window and keeps the exact time. A file with one date-and-time column goes on Release date. Older matchings and templates still work.
+    - The **End of Day** report shows orders released by time window.
   - Cartons, expected pallets and picker
   - Reference type + reference (ARN#, Repack, PO#…)
   - Order type

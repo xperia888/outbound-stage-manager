@@ -55,7 +55,7 @@ with open(csv_path, 'w', newline='') as f:
             ',No Number Co,1,1,,,,,,,\r\n')
 split_path = os.path.join(OUT, 'split_release.csv')
 with open(split_path, 'w', newline='') as f:
-    f.write('Order,Customer,Carrier,Release Date,Release Time\r\nDN-SPLIT-1,Split Co,UPS,11/23/2026,3:45 PM\r\nDN-SPLIT-2,Split Co,UPS,2026-11-23,1405\r\nDN-SPLIT-3,Split Co,UPS,11/23/2026,25:99\r\n')
+    f.write('Order,Customer,Carrier,Release Date,Release Time\r\nDN-SPLIT-1,Split Co,UPS,11/23/2026,3:45 PM\r\nDN-SPLIT-2,Split Co,UPS,2026-11-23,1405\r\nDN-SPLIT-3,Split Co,UPS,11/23/2026,25:99\r\nDN-SPLIT-4,Split Co,UPS,11/23/2026,8:30am-10:00am\r\nDN-SPLIT-5,Split Co,UPS,11/23/2026,12:30pm - 14:00pm\r\n')
 xlsx_path = os.path.join(OUT, 'wms_export.xlsx')
 wb = openpyxl.Workbook(); ws = wb.active
 ws.append(['Order Number', 'Customer', 'Cartons', 'Pallets', 'PO', 'Carrier', 'Release Date'])
@@ -122,7 +122,10 @@ async def main():
         # --- New order --------------------------------------------------------------------------
         await pg.click('#new-btn'); await pg.wait_for_timeout(200)
         rel0 = (await pg.input_value('#f-releaseDate'), await pg.input_value('#f-releaseTime'))
-        record('new order: release date and time are two fields, both start at now', bool(re.fullmatch(r'\d{4}-\d{2}-\d{2}', rel0[0])) and bool(re.fullmatch(r'\d{2}:\d{2}', rel0[1])), rel0)
+        opts = await pg.evaluate("[...document.querySelectorAll('#f-releaseTime option')].map(o => o.textContent)")
+        now_win = await pg.evaluate("(windowAt(toLocalInput(null).split('T')[1]) || {label: ''}).label")
+        record('release time is a drop-down of the CS time windows, preset to the current window', opts[1:] == ['8:30am-10:00am', '10:00am-12:00pm', '12:30pm-14:00pm', '14:00pm-16:00pm']
+               and bool(re.fullmatch(r'\d{4}-\d{2}-\d{2}', rel0[0])) and rel0[1] == now_win, (opts, rel0, now_win))
         await pg.click('#save-btn'); await pg.wait_for_timeout(200)
         record('form requires Order # and customer', 'required' in (await pg.text_content('#form-error') or ''))
         await pg.fill('#f-orderNumber', 'dn-e2e-1'); await pg.fill('#f-customer', 'Acme Corp')
@@ -131,10 +134,11 @@ async def main():
         await pg.fill('#f-carrier', 'Saia'); await pg.fill('#f-scac', 'saia'); await pg.fill('#f-shipDate', '2026-11-26'); await pg.fill('#f-readyDate', '2026-11-25')
         await pg.fill('#f-destination', 'Phoenix, AZ')
         await pg.fill('#f-picker', 'Jose M.'); await pg.fill('#f-vrid', '115xyz7ab')
-        await pg.fill('#f-releaseDate', '2026-11-24'); await pg.fill('#f-releaseTime', '')
+        await pg.fill('#f-releaseDate', '2026-11-24'); await pg.select_option('#f-releaseTime', '')
         await pg.click('#save-btn'); await pg.wait_for_timeout(200)
-        record('a release date without a time is refused', 'Enter the release time' in (await pg.text_content('#form-error') or ''))
-        await pg.fill('#f-releaseTime', '14:05')
+        record('a release date without a window is refused', 'Choose the release time window' in (await pg.text_content('#form-error') or ''))
+        await pg.select_option('#f-releaseTime', '12:30pm-14:00pm')
+        await pg.screenshot(path=f'{OUT}/intake_form_window.png', clip={'x': 80, 'y': 100, 'width': 1280, 'height': 300})
         await pg.screenshot(path=f'{OUT}/intake_form.png', full_page=True)
         await pg.click('#save-btn'); await pg.wait_for_timeout(1500)
         rows = orders_rows()
@@ -142,10 +146,14 @@ async def main():
         record('new order saved to the Orders tab', o.get('Customer') == 'Acme Corp' and o.get('Pallets') == 6 and o.get('Reference Type') == 'ARN#'
                and o.get('SCAC') == 'SAIA' and o.get('Entered By') == 'Amy' and o.get('Source') == 'Manual' and o.get('Status') == 'Released'
                and o.get('Picker') == 'Jose M.' and o.get('VRID') == '115XYZ7AB' and o.get('Order Ready Date') == '2026-11-25', o)
-        record('release date + time saved as one release time', str(o.get('Released to Warehouse', '')).startswith(await local_iso(pg, '2026-11-24T14:05')), o.get('Released to Warehouse'))
+        record('release date + window saved (window start + label)', str(o.get('Released to Warehouse', '')).startswith(await local_iso(pg, '2026-11-24T12:30'))
+               and o.get('Release Window') == '12:30pm-14:00pm', (o.get('Released to Warehouse'), o.get('Release Window')))
         await pg.click('tr[data-order="DN-E2E-1"]'); await pg.wait_for_timeout(200)
         back = (await pg.input_value('#f-releaseDate'), await pg.input_value('#f-releaseTime'))
-        record('editing shows the saved release date and time', back == ('2026-11-24', '14:05'), back)
+        record('editing shows the saved release date and window', back == ('2026-11-24', '12:30pm-14:00pm'), back)
+        await pg.click('#form-close-btn'); await pg.wait_for_timeout(150)
+        other = await pg.evaluate("openForm({ orderNumber: 'X-OLD', customer: 'C', releasedAt: new Date('2026-11-20T17:10').toISOString() }); [$('f-releaseTime').value, $('f-releaseTime').selectedOptions[0].textContent, readForm().releasedAt === new Date('2026-11-20T17:10').toISOString()]")
+        record('an older order outside the windows keeps its exact time', other == ['t:17:10', 'Other: 5:10 PM', True], other)
         await pg.click('#form-close-btn'); await pg.wait_for_timeout(150)
         row_text = await pg.text_content('tr[data-order="DN-E2E-1"]') or ''
         record('list shows floor progress from the board (At D3, 4/6)', 'At D3' in row_text and '4/6' in row_text, row_text)
@@ -159,7 +167,7 @@ async def main():
         await pg.fill('#search', '')
 
         # second order + "Save & add another"
-        await pg.click('#new-btn'); await pg.wait_for_timeout(150); await pg.fill('#f-orderNumber', 'DN-OLD-7'); await pg.fill('#f-customer', 'Hooli'); await pg.fill('#f-pallets', '3')
+        await pg.click('#new-btn'); await pg.wait_for_timeout(150); await pg.fill('#f-orderNumber', 'DN-OLD-7'); await pg.fill('#f-customer', 'Hooli'); await pg.fill('#f-pallets', '3'); await pg.select_option('#f-releaseTime', '8:30am-10:00am')
         await pg.click('#save-new-btn')
         try:
             await pg.wait_for_function("!document.getElementById('view-form').classList.contains('hidden') && document.getElementById('f-orderNumber').value === '' && !document.getElementById('save-new-btn').disabled", timeout=8000)
@@ -255,12 +263,15 @@ async def main():
         record('separate Release Date / Release Time columns match their own fields', mapped.get('releaseDate') == 'Release Date' and mapped.get('releaseTime') == 'Release Time', mapped)
         await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(300)
         counts = await pg.get_attribute('#imp-counts', 'data-summary') or ''
-        record('a bad release time is flagged', counts.startswith('2 new') and '1 with problems' in counts, counts)
+        record('a bad release time is flagged', counts.startswith('4 new') and '1 with problems' in counts, counts)
         await pg.click('#imp-go-btn'); await pg.wait_for_timeout(1800)
         rows = {r['Order #']: r for r in orders_rows()}
-        record('date + time columns combined (3:45 PM; 1405)', str(rows.get('DN-SPLIT-1', {}).get('Released to Warehouse', '')).startswith(await local_iso(pg, '2026-11-23T15:45'))
-               and str(rows.get('DN-SPLIT-2', {}).get('Released to Warehouse', '')).startswith(await local_iso(pg, '2026-11-23T14:05')) and 'DN-SPLIT-3' not in rows,
-               (rows.get('DN-SPLIT-1', {}).get('Released to Warehouse'), rows.get('DN-SPLIT-2', {}).get('Released to Warehouse')))
+        rw = lambda k: (str(rows.get(k, {}).get('Released to Warehouse', ''))[:16], rows.get(k, {}).get('Release Window'))
+        record('date + time columns combined; times land in their window', rw('DN-SPLIT-1') == (await local_iso(pg, '2026-11-23T15:45'), '14:00pm-16:00pm')
+               and rw('DN-SPLIT-2') == (await local_iso(pg, '2026-11-23T14:05'), '14:00pm-16:00pm') and 'DN-SPLIT-3' not in rows,
+               (rw('DN-SPLIT-1'), rw('DN-SPLIT-2')))
+        record('window labels from the CS sheet import as-is (even with spaces)', rw('DN-SPLIT-4') == (await local_iso(pg, '2026-11-23T08:30'), '8:30am-10:00am')
+               and rw('DN-SPLIT-5') == (await local_iso(pg, '2026-11-23T12:30'), '12:30pm-14:00pm'), (rw('DN-SPLIT-4'), rw('DN-SPLIT-5')))
 
         # --- Any Excel layout: drag-and-match, combine, save as template ------------------------
         await pg.click('#imp-back-btn'); await pg.wait_for_timeout(150)
@@ -417,6 +428,8 @@ async def main():
         record('EOD open orders include DN-E2E-1 with its lanes', 'DN-E2E-1' in open_sec and 'S51' in open_sec, open_sec[:200])
         by_user = await pg.evaluate("[...document.querySelectorAll('#rep-by-user tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim()))")
         amy = next((r for r in by_user if r[0] == 'Amy'), None)
+        win_rows = await pg.evaluate("[...document.querySelectorAll('#rep-by-window tbody tr')].map(r => r.cells[0].textContent.trim())")
+        record('EOD shows released orders by time window', win_rows[:4] == ['8:30am-10:00am', '10:00am-12:00pm', '12:30pm-14:00pm', '14:00pm-16:00pm'], win_rows)
         record('EOD By user counts orders each person created', amy is not None and int(amy[1]) >= 3, by_user)
         await pg.screenshot(path=f'{OUT}/intake_eod.png', full_page=True)
         await pg.click('.seg button[data-kind="life"]'); await pg.wait_for_timeout(1800)

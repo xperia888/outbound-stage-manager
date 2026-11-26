@@ -961,7 +961,7 @@ test('orders: stage lanes from the board are written into the Orders tab by Orde
     call('upsertOrders', [[{ orderNumber: 'DN9', customer: 'Late entry' }]]);
     o = Object.fromEntries(call('listOrders', [{ days: 0 }]).orders.map(x => [x.orderNumber, x]));
     assert.equal(o.DN9.stageLanes, 'S51');
-    assert.deepEqual(sheets.get('Orders').rows[0].slice(-7), ['Stage Lanes', 'Dock', 'Pallets On Floor', 'Pallets Shipped', 'Floor Updated', 'Created By', 'Order Ready Date']);
+    assert.deepEqual(sheets.get('Orders').rows[0].slice(-8), ['Stage Lanes', 'Dock', 'Pallets On Floor', 'Pallets Shipped', 'Floor Updated', 'Created By', 'Order Ready Date', 'Release Window']);
 });
 
 test('reports: floor history from the Scan Log per order, activity in range, floor orders missing from intake', () => {

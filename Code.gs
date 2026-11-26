@@ -391,11 +391,13 @@ const ORDER_FIELDS_ = [
   // Who first entered the order (set once, on create; "Entered By" is whoever saved it last)
   { key: 'createdBy', header: 'Created By', type: 'text' },
   // When the order is picked and ready to stage / ship (YYYY-MM-DD)
-  { key: 'readyDate', header: 'Order Ready Date', type: 'text' }
+  { key: 'readyDate', header: 'Order Ready Date', type: 'text' },
+  // CS hand-out window, e.g. "8:30am-10:00am" (Released to Warehouse holds the date + window start)
+  { key: 'releaseWindow', header: 'Release Window', type: 'text' }
 ];
 /** Fields a person or the WMS may set (the rest are kept by the server). */
 const ORDER_INPUT_KEYS_ = ['customer', 'releasedAt', 'cartons', 'pallets', 'refType', 'reference', 'orderType',
-  'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes', 'enteredBy', 'picker', 'vrid', 'readyDate'];
+  'carrier', 'scac', 'proBol', 'shipDate', 'destination', 'notes', 'enteredBy', 'picker', 'vrid', 'readyDate', 'releaseWindow'];
 const ORDER_STATUSES_ = ['Released', 'Cancelled'];
 const ORDERS_MAX_BATCH_ = 2000;
 
