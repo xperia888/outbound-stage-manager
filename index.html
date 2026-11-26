@@ -71,15 +71,23 @@
             animation: scanPulse 1.1s ease-out 2;
         }
 
-        /* Active Order Highlight Ring */
+        /* Active (located) order: bright amber glow, lifted above its neighbours */
         @keyframes orderRingPulse {
-            0%, 100% { box-shadow: 0 0 0 2.5px #0f172a; }
-            50% { box-shadow: 0 0 0 4.5px rgba(15, 23, 42, 0.35); }
+            0%, 100% { box-shadow: 0 0 0 3px #f59e0b, 0 0 14px 5px rgba(245, 158, 11, 0.75); }
+            50% { box-shadow: 0 0 0 5px #fbbf24, 0 0 30px 12px rgba(245, 158, 11, 0.5); }
         }
         .order-highlight-ring {
-            animation: orderRingPulse 1.6s ease-in-out infinite;
-            transform: translateY(-1px);
+            animation: orderRingPulse 1.1s ease-in-out infinite;
+            transform: scale(1.04);
+            position: relative;
+            z-index: 30;
+            border-color: #f59e0b !important;
+            background-color: #fffbeb !important;
         }
+        /* While an order is located, everything else fades back */
+        body.order-located .board-card:not(.order-highlight-ring) { opacity: 0.28; filter: grayscale(0.6); transition: opacity 0.2s; }
+        body.order-located .lane-has-located { box-shadow: 0 0 0 3px #f59e0b, 0 0 22px 4px rgba(245, 158, 11, 0.45); border-color: #f59e0b !important; }
+        @media (prefers-reduced-motion: reduce) { .order-highlight-ring { animation: none; box-shadow: 0 0 0 4px #f59e0b, 0 0 18px 6px rgba(245, 158, 11, 0.6); } }
 
         /* Lane Space Highlight Pulse */
         @keyframes laneHighlight {
@@ -835,6 +843,13 @@
                 <p class="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                     Capacity measures physical floor spots: each single pallet uses 1 spot, and every 2 Double-Stacked pallets share 1 spot.
                 </p>
+                <label class="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 cursor-pointer">
+                    <input type="checkbox" id="location-small-parcel-chk" class="mt-0.5 accent-violet-600">
+                    <span class="text-xs">
+                        <span class="font-bold text-violet-900">Small parcel lane</span>
+                        <span class="block text-[11px] text-violet-800/80">Only suggested for UPS, FedEx, USPS and DHL orders, and left out of Consolidate.</span>
+                    </span>
+                </label>
                 <div class="flex items-center justify-between gap-2 pt-2">
                     <button
                         type="button"
@@ -3463,6 +3478,9 @@
 
             const board = document.getElementById('staging-board');
             if (!board) return;
+            // A located order fades the rest of the board back so it stands out
+            document.body?.classList?.toggle('order-located', Boolean(highlightedOrderNumber)
+                && appState.pallets.some(p => normalizeOrderNumber(p.orderNumber) === highlightedOrderNumber));
 
             const orderSlpMap = buildOrderSlpMap();
             const totalPallets = appState.pallets.length;
@@ -3576,7 +3594,7 @@
                         ondragover="handleColumnDragOver(event, ${jsArg(col.id)})"
                         ondragleave="handleColumnDragLeave(event, ${jsArg(col.id)})"
                         ondrop="handleColumnDrop(event, ${jsArg(col.id)})"
-                        class="bg-white border ${isLowSpace ? 'border-emerald-400' : 'border-slate-300'} rounded-xl shadow-xs flex flex-col overflow-hidden transition-all min-h-[210px]"
+                        class="bg-white border ${isLowSpace ? 'border-emerald-400' : 'border-slate-300'} ${highlightedOrderNumber && colPallets.some(p => normalizeOrderNumber(p.orderNumber) === highlightedOrderNumber) ? 'lane-has-located' : ''} rounded-xl shadow-xs flex flex-col overflow-hidden transition-all min-h-[210px]"
                     >
                         <!-- Location Card Header -->
                         <div class="${headerBarClass} px-2.5 py-1.5 flex items-center justify-between gap-1 shrink-0 transition-colors">
@@ -3584,6 +3602,7 @@
                                 <span class="w-2.5 h-2.5 rounded-full ${dotClass} shrink-0" title="${isFull ? 'Full (0 floor spots available)' : `${freeSlots} floor spot(s) available`}"></span>
                                 <span class="font-mono-code font-extrabold text-xs sm:text-sm tracking-tight truncate">${escapeHtml(col.name)}</span>
                                 ${colDoubleCount > 0 ? `<span class="font-mono-code text-[9px] font-extrabold ${doubleBadgeClass} px-1 rounded" title="${colDoubleCount} Double-Stacked SLP(s) in ${escapeHtml(col.name)}">2x:${colDoubleCount}</span>` : ''}
+                                ${col.smallParcel ? `<span class="sp-badge font-mono-code text-[9px] font-extrabold bg-violet-100 text-violet-800 border border-violet-300 px-1 rounded" title="Small parcel lane: only suggested for UPS, FedEx, USPS and DHL orders">PARCEL</span>` : ''}
                             </div>
                             <div class="flex items-center gap-1 shrink-0">
                                 <span class="font-mono-code text-[11px] font-bold ${countTextClass}" title="Floor spots used / max capacity">${usedSpots}/${cap}</span>
@@ -3668,7 +3687,7 @@
                         ondragstart="handlePalletDragStart(event, ${jsArg(p.id)})"
                         ondragend="handlePalletDragEnd(event)"
                         onclick="openPalletDetailModal(${jsArg(p.id)})"
-                        class="group relative ${theme.cardBg} border ${alertClass} ${p.doubleStacked ? 'pallet-double-stacked' : ''} ${isHighlighted ? 'order-highlight-ring' : ''} ${isJustScanned ? 'just-scanned' : ''} rounded-lg p-1.5 shadow-2xs hover:shadow cursor-pointer transition-all select-none"
+                        class="group relative ${theme.cardBg} border ${alertClass} ${p.doubleStacked ? 'pallet-double-stacked' : ''} ${isHighlighted ? 'order-highlight-ring' : ''} ${isJustScanned ? 'just-scanned' : ''} board-card rounded-lg p-1.5 shadow-2xs hover:shadow cursor-pointer transition-all select-none"
                     >
                         <div class="flex items-center justify-between gap-1">
                             <button
@@ -3779,7 +3798,7 @@
                         ondragstart="handleGroupedOrderDragStart(event, ${jsArg(ord)}, ${jsArg(sample.columnId)})"
                         ondragend="handlePalletDragEnd(event)"
                         onclick="openEditOrderModal(${jsArg(ord)})"
-                        class="${theme.cardBg} border ${alertClass} ${doubleCount > 0 ? 'pallet-double-stacked' : ''} ${isHighlighted ? 'order-highlight-ring' : ''} rounded-lg p-2 shadow-2xs hover:shadow cursor-pointer transition-all space-y-1 select-none"
+                        class="${theme.cardBg} border ${alertClass} ${doubleCount > 0 ? 'pallet-double-stacked' : ''} ${isHighlighted ? 'order-highlight-ring' : ''} board-card rounded-lg p-2 shadow-2xs hover:shadow cursor-pointer transition-all space-y-1 select-none"
                     >
                         <div class="flex items-center justify-between gap-1">
                             <span class="font-mono-code text-[11px] font-extrabold ${theme.badgeBg} ${theme.badgeText} px-1.5 py-0.5 rounded truncate">
@@ -3955,11 +3974,35 @@
          * 5. QUICK SCAN, MULTI-SLP MODAL & QR CAMERA SCANNER
          * =========================================================================
          */
-        function getBestAvailableLocationForOrder(orderNumberRaw = '', isDoubleStacked = false) {
+        /**
+         * Small parcel = UPS, FedEx, USPS or DHL. Their freight (LTL) services, e.g. "FedEx Freight",
+         * are not small parcel.
+         */
+        function isSmallParcelCarrier(carrier) {
+            const c = String(carrier || '').toLowerCase();
+            if (!c.trim() || /freight/.test(c)) return false;
+            return /\bups\b|fed\s*-?\s*ex|\busps\b|postal|\bdhl\b/.test(c);
+        }
+
+        /** The carrier we know for an order: given here, its pallets on the floor, or Order Intake. */
+        function carrierForOrder(ord, given = '') {
+            if (String(given || '').trim()) return String(given).trim();
+            if (!ord || ord === 'UNASSIGNED') return '';
+            const peer = appState.pallets.find(p => normalizeOrderNumber(p.orderNumber) === ord && p.carrier);
+            if (peer) return peer.carrier;
+            const intake = typeof findIntakeOrder === 'function' ? findIntakeOrder(ord) : null;
+            return (intake && intake.carrier) || '';
+        }
+
+        /** Is this lane allowed as a suggestion for this order? Parcel lanes only take small parcel orders. */
+        const laneSuitsOrder = (col, smallParcel) => !col.smallParcel || smallParcel;
+
+        function getBestAvailableLocationForOrder(orderNumberRaw = '', isDoubleStacked = false, carrierHint = '') {
             if (!Array.isArray(appState.columns) || appState.columns.length === 0) return null;
             const normOrd = normalizeOrderNumber(orderNumberRaw);
+            const sp = isSmallParcelCarrier(carrierForOrder(normOrd, carrierHint));
 
-            const laneStats = appState.columns.map((col, idx) => {
+            const laneStats = appState.columns.filter(col => laneSuitsOrder(col, sp)).map((col, idx) => {
                 const colPallets = appState.pallets.filter(p => p.columnId === col.id);
                 const cap = Number(col.capacity) || 8;
                 const usedSpots = computeFloorSpotsUsed(colPallets);
@@ -3980,9 +4023,12 @@
                     slpCount: colPallets.length,
                     isEmpty: colPallets.length === 0,
                     canFitOneMore,
-                    sameOrderPeers
+                    sameOrderPeers,
+                    isParcelLane: Boolean(col.smallParcel)
                 };
             });
+            if (laneStats.length === 0) return null;
+            const spTag = sp ? 'Small parcel · ' : '';
 
             // 1. Co-locate with exact same Order # if that lane can fit another pallet
             if (normOrd !== 'UNASSIGNED') {
@@ -3992,8 +4038,17 @@
                 if (sameOrderCandidates.length > 0) {
                     return {
                         ...sameOrderCandidates[0],
-                        reason: `Co-locate ${normOrd} → ${sameOrderCandidates[0].col.name}`
+                        reason: `${spTag}Co-locate ${normOrd} → ${sameOrderCandidates[0].col.name}`
                     };
+                }
+            }
+
+            // 1b. Small parcel orders: a parcel lane with room (fullest first, to keep parcels together)
+            if (sp) {
+                const parcel = laneStats.filter(s => s.isParcelLane && s.canFitOneMore)
+                    .sort((a, b) => a.freeSpots - b.freeSpots || a.idx - b.idx);
+                if (parcel.length > 0) {
+                    return { ...parcel[0], reason: `Small parcel lane → ${parcel[0].col.name} (${parcel[0].freeSpots} free)` };
                 }
             }
 
@@ -4004,7 +4059,7 @@
             if (emptyCandidates.length > 0) {
                 return {
                     ...emptyCandidates[0],
-                    reason: `Empty Lane → ${emptyCandidates[0].col.name} (${emptyCandidates[0].freeSpots} free)`
+                    reason: `${spTag}Empty Lane → ${emptyCandidates[0].col.name} (${emptyCandidates[0].freeSpots} free)`
                 };
             }
 
@@ -4015,7 +4070,7 @@
             if (openCandidates.length > 0) {
                 return {
                     ...openCandidates[0],
-                    reason: `Best Open → ${openCandidates[0].col.name} (${openCandidates[0].freeSpots} free)`
+                    reason: `${spTag}Best Open → ${openCandidates[0].col.name} (${openCandidates[0].freeSpots} free)`
                 };
             }
 
@@ -4199,8 +4254,13 @@
          * Where a shipment goes: the chosen lane first, then the next lanes that are empty or hold only
          * this order, then any lane with room. `left` = pallets that fit nowhere.
          */
-        function planShipmentLanes(startColId, count, is2x, ord) {
-            const lanes = lanesFrom(startColId);
+        function planShipmentLanes(startColId, count, is2x, ord, carrier = '') {
+            // The chosen lane is always used; overflow never goes into a parcel lane unless this is a
+            // small parcel order (which tries parcel lanes first)
+            const sp = isSmallParcelCarrier(carrierForOrder(ord, carrier));
+            const all = lanesFrom(startColId);
+            const rest = all.slice(1).filter(c => laneSuitsOrder(c, sp));
+            const lanes = [all[0], ...(sp ? [...rest.filter(c => c.smallParcel), ...rest.filter(c => !c.smallParcel)] : rest)].filter(Boolean);
             const plan = [];
             let left = count;
             const take = col => {
@@ -4295,7 +4355,7 @@
                 addShipmentPallets(ord, parts, extras);
                 if (onDone) onDone();
             };
-            const { plan, left } = planShipmentLanes(col.id, n, is2x, ord);
+            const { plan, left } = planShipmentLanes(col.id, n, is2x, ord, extras.carrier);
             if (left === 0 && plan.length === 1 && plan[0].col.id === col.id) {
                 run(plan);
                 return true;
@@ -4573,7 +4633,7 @@
         function suggestOrderPickerLane() {
             if (!orderPickerSelected) return;
             const is2x = Boolean(document.getElementById('order-picker-2x')?.checked);
-            const rec = getBestAvailableLocationForOrder(orderPickerSelected.orderNumber, is2x);
+            const rec = getBestAvailableLocationForOrder(orderPickerSelected.orderNumber, is2x, orderPickerSelected.carrier || '');
             const laneSel = document.getElementById('order-picker-lane');
             if (rec && rec.col && laneSel) laneSel.value = rec.col.id;
             const hint = document.getElementById('order-picker-hint');
@@ -5406,6 +5466,8 @@
             idInp.value = col.id;
             nameInp.value = col.name;
             capInp.value = col.capacity || 8;
+            const spChk = document.getElementById('location-small-parcel-chk');
+            if (spChk) spChk.checked = Boolean(col.smallParcel);
             if (delBtn) delBtn.classList.remove('hidden');
 
             modal.classList.remove('hidden');
@@ -5422,6 +5484,7 @@
         }
 
         function handleLocationFormSubmit(event) {
+            const spChk = document.getElementById('location-small-parcel-chk');
             event.preventDefault();
             const id = document.getElementById('edit-location-id').value;
             const name = document.getElementById('location-name-input').value.trim().toUpperCase();
@@ -5438,6 +5501,7 @@
 
             col.name = name;
             col.capacity = capacity;
+            if (spChk && spChk.checked) col.smallParcel = true; else delete col.smallParcel;
 
             saveState();
             closeLocationModal();
@@ -5689,7 +5753,9 @@
 
             const is2x = Boolean(document.getElementById('finder-doublestack-chk')?.checked);
             const spotsNeeded = is2x ? Math.ceil(minSlots / 2) : minSlots;
-            let matches = appState.columns.map(col => {
+            // With an order typed in, parcel lanes only show for small parcel orders (and come first)
+            const targetSp = targetOrd !== 'UNASSIGNED' ? isSmallParcelCarrier(carrierForOrder(targetOrd)) : null;
+            let matches = appState.columns.filter(col => targetSp == null || laneSuitsOrder(col, targetSp)).map(col => {
                 const colPallets = appState.pallets.filter(p => p.columnId === col.id);
                 const cap = Number(col.capacity) || 8;
                 const usedSpots = computeFloorSpotsUsed(colPallets);
@@ -5711,6 +5777,8 @@
             } else {
                 matches.sort((a, b) => b.free - a.free);
             }
+            // Parcel lanes: first for a small parcel order, last otherwise
+            matches.sort((a, b) => (targetSp ? (b.col.smallParcel ? 1 : 0) - (a.col.smallParcel ? 1 : 0) : (a.col.smallParcel ? 1 : 0) - (b.col.smallParcel ? 1 : 0)));
 
             if (statsEl) statsEl.textContent = `Found ${matches.length} lane(s) with room for ${minSlots} ${is2x ? 'double-stacked ' : ''}pallet(s)${is2x ? ` (${spotsNeeded} floor spot${spotsNeeded === 1 ? '' : 's'})` : ''}.`;
 
@@ -5719,6 +5787,7 @@
                     <div>
                         <div class="flex items-center gap-2 flex-wrap">
                             <span class="font-mono-code font-extrabold text-sm text-slate-900">${escapeHtml(m.col.name)}</span>
+                            ${m.col.smallParcel ? '<span class="font-mono-code font-extrabold bg-violet-100 text-violet-800 border border-violet-300 px-1.5 py-0.2 rounded" title="Only for UPS, FedEx, USPS and DHL orders">Small parcel only</span>' : ''}
                             <span class="font-mono-code font-extrabold bg-emerald-100 text-emerald-900 px-2 py-0.2 rounded">${m.free} spot(s) free</span>
                             ${is2x ? `<span class="font-mono-code font-extrabold bg-cyan-100 text-cyan-900 px-2 py-0.2 rounded">fits ${m.room === Infinity ? 'any' : m.room} 2x pallets</span>` : ''}
                             <span class="font-mono-code text-slate-500">(${m.usedSpots}/${m.cap} spots • ${m.slpCount} pallets)</span>
@@ -6351,7 +6420,8 @@
                 .map(c => ({
                     id: String(c.id),
                     name: String(c.name).trim().toUpperCase(),
-                    capacity: Math.max(1, Math.min(200, Number(c.capacity) || 8))
+                    capacity: Math.max(1, Math.min(200, Number(c.capacity) || 8)),
+                    ...(c.smallParcel ? { smallParcel: true } : {})
                 }));
 
             if (cleanedColumns.length === 0) {
@@ -6452,7 +6522,11 @@
         let currentReorgPlan = null;
 
         function computeReorganizePlan({ allowDownsizeToEmptySmallCap = true, onlyFullLineClears = true } = {}) {
-            const simLanes = appState.columns.map((col, index) => {
+            // Small parcel is left out: parcel lanes are neither emptied nor filled, and small parcel
+            // pallets (UPS / FedEx / USPS / DHL) are never moved
+            const spOrders = new Set(appState.pallets.filter(p => isSmallParcelCarrier(carrierForOrder(normalizeOrderNumber(p.orderNumber), p.carrier)))
+                .map(p => normalizeOrderNumber(p.orderNumber)));
+            const simLanes = appState.columns.filter(col => !col.smallParcel).map((col, index) => {
                 const colPallets = appState.pallets.filter(p => p.columnId === col.id);
                 const cap = Number(col.capacity) || 8;
                 return {
@@ -6489,6 +6563,7 @@
                         byOrd.get(ord).push(p);
                     });
                     byOrd.forEach((slps, ord) => {
+                        if (spOrders.has(ord)) return;
                         if (!orderLaneEntries.has(ord)) orderLaneEntries.set(ord, []);
                         orderLaneEntries.get(ord).push({
                             lane,
@@ -6597,6 +6672,7 @@
                             const orders = getLaneOrderSet(lane);
                             if (orders.size !== 1 || lane.pallets.length === 0) return null;
                             const ord = Array.from(orders)[0];
+                            if (spOrders.has(ord)) return null;
                             const spots = computeFloorSpotsUsed(lane.pallets);
                             return { lane, ord, slps: [...lane.pallets], spots };
                         })
