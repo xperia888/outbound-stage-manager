@@ -520,6 +520,55 @@ async def run_round(browser, wh, rnd, devices):
         record(wh, rnd, 'Consolidate: no small parcel pallets moved, parcel lane never a target', len(reorg) > 0
                and all(m[0] != 'ORD-U' and 'P1' not in (m[1], m[2]) for m in reorg), reorg)
         await A.evaluate(f"(c => {{ delete c.smallParcel; saveState(); renderBoard(); }})(appState.columns.find(c => c.id === {json.dumps(sp_col)}))")
+        # --- Smart fit: whole shipment, single or 2x, shortest lane first -----------------------
+        fit = await A.evaluate("""(() => {
+            const saved = appState;
+            const col = (id, cap) => ({ id, name: id, capacity: cap });
+            const plt = (id, ord, colId, ds) => ({ id, slp: id, orderNumber: ord, columnId: colId, carrier: 'Saia', doubleStacked: !!ds, createdAt: Date.now() });
+            appState = Object.assign({}, saved, {
+                columns: [col('S60', 8), col('S61', 4), col('S62', 6), col('S63', 10), col('S64', 12)],
+                pallets: [plt('x1', 'ORD-X', 'S63'), plt('x2', 'ORD-X', 'S63'), plt('y1', 'ORD-Y', 'S64')]
+            });
+            try {
+                const g = (o, n, ds) => { const r = getBestAvailableLocationForOrder(o, ds, 'Saia', n); return r.col.id + '|' + r.reason; };
+                return {
+                    n3: g('NEW-1', 3), n5: g('NEW-1', 5), n6: g('NEW-1', 6), n7: g('NEW-1', 7), n12_2x: g('NEW-1', 12, true),
+                    x6: g('ORD-X', 6), x9: g('ORD-X', 9), n30: g('NEW-1', 30)
+                };
+            } finally { appState = saved; }
+        })()""")
+        ids = {k: v.split('|')[0] for k, v in fit.items()}
+        record(wh, rnd, 'smart fit: shortest empty lane that takes the whole shipment', ids['n3'] == 'S61' and ids['n5'] == 'S62' and ids['n6'] == 'S62'
+               and ids['n7'] == 'S60' and 'Short lane' in fit['n3'] and 'exact fit' in fit['n6'], fit)
+        record(wh, rnd, 'smart fit: 2x counts 2 pallets per spot (12 x 2x = 6 spots -> 6-spot lane)', ids['n12_2x'] == 'S62', fit['n12_2x'])
+        record(wh, rnd, 'smart fit: own lane if it takes it all; too big for any lane -> most room, rest spread', ids['x6'] == 'S63' and 'Co-locate' in fit['x6']
+               and ids['x9'] == 'S63' and 'Continue' in fit['x9'] and ids['n30'] == 'S64' and 'No lane fits all' in fit['n30'], {k: fit[k] for k in ('x6', 'x9', 'n30')})
+        finder = await A.evaluate("""(() => {
+            const saved = appState;
+            const col = (id, cap) => ({ id, name: id, capacity: cap });
+            appState = Object.assign({}, saved, { columns: [col('S60', 8), col('S61', 4), col('S62', 6), col('S63', 10)], pallets: [] });
+            try {
+                document.getElementById('finder-min-slots-input').value = '5';
+                document.getElementById('finder-new-order-input').value = '';
+                document.getElementById('finder-doublestack-chk').checked = false;
+                document.getElementById('finder-filter-mode-select').value = 'any_space';
+                renderAvailableLocationsResults();
+                const sortMode = document.getElementById('finder-sort-select').value;
+                const names = [...document.querySelectorAll('#finder-results-list .font-mono-code.text-sm')].map(e => e.textContent.trim());
+                return { sortMode, names, badge: document.querySelector('#finder-results-list .best-fit-badge')?.textContent || '' };
+            } finally { appState = saved; renderAvailableLocationsResults(); }
+        })()""")
+        record(wh, rnd, 'Find Space: Best Fit is the default and lists the short lane first', finder['sortMode'] == 'best_fit' and finder['names'][:3] == ['S62', 'S60', 'S63']
+               and 'Best fit' in finder['badge'], finder)
+        if wh == 'ONT':
+            await A.evaluate("openAvailableFinderModal(); document.getElementById('finder-min-slots-input').value = '3'; renderAvailableLocationsResults()")
+            await A.wait_for_timeout(300); await A.screenshot(path=str(OUT / 'find_space_best_fit.png'))
+            await A.evaluate("closeAvailableFinderModal()")
+        # Auto (quick bar) uses the pallet count typed in
+        await A.fill('#quick-order-input', 'FIT-AUTO-1'); await A.fill('#quick-pallet-count', '3'); await A.wait_for_timeout(150)
+        auto = await A.evaluate("[document.getElementById('quick-scan-location').value, getBestAvailableLocationForOrder('FIT-AUTO-1', false, '', 3).col.id, document.getElementById('quick-auto-suggest-label').textContent]")
+        record(wh, rnd, 'Auto lane follows the pallet count typed in', auto[0] == auto[1] and 'fits 3 pallets' in auto[2], auto)
+        await A.fill('#quick-pallet-count', ''); await A.fill('#quick-order-input', ''); await A.evaluate("syncQuickOrderBanner()")
         # --- Locate: the order glows, everything else fades -------------------------------------
         loc_ord = await A.evaluate("normalizeOrderNumber(appState.pallets[0].orderNumber)")
         await A.evaluate(f"toggleOrderHighlight({json.dumps(loc_ord)})"); await A.wait_for_timeout(300)
