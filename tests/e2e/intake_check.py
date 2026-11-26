@@ -199,7 +199,7 @@ async def main():
             };
         })()""")
         record('staged order shows "On floor since" (first pallet staged)', fl['staged'] == fl['stagedWant'], fl)
-        record('waiting order shows "Waiting since" its release (red after 24h)', fl['order'] and fl['waiting'] == fl['waitingWant'] and fl['late'] == fl['lateWant'], fl)
+        record('waiting orders show no date under the status', fl['order'] and fl['waiting'] is None, fl)
         await pg.context.grant_permissions(['clipboard-read', 'clipboard-write'])
         await pg.click('tr[data-order="DN-OLD-7"] .copy-btn'); await pg.wait_for_timeout(250)
         clip = await pg.evaluate("navigator.clipboard.readText()")
