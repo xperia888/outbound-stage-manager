@@ -179,6 +179,14 @@ async def main():
         old_text = await pg.text_content('tr[data-order="DN-OLD-7"]') if await pg.locator('tr[data-order="DN-OLD-7"]').count() else ''
         await pg.select_option('#status-filter', 'shipped'); await pg.wait_for_timeout(200)
         record('shipped filter shows the fully shipped order', await pg.locator('tr[data-order="DN-OLD-7"]').count() == 1 and await pg.locator('tr[data-order="DN-E2E-1"]').count() == 0)
+        sa = await pg.text_content('tr[data-order="DN-OLD-7"] .shipped-at') if await pg.locator('tr[data-order="DN-OLD-7"] .shipped-at').count() else ''
+        want_sa = await pg.evaluate("fmtShort(progress['DN-OLD-7'].lastShippedAt)")
+        record('shipped order shows when it shipped', sa == f'Shipped {want_sa}', (sa, want_sa))
+        await pg.context.grant_permissions(['clipboard-read', 'clipboard-write'])
+        await pg.click('tr[data-order="DN-OLD-7"] .copy-btn'); await pg.wait_for_timeout(250)
+        clip = await pg.evaluate("navigator.clipboard.readText()")
+        record('copy button copies the order # (and does not open the order)', clip == 'DN-OLD-7' and await pg.is_hidden('#view-form')
+               and 'Copied DN-OLD-7' in (await pg.text_content('#toast') or ''), clip)
         await pg.select_option('#status-filter', 'open'); await pg.wait_for_timeout(200)
 
         # duplicate warning
