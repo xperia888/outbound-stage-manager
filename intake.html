@@ -156,7 +156,6 @@
     .copy-btn svg { width: 12px; height: 12px; }
     .sub2.shipped-at { color: var(--good); font-weight: 700; }
     .sub2.since { color: var(--text-2); font-weight: 600; }
-    .sub2.since.late { color: var(--bad); }
     .cust { font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
     .sub2 { font-size: 11.5px; color: var(--muted); }
     .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
@@ -1159,11 +1158,8 @@
                 const shippedAt = shipped && p.lastShippedAt && o.status !== 'Cancelled'
                     ? `<div class="sub2 shipped-at" title="${esc(new Date(p.lastShippedAt).toLocaleString())}">${st.key === 'shipped' ? 'Shipped' : 'Last shipped'} ${esc(fmtShort(p.lastShippedAt))}</div>`
                     : '';
-                // Waiting since the release; on the floor since the first pallet was staged
-                const rel = Date.parse(o.releasedAt);
-                const since = st.key === 'waiting' && rel
-                    ? `<div class="sub2 since${Date.now() - rel > 24 * 3600000 ? ' late' : ''}" title="Released ${esc(new Date(rel).toLocaleString())} · waiting ${esc(ageText(rel))}">Waiting since ${esc(fmtShort(rel))}</div>`
-                    : ['partial', 'staged', 'dock'].includes(st.key) && p.firstStagedAt
+                // On the floor since the first pallet was staged
+                const since = ['partial', 'staged', 'dock'].includes(st.key) && p.firstStagedAt
                         ? `<div class="sub2 since" title="First pallet staged ${esc(new Date(p.firstStagedAt).toLocaleString())} · on the floor ${esc(ageText(p.firstStagedAt))}">On floor since ${esc(fmtShort(p.firstStagedAt))}</div>`
                         : '';
                 const sl = stageLanesOf(o);
