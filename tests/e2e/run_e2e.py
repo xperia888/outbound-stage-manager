@@ -569,6 +569,24 @@ async def run_round(browser, wh, rnd, devices):
         auto = await A.evaluate("[document.getElementById('quick-scan-location').value, getBestAvailableLocationForOrder('FIT-AUTO-1', false, '', 3).col.id, document.getElementById('quick-auto-suggest-label').textContent]")
         record(wh, rnd, 'Auto lane follows the pallet count typed in', auto[0] == auto[1] and 'fits 3 pallets' in auto[2], auto)
         await A.fill('#quick-pallet-count', ''); await A.fill('#quick-order-input', ''); await A.evaluate("syncQuickOrderBanner()")
+        # --- 2x cards: the stacked edge shows on every 2x card, alert or not --------------------
+        ds = await A.evaluate("""(() => {
+            const cards = [...document.querySelectorAll('.board-card.pallet-double-stacked')];
+            const edge = c => getComputedStyle(c, '::after').content !== 'none' && getComputedStyle(c, '::after').height === '5px';
+            const plain = [...document.querySelectorAll('.board-card:not(.pallet-double-stacked)')].filter(edge).length;
+            return { cards: cards.length, withEdge: cards.filter(edge).length, plainWithEdge: plain,
+                     twoX: appState.pallets.filter(p => p.doubleStacked).length };
+        })()""")
+        record(wh, rnd, '2x cards all show the stacked edge; single cards none', ds['cards'] > 0 and ds['withEdge'] == ds['cards'] and ds['plainWithEdge'] == 0, ds)
+        # an overdue 2x card keeps it too (the alert used to replace it)
+        kept = await A.evaluate("""(() => {
+            const c = document.querySelector('.board-card.pallet-double-stacked');
+            c.classList.add('pallet-overdue-alert');
+            const ok = getComputedStyle(c, '::after').content !== 'none';
+            c.classList.remove('pallet-overdue-alert');
+            return ok;
+        })()""")
+        record(wh, rnd, 'an overdue 2x card keeps its stacked edge', kept)
         # --- Locate: the order glows, everything else fades -------------------------------------
         loc_ord = await A.evaluate("normalizeOrderNumber(appState.pallets[0].orderNumber)")
         await A.evaluate(f"toggleOrderHighlight({json.dumps(loc_ord)})"); await A.wait_for_timeout(300)

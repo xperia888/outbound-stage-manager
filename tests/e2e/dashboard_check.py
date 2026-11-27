@@ -81,8 +81,8 @@ async def main():
                     bad: [...document.querySelectorAll('#lanes-row .spot.filled')].filter(s=>s.querySelectorAll('.tile').length===2).map(s=>[s.closest('.lane').querySelector('.lname').textContent, ...[...s.querySelectorAll('.tile')].map(t=>t.className+':'+t.getBoundingClientRect().height.toFixed(1))]).filter(x=>Math.abs(parseFloat(x[1].split(':')[1])-parseFloat(x[2].split(':')[1]))>1).slice(0,4)};
             }""")
             ok = (chk['zones'][:2]==['USPS · DHL','N09'] and chk['firstLanes']==['USPS','DHL'] and chk['dhlDim']=='0.45'
-                  and {'S60','S61','USPS'} <= set(chk['pcl']) and chk['staged'] in ('rgb(134, 239, 172)',) and chk['halvesSame'] and chk['lone']>=1)
-            print(f"    {'PASS' if ok else 'FAIL'} USPS/DHL left of N09, PCL lanes, light-green staged, equal 2x halves:", chk)
+                  and {'S60','S61','USPS'} <= set(chk['pcl']) and chk['staged'] in ('rgb(21, 128, 61)',) and chk['halvesSame'] and chk['lone']>=1)
+            print(f"    {'PASS' if ok else 'FAIL'} USPS/DHL left of N09, PCL lanes, dark-green staged, equal 2x halves:", chk)
             await pg.screenshot(path=f'{E2E}/out/dashboard_{w}x{h}.png', full_page=(w < 900))
             # Theme button switches to dark and back
             await pg.click('#theme-btn'); await pg.wait_for_timeout(300)
