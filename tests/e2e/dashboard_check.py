@@ -11,6 +11,9 @@ zone_cols=[{'id':f'col-w05-{n}','name':f'W05.{n}','capacity':4} for n in range(8
           [{'id':f'col-w06-{n}','name':f'W06.{n}','capacity':4} for n in range(61,81)]+\
           [{'id':f'col-n09-{n}','name':f'N09.{n}','capacity':4 if n<12 else 12} for n in range(5,24)]
 cols=zone_cols+[{'id':f'col-s{n}','name':f'S{n}','capacity':8} for n in list(range(51,63))+list(range(30,51))+list(range(63,81))]
+for c in cols:
+    if c['name'] in ('S60','S61'): c['smallParcel']=True   # small parcel lanes
+cols.append({'id':'col-usps','name':'USPS','capacity':6,'smallParcel':True})   # DHL is not on the board yet
 orders=[('SO-40118','FedEx Freight','DOCK-03'),('SO-40122','Old Dominion Freight Line',''),('SO-40131','Estes Express','DOCK-07'),
         ('SO-40140','XPO Logistics','DOCK-01'),('SO-40152','Saia',''),('SO-40160','R+L Carriers','RAMP'),('SO-40163','ABF Freight',''),('SO-40170','FedEx Freight','DOCK-11')]
 plan={'S51':[('SO-40140',4,False,2*H)],'S52':[('SO-40140',2,True,2*H),('SO-40163',3,False,5*H)],'S53':[('SO-40118',6,True,30*H)],
@@ -19,9 +22,9 @@ plan={'S51':[('SO-40140',4,False,2*H)],'S52':[('SO-40140',2,True,2*H),('SO-40163
       'S30':[('SO-40122',2,False,4*H)],'S31':[('SO-40122',8,False,4*H)],'S32':[('SO-40122',9,False,4*H)],'S45':[('SO-40131',1,False,1*H)],
       'S79':[('SO-40160',4,True,2*H)],'S80':[('SO-40160',6,False,2*H)]}
 info={o:(c,d) for o,c,d in orders}
-zone_plan={'col-w05-90':[('SO-40177',4,False,3*H)],'col-w05-91':[('SO-40177',2,False,3*H)],'col-w06-70':[('SO-40181',3,False,26*H)],
+zone_plan={'col-usps':[('SO-40195',3,False,2*H)],'col-w05-90':[('SO-40177',4,False,3*H)],'col-w05-91':[('SO-40177',2,False,3*H)],'col-w06-70':[('SO-40181',3,False,26*H)],
            'col-n09-14':[('SO-40185',12,False,5*H)],'col-n09-15':[('SO-40185',5,True,5*H)],'col-n09-6':[('SO-40190',2,False,60*H)]}
-for o,c,d in [('SO-40177','Saia',''),('SO-40181','Estes Express','DOCK-05'),('SO-40185','Old Dominion',''),('SO-40190','XPO Logistics','')]: info[o]=(c,d)
+for o,c,d in [('SO-40195','USPS',''),('SO-40177','Saia',''),('SO-40181','Estes Express','DOCK-05'),('SO-40185','Old Dominion',''),('SO-40190','XPO Logistics','')]: info[o]=(c,d)
 pallets=[]; n=884100
 for lane,groups in plan.items():
     for o,count,dbl,ageMs in groups:
@@ -65,6 +68,21 @@ async def main():
             print(f'{w}x{h}: signin shown={signin} errors={errs[:2]} truncated={over} sync=', await pg.text_content('#sync-text'))
             info=await pg.evaluate("() => ({docks:[...document.querySelectorAll('.door .name')].map(e=>e.textContent), lanes:document.querySelectorAll('.lane').length, first:document.querySelector('.lane .lname').textContent, laneW:Math.round(document.querySelector('.lane').getBoundingClientRect().width), spans:[...document.querySelectorAll('.order-span:not(.blank)')].map(e=>e.textContent), other:document.getElementById('other-lanes').textContent})")
             print('   ',info)
+            chk=await pg.evaluate("""() => {
+                const zones=[...document.querySelectorAll('#zones-row .zone .zname')].map(e=>e.textContent);
+                const first=document.querySelector('#zones-row .zone');
+                const firstLanes=[...first.querySelectorAll('.lane .lname')].map(e=>e.textContent);
+                const pcl=[...document.querySelectorAll('.lane.parcel .lname')].map(e=>e.textContent);
+                const staged=getComputedStyle(document.querySelector('.tile:not(.docked):not([class*=lvl-w]):not([class*=lvl-o])')).backgroundColor;
+                // every tile in a 2x spot has the same height
+                const halves=[...document.querySelectorAll('#lanes-row .spot.filled')].filter(s=>s.querySelectorAll('.tile').length===2).map(s=>[...s.querySelectorAll('.tile')].map(t=>Math.round(t.getBoundingClientRect().height)));
+                const lone=document.querySelectorAll('.tile.open-half').length;
+                return {zones, firstLanes, dhlDim: first.querySelectorAll('.lane')[1]?.style.opacity, pcl, staged, halvesSame: halves.every(h=>Math.abs(h[0]-h[1])<=1), twoXHeights:[...new Set(halves.flat())], lone,
+                    bad: [...document.querySelectorAll('#lanes-row .spot.filled')].filter(s=>s.querySelectorAll('.tile').length===2).map(s=>[s.closest('.lane').querySelector('.lname').textContent, ...[...s.querySelectorAll('.tile')].map(t=>t.className+':'+t.getBoundingClientRect().height.toFixed(1))]).filter(x=>Math.abs(parseFloat(x[1].split(':')[1])-parseFloat(x[2].split(':')[1]))>1).slice(0,4)};
+            }""")
+            ok = (chk['zones'][:2]==['USPS · DHL','N09'] and chk['firstLanes']==['USPS','DHL'] and chk['dhlDim']=='0.45'
+                  and {'S60','S61','USPS'} <= set(chk['pcl']) and chk['staged'] in ('rgb(134, 239, 172)',) and chk['halvesSame'] and chk['lone']>=1)
+            print(f"    {'PASS' if ok else 'FAIL'} USPS/DHL left of N09, PCL lanes, light-green staged, equal 2x halves:", chk)
             await pg.screenshot(path=f'{E2E}/out/dashboard_{w}x{h}.png', full_page=(w < 900))
             # Theme button switches to dark and back
             await pg.click('#theme-btn'); await pg.wait_for_timeout(300)

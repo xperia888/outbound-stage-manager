@@ -32,7 +32,7 @@
         --accent-text: #0369a1;     /* sky-700 */
         --accent-soft: rgba(2, 132, 199, 0.12);
         --brand: #f59e0b;           /* amber-500, the app's primary */
-        --staged: #94a3b8;          /* slate-400 */
+        --staged: #86efac;          /* light green — green-300 */
         --good: #059669;            /* emerald-600 */
         --warning: #f59e0b;         /* amber-500 */
         --warning-text: #b45309;    /* amber-700 */
@@ -61,9 +61,11 @@
         /* Section tints: soft backgrounds + a darker accent for labels, kept clear of the status colours */
         --sec-docks-bg: #f0f9ff;  --sec-docks-border: #bae6fd;  --sec-docks-accent: #0369a1;   /* sky */
         --sec-s-bg: #f0fdfa;      --sec-s-border: #99f6e4;      --sec-s-accent: #0f766e;       /* teal */
+        --sec-zp-bg: #eef2ff;     --sec-zp-border: #c7d2fe;     --sec-zp-accent: #4338ca;      /* indigo: USPS / DHL */
         --sec-z1-bg: #f5f3ff;     --sec-z1-border: #ddd6fe;     --sec-z1-accent: #6d28d9;      /* violet */
         --sec-z2-bg: #f7fee7;     --sec-z2-border: #d9f99d;     --sec-z2-accent: #4d7c0f;      /* lime */
         --sec-z3-bg: #fdf4ff;     --sec-z3-border: #f5d0fe;     --sec-z3-accent: #a21caf;      /* fuchsia */
+        --parcel: #7c3aed;          /* small parcel lanes — violet-600 */
         --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
         --mono: "JetBrains Mono", "Consolas", "SFMono-Regular", ui-monospace, monospace;
     }
@@ -80,7 +82,7 @@
         --accent: #0ea5e9;          /* sky-500 */
         --accent-text: #7dd3fc;     /* sky-300 */
         --accent-soft: rgba(14, 165, 233, 0.18);
-        --staged: #64748b;
+        --staged: #4ade80;          /* green-400 */
         --warning: #fbbf24;
         --warning-text: #fbbf24;
         --serious: #fb923c;
@@ -107,6 +109,7 @@
         --docked-ring: #7dd3fc;
         --sec-docks-bg: rgba(14, 165, 233, 0.08);  --sec-docks-border: rgba(14, 165, 233, 0.28);  --sec-docks-accent: #7dd3fc;
         --sec-s-bg: rgba(20, 184, 166, 0.08);      --sec-s-border: rgba(20, 184, 166, 0.28);      --sec-s-accent: #5eead4;
+        --sec-zp-bg: rgba(99, 102, 241, 0.09);     --sec-zp-border: rgba(99, 102, 241, 0.30);     --sec-zp-accent: #a5b4fc;
         --sec-z1-bg: rgba(139, 92, 246, 0.09);     --sec-z1-border: rgba(139, 92, 246, 0.30);     --sec-z1-accent: #c4b5fd;
         --sec-z2-bg: rgba(132, 204, 22, 0.08);     --sec-z2-border: rgba(132, 204, 22, 0.28);     --sec-z2-accent: #bef264;
         --sec-z3-bg: rgba(217, 70, 239, 0.08);     --sec-z3-border: rgba(217, 70, 239, 0.28);     --sec-z3-accent: #f0abfc;
@@ -232,6 +235,7 @@
     .sec-s { --sec-bg: var(--sec-s-bg); --sec-border: var(--sec-s-border); --sec-accent: var(--sec-s-accent);
         display: grid; grid-template-rows: 22px minmax(0, 1fr); }
     .lane-scroll { display: grid; grid-template-rows: minmax(0, 1fr) 22px; min-width: 0; min-height: 0; }
+    .sec-zp { --sec-bg: var(--sec-zp-bg); --sec-border: var(--sec-zp-border); --sec-accent: var(--sec-zp-accent); }
     .sec-z1 { --sec-bg: var(--sec-z1-bg); --sec-border: var(--sec-z1-border); --sec-accent: var(--sec-z1-accent); }
     .sec-z2 { --sec-bg: var(--sec-z2-bg); --sec-border: var(--sec-z2-border); --sec-accent: var(--sec-z2-accent); }
     .sec-z3 { --sec-bg: var(--sec-z3-bg); --sec-border: var(--sec-z3-border); --sec-accent: var(--sec-z3-accent); }
@@ -285,6 +289,14 @@
     .spots { display: flex; flex-direction: column; gap: 3px; padding: 3px; min-height: 0; }
     .spot { flex: 1 1 0; min-height: 0; border-radius: 4px; border: 1px dashed var(--spot-border); display: flex; flex-direction: column; gap: 2px; }
     .spot.filled { border: none; }
+    /* A 2x stack always shows as two equal halves; a lone 2x pallet leaves the top half open */
+    .tile.open-half { background: transparent; outline: 1px dashed var(--spot-border); outline-offset: -1px; }
+    /* Small parcel lanes (marked in the app): violet top bar + PCL tag */
+    .lane.parcel { border-top: 4px solid var(--parcel); }
+    .lane-head .pcl { display: inline-block; margin-top: 1px; font-family: var(--mono); font-size: 9px; font-weight: 800; letter-spacing: 0.02em;
+        color: #fff; background: var(--parcel); border-radius: 3px; padding: 0 3px; line-height: 1.35; }
+    .lane.parcel .lane-head { padding-top: 0; }
+    .legend i.parcel { background: var(--parcel); height: 5px; align-self: center; }
     .spot.extra .tile { box-shadow: inset 0 0 0 2px var(--critical); }
     .tile {
         flex: 1 1 0; min-height: 0; border-radius: 4px; background: var(--staged);
@@ -501,6 +513,7 @@
                     <span><i style="background:var(--staged)"></i>Staged</span>
                     <span><i style="background:var(--accent)"></i>Dock assigned</span>
                     <span><i class="split"></i>2x stacked (2 per spot)</span>
+                    <span><i class="parcel"></i>PCL Small parcel lane</span>
                     <span><i style="background:var(--warning)"></i>⚠ Aging</span>
                     <span><i style="background:var(--serious)"></i>⏱ Overdue</span>
                     <span><i style="background:var(--critical)"></i>⛔ Over a week</span>
@@ -574,7 +587,9 @@
         laneDirection: 'ascending',
         // Other locations, drawn in a row under the S lanes, one block per zone. A location belongs to a
         // zone by the part of its name before the dot (W05.89 → W05). null = every zone on the board, A→Z.
-        zones: ['N09', 'W05', 'W06']
+        // A block can also list single locations by their full name: { name: 'Parcel', locations: ['USPS', 'DHL'] }
+        // (shown even before they are added on the board, dimmed).
+        zones: [{ name: 'USPS · DHL', locations: ['USPS', 'DHL'] }, 'N09', 'W05', 'W06']
     };
 
     // Shared with the staging app (same site → same saved code and warehouse on this device)
@@ -808,17 +823,23 @@
         zones.forEach(z => z.cols.forEach(c => mappedColIds.add(c.id)));
         const zonesRow = document.getElementById('zones-row');
         zonesRow.style.display = zones.length ? '' : 'none';
-        zonesRow.style.gridTemplateColumns = zones.map(z => `minmax(0, ${Math.max(1, z.cols.length)}fr)`).join(' ');
-        zonesRow.innerHTML = zones.map((z, zi) => {
-            const used = z.cols.filter(c => palletsIn(c.id).length).length;
-            const spots = z.cols.reduce((t, c) => t + floorSpotsUsed(palletsIn(c.id)), 0);
+        // Single named locations (USPS, DHL) get wider lanes so the block stays readable
+        zonesRow.style.gridTemplateColumns = zones.map(z => `minmax(0, ${z.singles ? Math.max(6, z.cols.length * 3) : Math.max(1, z.cols.length)}fr)`).join(' ');
+        let zoneTint = 0;
+        const inCol = c => (c.missing ? [] : palletsIn(c.id));
+        zonesRow.innerHTML = zones.map(z => {
+            const tint = z.singles ? 'sec-zp' : `sec-z${(zoneTint++ % 3) + 1}`;
+            const used = z.cols.filter(c => inCol(c).length).length;
+            const spots = z.cols.reduce((t, c) => t + floorSpotsUsed(inCol(c)), 0);
             const cap = z.cols.reduce((t, c) => t + (Number(c.capacity) || 0), 0);
             const first = z.cols[0] ? zoneSuffix(z.cols[0].name) : '', last = z.cols.length ? zoneSuffix(z.cols[z.cols.length - 1].name) : '';
-            return `<div class="zone section sec-z${(zi % 3) + 1}">
+            const info = z.singles ? `${spots}/${cap} spots`
+                : `.${esc(first)} → .${esc(last)} · ${z.cols.length} locations · ${used} in use · ${spots}/${cap} spots`;
+            return `<div class="zone section ${tint}">
                 <div class="zone-head"><span class="zname sec-tag">${esc(z.name)}</span>
-                    <span class="zinfo">.${esc(first)} → .${esc(last)} · ${z.cols.length} locations · ${used} in use · ${spots}/${cap} spots</span></div>
+                    <span class="zinfo">${info}</span></div>
                 <div class="lane-scroll-x"><div class="lane-line" style="--n: ${Math.max(1, z.cols.length)}; grid-template-columns: repeat(${Math.max(1, z.cols.length)}, minmax(0, 1fr))">
-                    ${z.cols.map(c => renderLane(c, palletsIn(c.id), c.name, zoneSuffix(c.name))).join('')}
+                    ${z.cols.map(c => (c.missing ? renderLane(null, [], c.name) : renderLane(c, palletsIn(c.id), c.name, z.singles ? c.name : zoneSuffix(c.name)))).join('')}
                 </div></div>
             </div>`;
         }).join('');
@@ -907,13 +928,22 @@
             if (!byZone.has(z)) byZone.set(z, []);
             byZone.get(z).push(c);
         });
-        const names = Array.isArray(FLOOR_LAYOUT.zones)
-            ? FLOOR_LAYOUT.zones.map(z => String(z).toUpperCase()).filter(z => byZone.has(z))
-            : [...byZone.keys()].sort();
-        return names.map(name => ({
-            name,
-            cols: byZone.get(name).sort((a, b) => String(zoneSuffix(a.name)).localeCompare(String(zoneSuffix(b.name)), undefined, { numeric: true }))
-        }));
+        if (!Array.isArray(FLOOR_LAYOUT.zones)) {
+            return [...byZone.keys()].sort().map(name => ({ name, cols: sortZone(byZone.get(name)) }));
+        }
+        const byName = new Map(cols.filter(c => !alreadyMapped.has(c.id)).map(c => [String(c.name).trim().toUpperCase(), c]));
+        return FLOOR_LAYOUT.zones.map(z => {
+            if (z && typeof z === 'object' && Array.isArray(z.locations)) {
+                // Named single locations, in the order given; missing ones show as dimmed placeholders
+                const list = z.locations.map(n => byName.get(String(n).trim().toUpperCase()) || { id: null, name: String(n), missing: true });
+                return { name: z.name || z.locations.join(' · '), cols: list, singles: true };
+            }
+            const name = String(z).toUpperCase();
+            return byZone.has(name) ? { name, cols: sortZone(byZone.get(name)) } : null;
+        }).filter(Boolean);
+    }
+    function sortZone(list) {
+        return list.sort((a, b) => String(zoneSuffix(a.name)).localeCompare(String(zoneSuffix(b.name)), undefined, { numeric: true }));
     }
 
     const dockLabel = d => String(d).replace(/^DOCK-?0*(?=\d)/i, 'D').replace(/^RAMP$/i, 'Ramp');
@@ -944,7 +974,7 @@
         const num = parseInt(String(laneName).replace(/\D/g, ''), 10);
         const tens = num % 10 === 0 ? ' tens' : '';
         if (!col) {
-            return `<div class="lane${tens}" style="opacity:0.45"><div class="lane-head"><span class="lname">${esc(laneName)}</span><span class="count">—</span></div><div class="spots"></div><div class="lane-foot"></div></div>`;
+            return `<div class="lane${tens}" style="opacity:0.45" title="${esc(laneName)} is not on the board yet — add it in the staging app (Add Location)"><div class="lane-head"><span class="lname">${esc(laneName)}</span><span class="count">—</span></div><div class="spots"></div><div class="lane-foot"></div></div>`;
         }
         const capacity = Number(col.capacity) || 0;
         const spots = laneSpots(inLane);
@@ -956,7 +986,8 @@
             const s = spots[i];
             if (!s) { spotsHtml += '<div class="spot"></div>'; continue; }
             const ordered = s.length === 2 ? [s[1], s[0]] : s; // a 2x pair shows TOP above BTM
-            spotsHtml += `<div class="spot filled${i >= capacity ? ' extra' : ''}">${ordered.map(p => {
+            const openHalf = s.length === 1 && s[0].doubleStacked ? '<div class="tile open-half" title="Room for one more 2x pallet on top"></div>' : '';
+            spotsHtml += `<div class="spot filled${i >= capacity ? ' extra' : ''}">${openHalf}${ordered.map(p => {
                 const lvl = dwellLevel(p);
                 const tier = p.doubleStacked ? (p === s[0] ? ' · BTM' : ' · TOP') : '';
                 const tip = `${p.slp} · ${norm(p.orderNumber) || 'no order'}${p.dockNumber ? ' · ' + p.dockNumber : ''} · ${age(p.createdAt)}${tier}`;
@@ -964,8 +995,9 @@
             }).join('')}</div>`;
         }
         const docks = [...new Set(inLane.map(p => norm(p.dockNumber)).filter(Boolean))];
-        return `<div class="lane${used ? ' used' : ''}${over ? ' over' : ''}${tens}">
-            <div class="lane-head" title="${esc(col.name)}"><span class="lname">${esc(shortName || col.name)}</span><span class="count">${used}/${capacity}</span></div>
+        const parcel = Boolean(col.smallParcel);
+        return `<div class="lane${used ? ' used' : ''}${over ? ' over' : ''}${tens}${parcel ? ' parcel' : ''}">
+            <div class="lane-head" title="${esc(col.name)}${parcel ? ' · small parcel lane (UPS / FedEx / USPS / DHL)' : ''}"><span class="lname">${esc(shortName || col.name)}</span>${parcel ? '<span class="pcl">PCL</span>' : `<span class="count">${used}/${capacity}</span>`}</div>
             <div class="spots${rows > 8 ? ' two' : ''}">${spotsHtml}</div>
             <div class="lane-foot" title="${esc(docks.join(', '))}">${esc(docks.length ? dockLabel(docks[0]) + (docks.length > 1 ? '+' : '') : '')}</div>
         </div>`;
