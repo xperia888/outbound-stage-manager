@@ -55,10 +55,24 @@
             box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.35);
         }
 
-        /* Double-Stack (2-High) Visual Layered Effect */
+        /* Double-Stack (2-High) look: a second card edge under the card. Drawn as its own layer (not a
+           box-shadow) so the aging / overdue / locate highlights can't wipe it off. */
         .pallet-double-stacked {
-            box-shadow: 0 3px 0 0 rgba(15, 23, 42, 0.14), 0 5px 0 -1px rgba(14, 116, 144, 0.28);
-            margin-bottom: 3px;
+            position: relative;
+            margin-bottom: 5px;
+        }
+        .pallet-double-stacked::after {
+            content: '';
+            position: absolute;
+            left: 4px;
+            right: 4px;
+            bottom: -5px;
+            height: 5px;
+            border: 1px solid rgba(14, 116, 144, 0.55);
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            background: rgba(14, 116, 144, 0.16);
+            pointer-events: none;
         }
 
         /* Scan Flash Animation */
