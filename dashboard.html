@@ -61,7 +61,7 @@
         /* Section tints: soft backgrounds + a darker accent for labels, kept clear of the status colours */
         --sec-docks-bg: #f0f9ff;  --sec-docks-border: #bae6fd;  --sec-docks-accent: #0369a1;   /* sky */
         --sec-s-bg: #f0fdfa;      --sec-s-border: #99f6e4;      --sec-s-accent: #0f766e;       /* teal */
-        --sec-zp-bg: #eef2ff;     --sec-zp-border: #c7d2fe;     --sec-zp-accent: #4338ca;      /* indigo: USPS / DHL1 */
+        --sec-zp-bg: #eef2ff;     --sec-zp-border: #c7d2fe;     --sec-zp-accent: #4338ca;      /* indigo: USPS / DHL */
         --sec-z1-bg: #f5f3ff;     --sec-z1-border: #ddd6fe;     --sec-z1-accent: #6d28d9;      /* violet */
         --sec-z2-bg: #f7fee7;     --sec-z2-border: #d9f99d;     --sec-z2-accent: #4d7c0f;      /* lime */
         --sec-z3-bg: #fdf4ff;     --sec-z3-border: #f5d0fe;     --sec-z3-accent: #a21caf;      /* fuchsia */
@@ -587,9 +587,9 @@
         laneDirection: 'ascending',
         // Other locations, drawn in a row under the S lanes, one block per zone. A location belongs to a
         // zone by the part of its name before the dot (W05.89 → W05). null = every zone on the board, A→Z.
-        // A block can also list single locations by their full name: { name: 'Parcel', locations: ['USPS', 'DHL1'] }
+        // A block can also list single locations by their full name: { name: 'Parcel', locations: ['USPS', 'DHL'] }
         // (shown even before they are added on the board, dimmed).
-        zones: [{ name: 'USPS · DHL1', locations: ['USPS', 'DHL1'] }, 'N09', 'W05', 'W06']
+        zones: [{ name: 'USPS · DHL', locations: ['USPS', 'DHL'] }, 'N09', 'W05', 'W06']
     };
 
     // Shared with the staging app (same site → same saved code and warehouse on this device)
@@ -823,7 +823,7 @@
         zones.forEach(z => z.cols.forEach(c => mappedColIds.add(c.id)));
         const zonesRow = document.getElementById('zones-row');
         zonesRow.style.display = zones.length ? '' : 'none';
-        // Single named locations (USPS, DHL1) get wider lanes so the block stays readable
+        // Single named locations (USPS, DHL) get wider lanes so the block stays readable
         zonesRow.style.gridTemplateColumns = zones.map(z => `minmax(0, ${z.singles ? Math.max(6, z.cols.length * 3) : Math.max(1, z.cols.length)}fr)`).join(' ');
         let zoneTint = 0;
         const inCol = c => (c.missing ? [] : palletsIn(c.id));
