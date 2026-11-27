@@ -569,6 +569,21 @@ async def run_round(browser, wh, rnd, devices):
         auto = await A.evaluate("[document.getElementById('quick-scan-location').value, getBestAvailableLocationForOrder('FIT-AUTO-1', false, '', 3).col.id, document.getElementById('quick-auto-suggest-label').textContent]")
         record(wh, rnd, 'Auto lane follows the pallet count typed in', auto[0] == auto[1] and 'fits 3 pallets' in auto[2], auto)
         await A.fill('#quick-pallet-count', ''); await A.fill('#quick-order-input', ''); await A.evaluate("syncQuickOrderBanner()")
+        # --- Location search on the board -------------------------------------------------------
+        async def shown_after(q):
+            await A.fill('#search-filter-input', q); await A.wait_for_timeout(200)
+            return await A.evaluate("[...document.querySelectorAll('#staging-board [id^=lane-card-]')].map(e => appState.columns.find(c => c.id === e.dataset.columnId).name)")
+        s5 = await shown_after('s5')
+        want_s5 = await A.evaluate("appState.columns.map(c => c.name).filter(n => /^s5/i.test(n))")
+        empty_s5 = await A.evaluate("appState.columns.filter(c => /^s5/i.test(c.name) && !appState.pallets.some(p => p.columnId === c.id)).length")
+        hits = await A.evaluate("document.querySelectorAll('.lane-search-hit').length")
+        record(wh, rnd, 'search "s5" shows every S5x lane, empty ones too, outlined', sorted(s5) == sorted(want_s5) and empty_s5 > 0 and hits == len(want_s5), (s5, want_s5))
+        n55 = await shown_after('55')
+        s55_full = await A.evaluate("(() => { const c = appState.columns.find(c => c.name === 'S55'); return c ? [document.querySelectorAll('#lane-card-' + c.id + ' .board-card').length, appState.pallets.filter(p => p.columnId === c.id).length] : null; })()")
+        record(wh, rnd, 'search "55" finds lane S55 with all its pallets', 'S55' in n55 and (s55_full is None or (s55_full[0] > 0) == (s55_full[1] > 0)), (n55, s55_full))
+        none = await shown_after('zz9')
+        record(wh, rnd, 'search with no match shows no lanes', none == [], none)
+        await A.fill('#search-filter-input', ''); await A.evaluate("handleSearchFilter('')"); await A.wait_for_timeout(150)
         # --- Locate: the order glows, everything else fades -------------------------------------
         loc_ord = await A.evaluate("normalizeOrderNumber(appState.pallets[0].orderNumber)")
         await A.evaluate(f"toggleOrderHighlight({json.dumps(loc_ord)})"); await A.wait_for_timeout(300)
