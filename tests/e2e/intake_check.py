@@ -16,6 +16,45 @@ def record(name, ok, detail=''):
     results.append((name, bool(ok)))
     print(('PASS ' if ok else 'FAIL ') + name + ('' if ok else f'  → {detail}'))
 
+# A fake WMS API: GET /orders?page=N&limit=2 with header X-Key → {"data": {"orders": [...]}}
+WMS_PORT = GAS_PORT + 7
+WMS_KEY = 'wms-secret-123'
+WMS_ORDERS = [
+    {'order_no': 'DN-E2E-1', 'account': {'name': 'SHOULD NOT OVERWRITE'}, 'pallet_count': 99, 'carrier': {'name': 'UPS'}},
+    {'order_no': 'DN-WMS-1', 'account': {'name': 'Pull Co'}, 'pallet_count': 6, 'carrier': {'name': 'Saia'}, 'lines': [{'cartons': 40}, {'cartons': 60}]},
+    {'order_no': 'DN-WMS-2', 'account': {'name': 'Pull Co'}, 'pallet_count': 2, 'carrier': {'name': 'UPS'}, 'lines': [{'cartons': 10}]},
+]
+wms_calls = []
+ONUS_TOKEN = 'onus-bearer-xyz'
+ONUS_ROWS = [  # shaped like the ONUS WMS Outbound Query answer (plain array)
+    {'outbound_id': 434126, 'outbound_no': 'DN2611201697', 'order_no': 'OB20261120241167', 'po_no': 'SF-RO-20261120-27139', 'outbound_status': 'ALLOCATED',
+     'pickinglist_no_byproduct': 'SPK202611200082', 'owner_name': 'Etekcity Corp', 'outbound_type': 'dropship', 'ttl_box': 12, 'ttl_pallet': 3,
+     'carrier_name': 'UPS Ground', 'scac': 'UPSN', 'bol_no': None, 'consignee_city': 'Reno', 'consignee_state': 'NV', 'ship_no_later': '2026-11-29 00:00:00', 'outbound_note': None},
+    {'outbound_id': 434127, 'outbound_no': 'DN2611201698', 'order_no': 'OB2', 'po_no': 'PO-2', 'outbound_status': 'SHIPPED', 'owner_name': 'Etekcity Corp', 'ttl_pallet': 1},
+    {'outbound_id': 434128, 'outbound_no': 'DN-E2E-1', 'order_no': 'OB3', 'po_no': 'PO-3', 'outbound_status': 'PICKING', 'owner_name': 'NOT THIS', 'ttl_pallet': 50},
+]
+class WmsHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
+        wms_calls.append({'path': self.path, 'key': self.headers.get('Authorization'), 'body': body})
+        if self.headers.get('Authorization') != 'Bearer ' + ONUS_TOKEN:
+            self.send_response(401); self.end_headers(); self.wfile.write(b'{"message":"Unauthenticated."}'); return
+        out = json.dumps(ONUS_ROWS[body.get('startRow', 0):body.get('endRow', 100)]).encode()
+        self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(out)
+    def do_GET(self):
+        from urllib.parse import urlparse, parse_qs
+        q = parse_qs(urlparse(self.path).query)
+        wms_calls.append({'path': self.path, 'key': self.headers.get('X-Key')})
+        if self.headers.get('X-Key') != WMS_KEY:
+            self.send_response(401); self.end_headers(); self.wfile.write(b'{"error":"bad key"}'); return
+        page, size = int(q.get('page', ['1'])[0]), int(q.get('limit', ['100'])[0])
+        body = json.dumps({'data': {'orders': WMS_ORDERS[(page - 1) * size: page * size]}}).encode()
+        self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(body)
+wms_srv = http.server.ThreadingHTTPServer(('127.0.0.1', WMS_PORT), WmsHandler)
+threading.Thread(target=wms_srv.serve_forever, daemon=True).start()
+os.environ['FAKE_WMS_BASE'] = f'http://127.0.0.1:{WMS_PORT}'
+
 gas = subprocess.Popen(['node', E2E + '/fake-apps-script.mjs', REPO + '/Code.gs', str(GAS_PORT)], stdout=subprocess.PIPE)
 gas.stdout.readline()
 def req(body):
@@ -507,6 +546,82 @@ async def main():
                 await pg.screenshot(path=f'{OUT}/laptop_1366_life.png', full_page=True)
         record('laptop screens (1280-1536px): every table fits without sideways scrolling', not wide, wide)
         await pg.set_viewport_size({'width': 1440, 'height': 900})
+        await pg.evaluate("showView('orders')")
+
+        # --- WMS pull connector ---------------------------------------------------------------
+        await pg.click('#tabs button[data-view="api"]'); await pg.wait_for_timeout(500)
+        record('API page: WMS pull starts "Not set up"', 'Not set up' in (await pg.text_content('#wms-status') or ''))
+        await pg.fill('#wms-name', 'Fake WMS'); await pg.fill('#wms-url', 'https://fake-wms.local/orders?since={{from}}')
+        await pg.select_option('#wms-auth', 'header'); await pg.fill('#wms-header-name', 'X-Key'); await pg.fill('#wms-secret', 'wrong-key')
+        await pg.click('.wms-more summary')
+        await pg.fill('#wms-list-path', 'data.orders'); await pg.select_option('#wms-paging', 'page')
+        await pg.fill('#wms-page-param', 'page'); await pg.fill('#wms-size-param', 'limit'); await pg.fill('#wms-page-size', '2')
+        await pg.click('#wms-test-btn'); await pg.wait_for_timeout(1500)
+        record('a wrong key is reported clearly', 'refused the sign-in' in (await pg.text_content('#wms-test-out') or ''))
+        await pg.fill('#wms-secret', WMS_KEY)
+        await pg.click('#wms-test-btn'); await pg.wait_for_timeout(1500)
+        test_out = await pg.text_content('#wms-test-out') or ''
+        record('Test connection reads the first page and lists the fields', 'Connected' in test_out and '2 order(s)' in test_out and 'account.name' in test_out, test_out[:200])
+        cfg = req({'fn': 'wmsPullGetConfig', 'key': 'cs-e2e', 'warehouse': 'ONT', 'args': []})
+        page_secret = await pg.input_value('#wms-secret')
+        record('the key is saved in Apps Script and never sent back to the page', cfg.get('hasSecret') and WMS_KEY not in json.dumps(cfg) and page_secret == ''
+               and 'saved' in (await pg.get_attribute('#wms-secret', 'placeholder') or ''), cfg)
+        before = {r[0]: r for r in dump()['Orders'][1:]}
+        orders_before = len(before)
+        await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(2500)
+        record('Pull reads all pages and opens the import matching', await pg.is_visible('#imp-step2') and await pg.is_visible('#imp-wms-note')
+               and '3 order(s)' in (await pg.text_content('#imp-file-name') or ''), await pg.text_content('#imp-file-name'))
+        record('WMS pull is locked to "Only add new orders"', await pg.is_checked('input[name=imp-mode][value=insertOnly]')
+               and await pg.is_disabled('input[name=imp-mode][value=upsert]'))
+        await pg.evaluate("""(() => { const i = h => imp.headers.indexOf(h);
+            imp.mapping = { orderNumber: [i('order_no')], customer: [i('account.name')], pallets: [i('pallet_count')], carrier: [i('carrier.name')], cartons: [i('lines[].cartons (total)')] };
+            renderImportMatching(); })()""")
+        await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(400)
+        counts = await pg.get_attribute('#imp-counts', 'data-summary') or ''
+        record('preview: 2 new, the existing order is skipped', counts.startswith('2 new') and '1 skip' in counts, counts)
+        await pg.click('#imp-go-btn'); await pg.wait_for_timeout(2000)
+        after_rows = dump()['Orders']
+        after = {r[0]: r for r in after_rows[1:]}
+        untouched = all(after.get(k) == v for k, v in before.items())
+        hdr = after_rows[0]
+        wms1 = dict(zip(hdr, after.get('DN-WMS-1', [])))
+        record('existing orders are untouched (every cell the same)', untouched and len(after) == orders_before + 2,
+               [k for k, v in before.items() if after.get(k) != v][:5])
+        record('new WMS orders added with the mapped fields', wms1.get('Customer') == 'Pull Co' and wms1.get('Pallets') == 6 and wms1.get('Cartons') == 100
+               and wms1.get('Carrier') == 'Saia' and wms1.get('Source') == 'WMS pull' and wms1.get('Created By') == 'Amy', wms1)
+        backups = [n for n in dump().keys() if n.startswith('Orders backup ')]
+        record('the Orders tab was backed up before the pull import', len(backups) == 1 and len(dump()[backups[0]]) == orders_before + 1, backups)
+        record('every WMS call carried the key; pages requested in order', all(c['key'] == WMS_KEY for c in wms_calls[1:])
+               and [c['path'].split('page=')[1][:1] for c in wms_calls[-2:]] == ['1', '2'], wms_calls[-3:])
+        await pg.screenshot(path=f'{OUT}/wms_pull_done.png', full_page=True)
+        await pg.click('#tabs button[data-view="api"]'); await pg.wait_for_timeout(300)
+        await pg.screenshot(path=f'{OUT}/wms_pull_setup.png', full_page=True)
+        # A file import afterwards is a normal import again
+        # ONUS WMS preset: POST outbound query, Bearer token, startRow/endRow paging, built-in matching
+        await pg.click('#wms-preset-btn'); await pg.wait_for_timeout(200)
+        preset = await pg.evaluate("[$('wms-url').value, $('wms-method').value, $('wms-auth').value, $('wms-paging').value, $('wms-skip-field').value, JSON.parse($('wms-body').value).endRow]")
+        record('"Use ONUS WMS settings" fills in the Outbound Query setup', preset == ['https://prd-onus.target-ai.com:18890/api/outbound/query', 'POST', 'bearer', 'rows', 'outbound_status', 100], preset)
+        await pg.fill('#wms-url', 'https://fake-wms.local/api/outbound/query')   # the test WMS instead of the real one
+        await pg.locator('#wms-pull-card').screenshot(path=f'{OUT}/wms_onus_preset.png')
+        await pg.fill('#wms-page-size', '2'); await pg.fill('#wms-secret', ONUS_TOKEN)
+        await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(2500)
+        mapped = await pg.evaluate("Object.fromEntries(Object.entries(imp.mapping).map(([k, v]) => [k, v.map(i => imp.headers[i]).join(' + ')]))")
+        record('ONUS pull: built-in matching uses outbound_no as the Order # (not order_no)', mapped.get('orderNumber') == 'outbound_no' and mapped.get('customer') == 'owner_name'
+               and mapped.get('pallets') == 'ttl_pallet' and mapped.get('destination') == 'consignee_city + consignee_state' and 'status' not in mapped, mapped)
+        await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(400)
+        counts = await pg.get_attribute('#imp-counts', 'data-summary') or ''
+        record('ONUS pull: SHIPPED left out, existing DN-E2E-1 skipped, 1 new', counts.startswith('1 new') and '1 skip' in counts, counts)
+        before2 = {r[0]: r for r in dump()['Orders'][1:]}
+        await pg.click('#imp-go-btn'); await pg.wait_for_timeout(2000)
+        rows2 = dump()['Orders']; after2 = {r[0]: r for r in rows2[1:]}
+        o = dict(zip(rows2[0], after2.get('DN2611201697', [])))
+        record('ONUS pull: new order saved, nothing else changed', all(after2.get(k) == v for k, v in before2.items()) and len(after2) == len(before2) + 1
+               and o.get('Customer') == 'Etekcity Corp' and o.get('Pallets') == 3 and o.get('Cartons') == 12 and o.get('Carrier') == 'UPS Ground'
+               and o.get('Reference') == 'SF-RO-20261120-27139' and o.get('Destination') == 'Reno, NV' and o.get('Source') == 'WMS pull', o)
+        onus_bodies = [c['body'] for c in wms_calls if c.get('body') is not None]
+        record('ONUS pull: startRow/endRow paged in the body until an empty page', [(b['startRow'], b['endRow']) for b in onus_bodies[-3:]] == [(0, 2), (2, 4), (4, 6)], onus_bodies[-3:])
+        await pg.evaluate("setWmsImportLock(false)")
+        record('a normal file import can update again', not await pg.is_disabled('input[name=imp-mode][value=upsert]'))
         await pg.evaluate("showView('orders')")
 
         await pg.click('#signout-btn'); await pg.wait_for_timeout(150); await pg.click('#confirm-yes'); await pg.wait_for_timeout(300)

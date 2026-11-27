@@ -95,7 +95,7 @@
     .field label { display: block; font-size: 11.5px; font-weight: 700; color: var(--text-2); margin-bottom: 4px; }
     .field label .req { color: var(--bad); }
     .field .hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
-    input[type=text], input[type=number], input[type=search], input[type=datetime-local], input[type=date], input[type=time], input[type=password], select, textarea {
+    input[type=text], input[type=number], input[type=search], input[type=datetime-local], input[type=date], input[type=time], input[type=url], input[type=password], select, textarea {
         width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 7px 10px; background: #fff; font-size: 13.5px;
     }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25); }
@@ -339,6 +339,14 @@
         th { position: static; }
         .kpi, .rep-table, .exc div { break-inside: avoid; }
     }
+
+    /* WMS pull */
+    #wms-form textarea { width: 100%; font-family: var(--mono); font-size: 12px; }
+    .wms-more summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--text-2); }
+    .wms-sample { font-size: 12px; }
+    .wms-keys { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 10px; }
+    .wms-keys span { font-family: var(--mono); font-size: 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+    .mode label.locked { opacity: 0.45; pointer-events: none; }
 
     /* API page */
     pre { background: var(--slate-900); color: #e2e8f0; border-radius: 10px; padding: 14px; overflow-x: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; }
@@ -653,6 +661,7 @@
                             <div id="field-slots"></div>
                         </section>
                     </div>
+                    <div class="note ok hidden" id="imp-wms-note" style="margin-bottom:8px"><b>Pulled from the WMS:</b> only new orders are added. Orders already in Order Intake are skipped and never changed.</div>
                     <div class="mode">
                         <label><input type="radio" name="imp-mode" value="upsert" checked><div><b>Add new &amp; update existing</b><span>Orders already in the portal get the values from the file.</span></div></label>
                         <label><input type="radio" name="imp-mode" value="insertOnly"><div><b>Only add new orders</b><span>Orders already in the portal are skipped.</span></div></label>
@@ -712,10 +721,73 @@
 
     <!-- ============================== API ============================== -->
     <section id="view-api" class="hidden">
+        <div class="card" id="wms-pull-card" style="margin-bottom:16px">
+            <div class="card-head">
+                <div>
+                    <h2>Pull orders from your WMS</h2>
+                    <p>Enter your WMS API details here — never in chat or email. The key / password is saved in Apps Script and is never shown again.</p>
+                </div>
+                <span id="wms-status"></span>
+            </div>
+            <div class="card-body">
+                <div class="note ok" style="margin-bottom:14px"><b>Your existing orders are safe.</b> Pulling only reads from the WMS; nothing is saved until you check the rows and press Import, and a WMS pull can only <b>add new orders</b> — orders already in Order Intake are skipped and never changed. The Orders tab is backed up before each pull import.</div>
+                <form id="wms-form" autocomplete="off" onsubmit="return false">
+                    <div class="form-grid">
+                        <div class="field"><label for="wms-name">WMS name</label><input type="text" id="wms-name" maxlength="60" placeholder="e.g. Extensiv, Deposco"></div>
+                        <div class="field span2"><label for="wms-url">API address (orders list)</label><input type="url" id="wms-url" maxlength="500" placeholder="https://api.your-wms.com/orders?updatedSince={{from}}">
+                            <div class="hint">Must start with https://. Optional: <span class="mono">{{from}}</span> / <span class="mono">{{to}}</span> (YYYY-MM-DD), <span class="mono">{{fromIso}}</span> / <span class="mono">{{toIso}}</span> are filled in with the look-back below.</div></div>
+                        <div class="field"><label for="wms-method">Method</label><select id="wms-method"><option>GET</option><option>POST</option></select></div>
+                        <div class="field span2 wms-post hidden"><label for="wms-body">Request body (JSON, for POST)</label><textarea id="wms-body" rows="3" maxlength="4000" placeholder='{"status":"Released","from":"{{fromIso}}"}'></textarea></div>
+                        <div class="field"><label for="wms-auth">Sign-in type</label>
+                            <select id="wms-auth">
+                                <option value="none">No sign-in</option>
+                                <option value="header">API key in a header</option>
+                                <option value="bearer">Bearer token</option>
+                                <option value="basic">Username + password</option>
+                                <option value="query">API key in the address</option>
+                                <option value="oauth2">OAuth2 (client ID + secret)</option>
+                            </select></div>
+                        <div class="field wms-a wms-a-header hidden"><label for="wms-header-name">Header name</label><input type="text" id="wms-header-name" maxlength="80" placeholder="X-API-Key"></div>
+                        <div class="field wms-a wms-a-basic hidden"><label for="wms-username">Username</label><input type="text" id="wms-username" maxlength="120" autocomplete="off"></div>
+                        <div class="field wms-a wms-a-query hidden"><label for="wms-query-name">Address parameter name</label><input type="text" id="wms-query-name" maxlength="80" placeholder="api_key"></div>
+                        <div class="field wms-a wms-a-oauth2 hidden span2"><label for="wms-token-url">Token address</label><input type="url" id="wms-token-url" maxlength="500" placeholder="https://api.your-wms.com/oauth/token"></div>
+                        <div class="field wms-a wms-a-oauth2 hidden"><label for="wms-client-id">Client ID</label><input type="text" id="wms-client-id" maxlength="200" autocomplete="off"></div>
+                        <div class="field wms-a wms-a-oauth2 hidden"><label for="wms-scope">Scope (optional)</label><input type="text" id="wms-scope" maxlength="200"></div>
+                        <div class="field wms-secret hidden"><label for="wms-secret" id="wms-secret-label">API key</label><input type="password" id="wms-secret" maxlength="2000" autocomplete="new-password">
+                            <div class="hint" id="wms-secret-hint"></div></div>
+                    </div>
+                    <details class="wms-more" style="margin-top:10px">
+                        <summary>More options: where the orders are, pages, extra headers</summary>
+                        <div class="form-grid" style="margin-top:10px">
+                            <div class="field"><label for="wms-list-path">Where the orders are in the answer</label><input type="text" id="wms-list-path" maxlength="200" placeholder="e.g. data.orders (blank = find it)"></div>
+                            <div class="field"><label for="wms-paging">Pages</label><select id="wms-paging"><option value="none">One request</option><option value="page">Page number</option><option value="offset">Offset</option><option value="rows">startRow / endRow in the body</option></select></div>
+                            <div class="field"><label for="wms-page-param">Page parameter</label><input type="text" id="wms-page-param" maxlength="60" placeholder="page / offset"></div>
+                            <div class="field"><label for="wms-size-param">Page-size parameter</label><input type="text" id="wms-size-param" maxlength="60" placeholder="limit"></div>
+                            <div class="field"><label for="wms-page-size">Page size</label><input type="number" id="wms-page-size" min="1" max="1000" placeholder="100"></div>
+                            <div class="field"><label for="wms-first-page">First page</label><select id="wms-first-page"><option value="1">1</option><option value="0">0</option></select></div>
+                            <div class="field"><label for="wms-max-pages">Max pages</label><input type="number" id="wms-max-pages" min="1" max="50" placeholder="10"></div>
+                            <div class="field"><label for="wms-lookback">Look back (days)</label><input type="number" id="wms-lookback" min="0" max="365" placeholder="7"></div>
+                            <div class="field"><label for="wms-skip-field">Leave out records where field…</label><input type="text" id="wms-skip-field" maxlength="100" placeholder="outbound_status"></div>
+                            <div class="field"><label for="wms-skip-values">…is one of (comma-separated)</label><input type="text" id="wms-skip-values" maxlength="300" placeholder="SHIPPED, CANCELLED"></div>
+                            <div class="field span2"><label for="wms-extra-headers">Extra headers (one per line, Name: value)</label><textarea id="wms-extra-headers" rows="2" maxlength="4000" placeholder="Accept-Version: 2"></textarea>
+                                <div class="hint">Not for keys or passwords — put those in the key / password box.</div></div>
+                        </div>
+                    </details>
+                    <div class="actions-row" style="margin-top:14px">
+                        <span class="sub2" id="wms-msg"></span>
+                        <button type="button" class="btn" id="wms-preset-btn" title="Fill in the ONUS WMS Outbound Query settings">Use ONUS WMS settings</button>
+                        <button type="button" class="btn" id="wms-save-btn">Save settings</button>
+                        <button type="button" class="btn" id="wms-test-btn">Test connection</button>
+                        <button type="button" class="btn primary" id="wms-pull-btn">Pull orders →</button>
+                    </div>
+                </form>
+                <div id="wms-test-out" style="margin-top:12px"></div>
+            </div>
+        </div>
         <div class="card">
             <div class="card-head">
                 <div>
-                    <h2>API connector</h2>
+                    <h2>Or: the WMS sends orders here</h2>
                     <p>For the WMS (or a small script next to it) to send orders here automatically, instead of exporting files.</p>
                 </div>
                 <span id="api-status"></span>
@@ -990,6 +1062,7 @@
         applyWarehouseLabel();
         loadOrders();
         loadApiStatus();
+        wmsLoad();
     });
 
     $('signout-btn').addEventListener('click', async () => {
@@ -1509,6 +1582,7 @@
         names = names.filter(n => sheets[n].some(r => filled(r) > 0));
         if (!names.length) { toast('The file is empty.', true); return; }
         Object.assign(imp, { fileName: file.name, sheets, sheetNames: names, sheetOffsets: offsets, template: '', selectedCol: null, mapping: {}, defaults: {} });
+        setWmsImportLock(false);
         // Start on the sheet with the most filled rows
         const best = names.slice().sort((a, b) => sheets[b].filter(r => filled(r) > 1).length - sheets[a].filter(r => filled(r) > 1).length)[0];
         loadSheet(best, null);
@@ -1635,7 +1709,7 @@
             if (idxs.length) imp.mapping[k] = idxs;
         });
         imp.defaults = Object.assign({}, tpl.defaults || {});
-        const mode = document.querySelector(`input[name=imp-mode][value="${tpl.mode === 'insertOnly' ? 'insertOnly' : 'upsert'}"]`);
+        const mode = document.querySelector(`input[name=imp-mode][value="${tpl.mode === 'insertOnly' || imp.fromWms ? 'insertOnly' : 'upsert'}"]`);
         if (mode) mode.checked = true;
         imp.template = t.name;
         $('tpl-msg').textContent = missing.length
@@ -1985,8 +2059,9 @@
 
     function buildPreview() {
         if (!(imp.mapping.orderNumber || []).length) { toast('Drag the column that holds the Order # onto “Order #”.', true); return false; }
-        const mode = document.querySelector('input[name=imp-mode]:checked').value;
-        const existing = new Set(orders.map(o => o.orderNumber));
+        const mode = imp.fromWms ? 'insertOnly' : document.querySelector('input[name=imp-mode]:checked').value;
+        // A WMS pull checks against every order in Order Intake, not just the ones listed on screen
+        const existing = imp.fromWms && imp.allOrderNumbers ? imp.allOrderNumbers : new Set(orders.map(o => o.orderNumber));
         const seen = new Map();
         imp.parsed = imp.rows.map((r, i) => {
             const { o, problems } = rowToOrder(r.cells);
@@ -2039,7 +2114,7 @@
 
     async function runImport() {
         if (!(await ensureName())) return;
-        const mode = document.querySelector('input[name=imp-mode]:checked').value;
+        const mode = imp.fromWms ? 'insertOnly' : document.querySelector('input[name=imp-mode]:checked').value;
         // The person importing is credited, whatever the file says
         const todo = imp.parsed.filter(p => p.result === 'new' || p.result === 'update').map(p => Object.assign({}, p.o, { enteredBy: userName }));
         const source = (imp.template ? `Import: ${imp.template}` : 'WMS import').slice(0, 40);
@@ -2048,7 +2123,7 @@
         for (let i = 0; i < todo.length; i += IMPORT_BATCH) {
             $('imp-progress').textContent = `Sending ${Math.min(i + IMPORT_BATCH, todo.length)} of ${todo.length}…`;
             const batch = todo.slice(i, i + IMPORT_BATCH);
-            const r = await cloud('upsertOrders', [batch, { mode, source }]);
+            const r = await cloud('upsertOrders', [batch, imp.fromWms ? { mode: 'insertOnly', wmsPull: true } : { mode, source }]);
             if (!r.ok) {
                 total.errors.push({ orderNumber: `rows ${i + 1}–${i + batch.length}`, error: r.error || 'Not saved' });
                 continue;
@@ -2436,7 +2511,11 @@
                 carrier: 'Saia', scac: 'SAIA', proBol: '', vrid: '115XYZ7AB', readyDate: '2026-11-25', shipDate: '2026-11-26', destination: 'Phoenix, AZ', notes: ''
             }], { mode: 'upsert', source: 'WMS API' }]
         };
-        const fieldRows = FIELDS.map(f => `<tr><td class="mono">${f.key}</td><td>${esc(f.label)}</td><td>${
+        // The API takes one release time (releasedAt) + the window label, not the import's two release slots
+        const apiFields = FIELDS.flatMap(f => (f.key === 'releaseDate'
+            ? [{ key: 'releasedAt', label: 'Released to warehouse', type: 'datetime' }, { key: 'releaseWindow', label: 'Release window (e.g. 8:30am-10:00am)', type: 'text' }]
+            : f.key === 'releaseTime' ? [] : [f]));
+        const fieldRows = apiFields.map(f => `<tr><td class="mono">${f.key}</td><td>${esc(f.label)}</td><td>${
             { text: 'text', int: 'whole number', datetime: 'date-time (ISO 8601, e.g. 2026-11-24T22:05:00Z)', date: 'date (YYYY-MM-DD)', status: '"Released" or "Cancelled"' }[f.type]}${f.required ? ' · <b>required</b>' + (f.key === 'customer' ? ' for new orders' : '') : ''}</td></tr>`).join('');
         $('api-body').innerHTML = `
             <div class="note" style="margin-bottom:16px">The WMS (or a small scheduled script next to it) sends orders as JSON to the same web-app address the boards use. Orders are added or updated by <b>Order #</b>, exactly like a file import. Only fields that are sent are changed.</div>
@@ -2460,15 +2539,170 @@
             <p class="sub2" style="margin-top:6px"><span class="mono">since</span> returns orders changed after that time; <span class="mono">days</span> (default 30, 0 = all) limits by release date.</p>
             <h3 class="sec">Fields</h3>
             <div class="table-wrap"><table class="api-fields"><thead><tr><th>Field</th><th>Portal name</th><th>Format</th></tr></thead><tbody>${fieldRows}</tbody></table></div>
-            <h3 class="sec">Pulling from the WMS instead</h3>
-            <p style="line-height:1.55">If the WMS offers its own API, the Apps Script can fetch new orders on a timer (e.g. every 10 minutes) and save them the same way. That needs the WMS's API address, sign-in method and order fields — send those over and the scheduled pull can be added without changing this portal.</p>`;
+`;
+    }
+
+    // ===================================================================================
+    // WMS pull connector
+    // ===================================================================================
+    const WMS_FIELDS = { name: 'wms-name', url: 'wms-url', method: 'wms-method', body: 'wms-body', auth: 'wms-auth', headerName: 'wms-header-name',
+        username: 'wms-username', queryName: 'wms-query-name', tokenUrl: 'wms-token-url', clientId: 'wms-client-id', scope: 'wms-scope',
+        extraHeaders: 'wms-extra-headers', listPath: 'wms-list-path', paging: 'wms-paging', pageParam: 'wms-page-param', sizeParam: 'wms-size-param',
+        pageSize: 'wms-page-size', firstPage: 'wms-first-page', maxPages: 'wms-max-pages', lookbackDays: 'wms-lookback',
+        skipField: 'wms-skip-field', skipValues: 'wms-skip-values' };
+
+    // ONUS WMS "Outbound Query" (POST /api/outbound/query, AG Grid row model, Bearer token, answer = plain array)
+    const ONUS_WMS_PRESET = {
+        name: 'ONUS WMS', url: 'https://prd-onus.target-ai.com:18890/api/outbound/query', method: 'POST', auth: 'bearer',
+        body: JSON.stringify({ startRow: 0, endRow: 100, rowGroupCols: [], valueCols: [], pivotCols: [], pivotMode: false, groupKeys: [], filterModel: {}, sortModel: [{ colId: 'created_at', sort: 'desc' }] }, null, 1),
+        paging: 'rows', pageSize: '100', maxPages: '10', listPath: '', skipField: 'outbound_status', skipValues: 'SHIPPED, CANCELLED, CANCELED, VOID'
+    };
+    // Matching for its fields: outbound_no is the DN number (order_no is the WMS's own OB… number)
+    const ONUS_WMS_TEMPLATE = {
+        name: 'ONUS WMS outbound (built-in)',
+        template: { mode: 'insertOnly', defaults: { refType: 'PO#' }, mapping: {
+            orderNumber: ['outbound_no'], customer: ['owner_name'], cartons: ['ttl_box'], pallets: ['ttl_pallet'], carrier: ['carrier_name'],
+            scac: ['scac'], proBol: ['bol_no'], reference: ['po_no'], orderType: ['outbound_type'], shipDate: ['ship_no_later'],
+            destination: ['consignee_city', 'consignee_state'], notes: ['outbound_note'] } }
+    };
+    $('wms-preset-btn').addEventListener('click', () => {
+        Object.entries(WMS_FIELDS).forEach(([k, id]) => {
+            const el = $(id);
+            if (k in ONUS_WMS_PRESET) el.value = ONUS_WMS_PRESET[k];
+            else el.value = el.tagName === 'SELECT' ? el.options[0].value : '';   // clear leftovers from another setup
+        });
+        document.querySelector('.wms-more').open = true;
+        wmsShowFields();
+        $('wms-secret').focus();
+        toast('ONUS WMS settings filled in — paste the Bearer token in the Token box, then Test connection');
+    });
+    let wmsState = { hasSecret: false, lastPullAt: '' };
+
+    function wmsShowFields() {
+        const auth = $('wms-auth').value;
+        document.querySelectorAll('.wms-a').forEach(el => el.classList.toggle('hidden', !el.classList.contains('wms-a-' + auth)));
+        document.querySelectorAll('.wms-post').forEach(el => el.classList.toggle('hidden', $('wms-method').value !== 'POST'));
+        document.querySelector('.wms-secret').classList.toggle('hidden', auth === 'none');
+        $('wms-secret-label').textContent = { header: 'API key', bearer: 'Token', basic: 'Password', query: 'API key', oauth2: 'Client secret' }[auth] || 'Key';
+        $('wms-secret').placeholder = wmsState.hasSecret ? '•••••••• saved — leave blank to keep' : '';
+        $('wms-secret-hint').innerHTML = wmsState.hasSecret
+            ? 'Saved in Apps Script. Type a new one only to replace it. <a href="#" id="wms-clear-secret">Remove it</a>'
+            : 'Saved in Apps Script, never shown again.';
+    }
+    $('wms-auth').addEventListener('change', wmsShowFields);
+    $('wms-method').addEventListener('change', wmsShowFields);
+    document.addEventListener('click', async e => {
+        if (e.target && e.target.id === 'wms-clear-secret') {
+            e.preventDefault();
+            if (!(await confirmBox('Remove the saved WMS key?', 'Pulling stops working until a new key / password is saved.', 'Remove'))) return;
+            const r = await cloud('wmsPullSaveConfig', [wmsReadForm(), '', { clearSecret: true }]);
+            if (r.ok) { wmsApply(r); toast('Key removed'); } else toast(r.error || 'Could not remove', true);
+        }
+    });
+
+    function wmsReadForm() {
+        const c = {};
+        Object.entries(WMS_FIELDS).forEach(([k, id]) => { const v = String($(id).value || '').trim(); if (v) c[k] = v; });
+        return c;
+    }
+    function wmsApply(r) {
+        wmsState = { hasSecret: !!r.hasSecret, lastPullAt: r.lastPullAt || '' };
+        const c = r.config || {};
+        Object.entries(WMS_FIELDS).forEach(([k, id]) => {
+            const el = $(id);
+            if (el.tagName === 'SELECT') el.value = c[k] || el.options[0].value;
+            else el.value = c[k] || '';
+        });
+        $('wms-secret').value = '';
+        $('wms-status').innerHTML = !c.url ? '<span class="chip waiting">Not set up</span>'
+            : `<span class="chip shipped">Set up${c.name ? ' · ' + esc(c.name) : ''}</span>`;
+        $('wms-msg').textContent = wmsState.lastPullAt ? `Last pull ${fmtShort(Date.parse(wmsState.lastPullAt))}` : '';
+        wmsShowFields();
+    }
+    async function wmsLoad() {
+        const r = await cloud('wmsPullGetConfig');
+        if (r && r.ok) wmsApply(r);
+        else if (r && r.error) $('wms-status').innerHTML = `<span class="chip cancelled">${esc(r.error)}</span>`;
+    }
+    async function wmsSave(quiet) {
+        const cfg = wmsReadForm();
+        if (cfg.url && !/^https:\/\//i.test(cfg.url)) { toast('The API address must start with https://', true); return false; }
+        const r = await cloud('wmsPullSaveConfig', [cfg, $('wms-secret').value]);
+        if (!r.ok) { toast(r.error || 'Could not save', true); return false; }
+        wmsApply(r);
+        if (!quiet) toast('WMS settings saved');
+        return true;
+    }
+    $('wms-save-btn').addEventListener('click', () => wmsSave(false));
+
+    $('wms-test-btn').addEventListener('click', async () => {
+        if (!(await wmsSave(true))) return;
+        $('wms-test-out').innerHTML = '<div class="sub2">Connecting to the WMS…</div>';
+        $('wms-test-btn').disabled = true;
+        const r = await cloud('wmsPullFetch', [{ test: true }]);
+        $('wms-test-btn').disabled = false;
+        if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read orders:</b> ${esc(r.error || 'No answer')}</div>`; return; }
+        const keys = r.keys || [];
+        const show = keys.slice(0, 8);
+        $('wms-test-out').innerHTML = `<div class="note ok"><b>Connected.</b> ${r.records.length} order(s) on the first page${r.skippedByRule ? ` (${r.skippedByRule} left out by your rule)` : ''} · ${keys.length} field(s). Nothing was saved.</div>
+            <div class="wms-keys">${keys.slice(0, 60).map(k => `<span>${esc(k)}</span>`).join('')}${keys.length > 60 ? `<span>+${keys.length - 60} more</span>` : ''}</div>
+            ${r.records.length ? `<div class="table-wrap"><table class="fit wms-sample"><thead><tr>${show.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead>
+            <tbody>${r.records.slice(0, 3).map(rec => `<tr>${show.map(k => `<td class="w-mid">${esc(rec[k] == null ? '' : String(rec[k]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}`;
+    });
+
+    $('wms-pull-btn').addEventListener('click', async () => {
+        if (!(await ensureName())) return;
+        if (!(await wmsSave(true))) return;
+        $('wms-pull-btn').disabled = true;
+        $('wms-test-out').innerHTML = '<div class="sub2">Reading orders from the WMS…</div>';
+        const r = await cloud('wmsPullFetch', [{}]);
+        $('wms-pull-btn').disabled = false;
+        if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read orders:</b> ${esc(r.error || 'No answer')}</div>`; return; }
+        if (!r.records.length) { $('wms-test-out').innerHTML = '<div class="note">The WMS returned no orders for this period.</div>'; return; }
+        $('wms-test-out').innerHTML = '';
+        if (r.lastPullAt) wmsState.lastPullAt = r.lastPullAt;
+        startWmsImport(r);
+    });
+
+    /** Puts the pulled records into the import screens (matching → check → import, add-new-only). */
+    async function startWmsImport(r) {
+        const all = await cloud('listOrders', [{ days: 0 }]);
+        imp.allOrderNumbers = all && all.ok ? new Set(all.orders.map(o => norm(o.orderNumber))) : null;
+        const keys = r.keys;
+        const aoa = [keys].concat(r.records.map(rec => keys.map(k => (rec[k] == null ? '' : rec[k]))));
+        const name = $('wms-name').value.trim() || 'WMS';
+        Object.assign(imp, { fileName: `WMS pull · ${name} · ${r.records.length} order(s)${r.truncated || r.morePages ? ' (more available)' : ''}`,
+            sheets: { WMS: aoa }, sheetNames: ['WMS'], sheetOffsets: { WMS: { row: 0, col: 0 } }, template: '', selectedCol: null, mapping: {}, defaults: {}, fromWms: true });
+        loadSheet('WMS', 1);
+        $('imp-file-name').textContent = imp.fileName;
+        if (!applyBestTemplate()) {
+            if (imp.headers.includes('outbound_no') && imp.headers.includes('ttl_pallet')) applyTemplate(ONUS_WMS_TEMPLATE);
+            else { applyAutoMatch(true); $('tpl-msg').textContent = ''; }
+        }
+        setWmsImportLock(true);
+        renderImportMatching();
+        setImportStep(2);
+        showView('import');
+        loadImportTemplates();
+        toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''} — check the matching, then import`);
+    }
+
+    /** WMS pulls are add-new-only: the "update existing" choice is locked off. */
+    function setWmsImportLock(on) {
+        imp.fromWms = on;
+        const up = document.querySelector('input[name=imp-mode][value=upsert]');
+        const ins = document.querySelector('input[name=imp-mode][value=insertOnly]');
+        if (on) ins.checked = true;
+        up.disabled = on;
+        up.closest('label').classList.toggle('locked', on);
+        $('imp-wms-note').classList.toggle('hidden', !on);
     }
 
     // ===================================================================================
     // Start
     // ===================================================================================
     applyWarehouseLabel();
-    if (currentKey()) { loadOrders(); loadApiStatus(); }
+    if (currentKey()) { loadOrders(); loadApiStatus(); wmsLoad(); }
     if (!currentKey() || !userName) showSignIn();
     setInterval(() => { if (currentView === 'orders' && currentKey() && !document.hidden) loadOrders(); }, REFRESH_MS);
 </script>
