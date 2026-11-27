@@ -100,6 +100,7 @@
         }
         /* While an order is located, everything else fades back */
         body.order-located .board-card:not(.order-highlight-ring) { opacity: 0.28; filter: grayscale(0.6); transition: opacity 0.2s; }
+        .lane-search-hit { box-shadow: 0 0 0 3px #0ea5e9, 0 0 16px 2px rgba(14, 165, 233, 0.35); border-color: #0ea5e9 !important; }
         body.order-located .lane-has-located { box-shadow: 0 0 0 3px #f59e0b, 0 0 22px 4px rgba(245, 158, 11, 0.45); border-color: #f59e0b !important; }
         @media (prefers-reduced-motion: reduce) { .order-highlight-ring { animation: none; box-shadow: 0 0 0 4px #f59e0b, 0 0 18px 6px rgba(245, 158, 11, 0.6); } }
 
@@ -430,8 +431,9 @@
                         type="text"
                         id="search-filter-input"
                         oninput="handleSearchFilter(this.value)"
-                        placeholder="Search order, pallet, lane..."
-                        class="w-36 sm:w-44 pl-7 pr-6 py-1 bg-slate-100 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white"
+                        placeholder="Search order, pallet, location (S55, N09…)"
+                        title="Type a location (S55, s5 = S50–S59, N09, W06.7) to show those lanes, or an order / pallet / carrier"
+                        class="w-44 sm:w-56 pl-7 pr-6 py-1 bg-slate-100 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white"
                     >
                     <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
                     <button
@@ -3551,6 +3553,12 @@
 
             const searchActive = Boolean(q || carrierFilter || filterDoubleStackedOnly);
             let lanesShown = 0;
+            // Location search: "S55", "s5" (S50–S59), "N09", "w06.7", "n0915" — matched from the start of the name
+            const laneKey = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const qLane = laneKey(q);
+            const laneNameHit = name => Boolean(qLane) && (/[a-z]/.test(qLane)
+                ? (String(name || '').toLowerCase().startsWith(q) || laneKey(name).startsWith(qLane))
+                : laneKey(name).replace(/^[a-z]+/, '') === qLane);   // just the number: "55" → S55
             board.innerHTML = appState.columns.map(col => {
                 const colPallets = appState.pallets.filter(p => p.columnId === col.id);
                 const pairMap = computeDoubleStackPairMap(colPallets);
@@ -3578,12 +3586,14 @@
                     ? 'text-emerald-700 hover:text-emerald-950 p-0.5 rounded hover:bg-emerald-300/70 cursor-pointer'
                     : 'text-slate-400 hover:text-white p-0.5 rounded hover:bg-slate-800 cursor-pointer';
 
+                // A lane found by its name shows all of its pallets (empty lanes too)
+                const laneHit = laneNameHit(col.name);
                 const visiblePallets = colPallets.filter(p => {
                     if (filterDoubleStackedOnly && !p.doubleStacked) return false;
                     if (carrierFilter && String(p.carrier || '').trim().toLowerCase() !== carrierFilter) {
                         return false;
                     }
-                    if (!q) return true;
+                    if (!q || laneHit) return true;
                     const stackKw = p.doubleStacked ? '2x double stack' : '1x single';
                     const hay = `${p.slp} ${p.orderNumber} ${p.carrier || ''} ${p.destination || ''} ${p.dockNumber || ''} ${p.notes || ''} ${col.name} ${stackKw}`.toLowerCase();
                     return hay.includes(q);
@@ -3591,13 +3601,13 @@
 
                 const isFiltering = Boolean(q || carrierFilter || filterDoubleStackedOnly);
                 // While searching, only lanes with a match are shown (or the lane itself, e.g. "S52")
-                const laneNameMatches = Boolean(q) && !carrierFilter && !filterDoubleStackedOnly
-                    && String(col.name || '').toLowerCase() === q;
+                const laneNameMatches = laneHit && !carrierFilter && !filterDoubleStackedOnly;
                 if (isFiltering && visiblePallets.length === 0 && !laneNameMatches) return '';
                 lanesShown++;
+                const filteringCards = isFiltering && !laneNameMatches;   // a lane found by name isn't "no match" when empty
                 const cardsHtml = appState.cardGroupMode === 'grouped'
-                    ? renderGroupedOrderCardsForColumn(visiblePallets, orderSlpMap, isFiltering, pairMap)
-                    : renderIndividualPalletCardsForColumn(visiblePallets, orderSlpMap, isFiltering, pairMap);
+                    ? renderGroupedOrderCardsForColumn(visiblePallets, orderSlpMap, filteringCards, pairMap)
+                    : renderIndividualPalletCardsForColumn(visiblePallets, orderSlpMap, filteringCards, pairMap);
 
                 const colWidthStyle = appState.layoutMode === 'row'
                     ? `style="min-width:${appState.columnWidth}px; width:${appState.columnWidth}px;"`
@@ -3611,7 +3621,7 @@
                         ondragover="handleColumnDragOver(event, ${jsArg(col.id)})"
                         ondragleave="handleColumnDragLeave(event, ${jsArg(col.id)})"
                         ondrop="handleColumnDrop(event, ${jsArg(col.id)})"
-                        class="bg-white border ${isLowSpace ? 'border-emerald-400' : 'border-slate-300'} ${highlightedOrderNumber && colPallets.some(p => normalizeOrderNumber(p.orderNumber) === highlightedOrderNumber) ? 'lane-has-located' : ''} rounded-xl shadow-xs flex flex-col overflow-hidden transition-all min-h-[210px]"
+                        class="bg-white border ${isLowSpace ? 'border-emerald-400' : 'border-slate-300'} ${highlightedOrderNumber && colPallets.some(p => normalizeOrderNumber(p.orderNumber) === highlightedOrderNumber) ? 'lane-has-located' : ''} ${laneHit ? 'lane-search-hit' : ''} rounded-xl shadow-xs flex flex-col overflow-hidden transition-all min-h-[210px]"
                     >
                         <!-- Location Card Header -->
                         <div class="${headerBarClass} px-2.5 py-1.5 flex items-center justify-between gap-1 shrink-0 transition-colors">

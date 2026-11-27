@@ -187,6 +187,15 @@ Open a lane's settings (the sliders icon) and tick **Small parcel lane**. The la
 - **Consolidate:** leaves small parcel pallets and parcel lanes alone (nothing is moved out of or into them).
 - **Live dashboard:** parcel lanes have a violet top bar and a **PCL** tag in place of the count. **USPS** and **DHL** have their own block to the left of N09. Add them in the staging app with exactly those names (and tick Small parcel lane); until then they show dimmed.
 
+## Search by location
+
+The board's search box also finds **locations**. Type a lane name, or the start of one, to show just those lanes with all their pallets, empty lanes included. Each lane found is outlined in blue.
+
+- `S55`, or just `55`, shows lane S55.
+- `s5` shows S50–S59.
+- `N09` shows every N09 location; `w06.7` shows W06.70–W06.79.
+- Order #, pallet, carrier and dock searches work as before.
+
 ## Locate
 
 **Locate** (in Alerts, Consolidate, or a card's order chip) makes the order's cards glow amber and lifts them above the rest, outlines its lanes, and fades every other card. Clear it with the **×** on the "Highlighted Order" chip.
