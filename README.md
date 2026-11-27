@@ -185,6 +185,7 @@ Open a lane's settings (the sliders icon) and tick **Small parcel lane**. The la
 - When a big shipment is spread over several lanes, a regular order never spills into a parcel lane. You can still pick a parcel lane yourself.
 - **Find Space:** with an order typed in, parcel lanes only show for small parcel orders. With no order, they show last, marked "Small parcel only".
 - **Consolidate:** leaves small parcel pallets and parcel lanes alone (nothing is moved out of or into them).
+- **Live dashboard:** parcel lanes have a violet top bar and a **PCL** tag in place of the count. **USPS** and **DHL1** have their own block to the left of N09. Add them in the staging app with exactly those names (and tick Small parcel lane); until then they show dimmed.
 
 ## Locate
 
