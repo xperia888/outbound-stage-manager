@@ -85,7 +85,7 @@ http.createServer((req, res) => {
     if (req.method === 'GET' && req.url.startsWith('/dump')) {
         const out = {};
         sheets.forEach((s, name) => { out[name] = s.rows.map(r => (r || []).map(v => (v instanceof Date ? v.toISOString() : v))); });
-        res.writeHead(200, cors); res.end(JSON.stringify({ sheets: out, requests: requestLog }));
+        res.writeHead(200, cors); res.end(JSON.stringify({ sheets: out, requests: requestLog, props: PROPS }));
         return;
     }
     let body = '';

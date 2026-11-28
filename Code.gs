@@ -53,10 +53,10 @@ WAREHOUSES_.TEST.wmsPullPrefix = 'WMS_PULL_TEST';
 const ROLE_FUNCTIONS_ = {
   floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
-    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers'],
+    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut'],
   cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
-    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers'],
+    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut'],
   api: ['listOrders', 'upsertOrders']
 };
 let ACTIVE_WH_ = WAREHOUSES_.ONT; // set per request by api(); each request runs on its own
@@ -164,6 +164,8 @@ function runRequest_(req, role) {
     case 'wmsPullSaveConfig': return wmsPullSaveConfig_(args[0], args[1], args[2]);
     case 'wmsPullFetch': return wmsPullFetch_(args[0]);
     case 'wmsFillPickers': return wmsFillPickers_(args[0]);
+    case 'wmsLogin': return wmsLogin_(args[0], args[1]);
+    case 'wmsSignOut': return wmsSignOut_();
     case 'setOrderStatus': return setOrderStatus_(args[0], args[1], args[2]);
     case 'orderProgress': return orderProgress_();
     case 'intakeStatus': return intakeStatus_(role);
@@ -1007,6 +1009,7 @@ const WMS_PULL_KEEP_BACKUPS_ = 3;
 const WMS_PULL_FIELDS_ = ['name', 'url', 'method', 'body', 'auth', 'headerName', 'username', 'queryName', 'tokenUrl', 'clientId', 'scope',
   'extraHeaders', 'listPath', 'paging', 'pageParam', 'sizeParam', 'pageSize', 'firstPage', 'maxPages', 'lookbackDays', 'skipField', 'skipValues',
   // Picker from pick tasks (same sign-in): task list address + body, and the fields that link them
+  'loginUrl', 'loginBody', 'tokenPath',
   'taskUrl', 'taskBody', 'taskPageSize', 'taskType', 'taskGroupField', 'groupField', 'pickerField', 'pickerIdField', 'orderKeyField'];
 
 function wmsPullProps_() {
@@ -1028,7 +1031,8 @@ function wmsPullGetConfig_() {
     ok: true,
     config: readWmsPullConfig_(),
     hasSecret: Boolean(p.props.getProperty(p.secret)),
-    lastPullAt: p.props.getProperty(p.last) || ''
+    lastPullAt: p.props.getProperty(p.last) || '',
+    login: (s => (s ? { user: s.user, at: s.at, expires: s.expires } : null))(wmsLoginSession_())
   };
 }
 
@@ -1039,12 +1043,17 @@ function wmsPullSaveConfig_(config, secret, options) {
   WMS_PULL_FIELDS_.forEach(k => { if (c[k] != null && c[k] !== '') clean[k] = String(c[k]).slice(0, k === 'body' || k === 'extraHeaders' ? 4000 : 500); });
   if (clean.url && !/^https:\/\//i.test(clean.url)) return { ok: false, error: 'The API address must start with https://' };
   if (clean.tokenUrl && !/^https:\/\//i.test(clean.tokenUrl)) return { ok: false, error: 'The token address must start with https://' };
+  if (clean.loginUrl && !/^https:\/\//i.test(clean.loginUrl)) return { ok: false, error: 'The WMS login address must start with https://' };
   const p = wmsPullProps_();
+  const before = readWmsPullConfig_();
   p.props.setProperty(p.config, JSON.stringify(clean));
-  const sec = secret == null ? '' : String(secret);
+  const sec = secret == null || clean.auth === 'login' ? '' : String(secret);   // WMS login: the password is never stored
   if (options && options.clearSecret) p.props.deleteProperty(p.secret);
   else if (sec.trim()) p.props.setProperty(p.secret, sec.trim());
-  try { p.props.deleteProperty(p.token); } catch (e) { /* no cached token */ }
+  // Keep a WMS sign-in while the same account signs in at the same address; anything else drops the saved token
+  const keepLogin = clean.auth === 'login' && before.auth === 'login' && clean.loginUrl === before.loginUrl
+    && String(clean.username || '').trim() === String(before.username || '').trim();
+  if (!keepLogin) { try { p.props.deleteProperty(p.token); } catch (e) { /* no cached token */ } }
   return wmsPullGetConfig_();
 }
 
@@ -1071,7 +1080,122 @@ function wmsPullHeaders_(cfg, secret) {
   else if (auth === 'bearer') headers.Authorization = 'Bearer ' + secret;
   else if (auth === 'basic') headers.Authorization = 'Basic ' + Utilities.base64Encode(String(cfg.username || '') + ':' + secret);
   else if (auth === 'oauth2') headers.Authorization = 'Bearer ' + wmsPullOAuthToken_(cfg, secret);
+  else if (auth === 'login') {
+    const sess = wmsLoginSession_();
+    if (!sess) throw new Error('Sign in to the WMS first (API Connector → Sign in to WMS)');
+    headers.Authorization = 'Bearer ' + sess.token;
+  }
   return headers;
+}
+
+/**
+ * WMS login API (POST {BASE}/api/login {username, password, client}): exchanges the user's WMS username + password
+ * for a Bearer token. The password is passed straight to the WMS and never stored or logged; only the token is
+ * kept (Script Properties, server side — never sent to the browser). A 401 later = token expired → sign in again.
+ * Failed sign-ins are limited (5 per 15 minutes) so a wrong password can't lock the WMS account.
+ */
+const WMS_LOGIN_MAX_FAILS_ = 5;
+const WMS_LOGIN_FAIL_WINDOW_MS_ = 15 * 60000;
+
+function wmsLogin_(username, password) {
+  const cfg = readWmsPullConfig_();
+  const p = wmsPullProps_();
+  const user = String(username || '').trim();
+  const pw = password == null ? '' : String(password);
+  if (!cfg.loginUrl) return { ok: false, error: 'Enter and save the WMS login address first' };
+  if (!user || !pw) return { ok: false, error: 'Enter the WMS username and password' };
+  const failKey = p.config.replace('_CONFIG', '_LOGIN_FAILS');
+  let fails = { n: 0, since: Date.now() };
+  try { fails = JSON.parse(p.props.getProperty(failKey) || 'null') || fails; } catch (e) { /* new window */ }
+  if (Date.now() - fails.since > WMS_LOGIN_FAIL_WINDOW_MS_) fails = { n: 0, since: Date.now() };
+  if (fails.n >= WMS_LOGIN_MAX_FAILS_) {
+    return { ok: false, error: 'Too many failed WMS sign-ins — wait ' + Math.ceil((fails.since + WMS_LOGIN_FAIL_WINDOW_MS_ - Date.now()) / 60000) + ' minute(s) so the WMS account is not locked' };
+  }
+  const fail = err => {
+    fails.n++;
+    p.props.setProperty(failKey, JSON.stringify(fails));
+    return { ok: false, error: err };
+  };
+  const jsonText = v => JSON.stringify(String(v)).slice(1, -1);   // safe inside a JSON string
+  const body = String(cfg.loginBody || '{"username":"{{username}}","password":"{{password}}","client":"web_client"}')
+    .replace(/\{\{username\}\}/g, jsonText(user)).replace(/\{\{password\}\}/g, jsonText(pw));
+  let resp;
+  try {
+    resp = UrlFetchApp.fetch(cfg.loginUrl, { method: 'post', contentType: 'application/json', payload: body,
+      headers: { Accept: 'application/json' }, muteHttpExceptions: true, followRedirects: true });
+  } catch (e) {
+    return { ok: false, error: 'Cannot reach the WMS login: ' + String(e && e.message || e).slice(0, 160) };
+  }
+  const code = resp.getResponseCode();
+  let data = null;
+  try { data = JSON.parse(resp.getContentText()); } catch (e) { data = null; }
+  // The WMS's own message, if any (message → msg → errorMessage)
+  const msg = data && typeof data === 'object' ? (data.message || data.msg || data.errorMessage || '') : '';
+  const said = msg ? ': ' + String(msg).slice(0, 160) : '';
+  if ([400, 401, 403, 422].indexOf(code) !== -1 || (code < 300 && data && data.success === false)) {
+    return fail('The WMS sign-in failed' + (code >= 400 ? ' (HTTP ' + code + ')' : '') + said + '. Check the username and password.');
+  }
+  if (code >= 500) return { ok: false, error: 'The WMS server had an error at sign-in (HTTP ' + code + ')' + said };
+  if (code >= 400) return { ok: false, error: 'The WMS sign-in answered HTTP ' + code + said };
+  if (data == null) return { ok: false, error: 'The WMS sign-in did not answer with JSON' };
+  const token = wmsFindToken_(data, cfg.tokenPath);
+  if (!token) {
+    // Field names only — never their values
+    const names = [];
+    const walk = (o, pre, d) => { if (!o || typeof o !== 'object' || d > 3) return; Object.keys(o).forEach(k => { names.push(pre + k); walk(o[k], pre + k + '.', d + 1); }); };
+    walk(data, '', 0);
+    return { ok: false, error: 'Signed in, but no token was found. The answer has these fields: ' + names.slice(0, 40).join(', ') + ' — enter which one holds the token in "Where the token is".' };
+  }
+  const ttl = Number(wmsFindKey_(data, ['expires_in', 'expiresIn'])) || 0;
+  p.props.setProperty(p.token, JSON.stringify({ token: token, user: user, at: Date.now(), expires: ttl ? Date.now() + ttl * 1000 : 0 }));
+  p.props.deleteProperty(failKey);
+  // Remember who signed in (not the password)
+  cfg.username = user;
+  p.props.setProperty(p.config, JSON.stringify(cfg));
+  return wmsPullGetConfig_();
+}
+
+function wmsSignOut_() {
+  const p = wmsPullProps_();
+  p.props.deleteProperty(p.token);
+  return wmsPullGetConfig_();
+}
+
+/** The saved WMS sign-in, or null (none / expired). */
+function wmsLoginSession_() {
+  const p = wmsPullProps_();
+  try {
+    const s = JSON.parse(p.props.getProperty(p.token) || 'null');
+    if (s && s.token && s.user && (!s.expires || s.expires > Date.now() + 30000)) return s;
+  } catch (e) { /* none */ }
+  return null;
+}
+
+function wmsFindKey_(o, names, depth) {
+  if (!o || typeof o !== 'object' || (depth || 0) > 4) return null;
+  for (const n of names) if (o[n] != null && typeof o[n] !== 'object') return o[n];
+  for (const k of Object.keys(o)) { const f = wmsFindKey_(o[k], names, (depth || 0) + 1); if (f != null) return f; }
+  return null;
+}
+
+/**
+ * The token in the login answer: tokenPath if given, else the first non-empty string at the paths the
+ * WMS login spec lists (in its order), else "data" itself when it is a long string. A leading "Bearer " is removed.
+ */
+const WMS_TOKEN_PATHS_ = ['token', 'access_token', 'accessToken', 'jwt', 'id_token', 'data.token', 'data.access_token',
+  'data.accessToken', 'data.jwt', 'result.token', 'result.access_token', 'result.accessToken', 'data.user.token'];
+function wmsFindToken_(data, tokenPath) {
+  const at = path => {
+    let node = data;
+    String(path).split('.').filter(Boolean).forEach(k => { node = node == null || typeof node !== 'object' ? null : node[k]; });
+    return typeof node === 'string' && node.trim() ? node.trim() : null;
+  };
+  let t = tokenPath ? at(tokenPath) : null;
+  if (!t && !tokenPath) {
+    for (const path of WMS_TOKEN_PATHS_) { t = at(path); if (t) break; }
+    if (!t && data && typeof data.data === 'string' && data.data.length >= 20) t = data.data.trim();
+  }
+  return t ? t.replace(/^Bearer\s+/i, '') : null;
 }
 
 /** OAuth2 client credentials: client id + secret → access token (kept until it expires). */
@@ -1157,6 +1281,11 @@ function wmsPullRequest_(url, cfg, secret, bodyText) {
   if (method === 'post' && (bodyText || cfg.body)) { opt.payload = bodyText || wmsPullFill_(cfg.body, cfg); opt.contentType = 'application/json'; }
   const resp = UrlFetchApp.fetch(fullUrl, opt);
   const code = resp.getResponseCode();
+  if (code === 401 && cfg.auth === 'login') {
+    // Token expired: drop it and ask for a new sign-in (the password is never kept, so no silent re-login)
+    wmsSignOut_();
+    throw new Error('The WMS sign-in has expired — press "Sign in to WMS" again');
+  }
   const text = resp.getContentText();
   if (code === 401 || code === 403) throw new Error('The WMS refused the sign-in (HTTP ' + code + '). Check the key / password and the sign-in type.');
   if (code >= 400) throw new Error('The WMS answered HTTP ' + code + ': ' + String(text || '').replace(/\s+/g, ' ').slice(0, 200));
@@ -1173,7 +1302,7 @@ function wmsPullFetch_(options) {
   if (!cfg.url) return { ok: false, error: 'Enter and save the WMS API address first' };
   const p = wmsPullProps_();
   const secret = p.props.getProperty(p.secret) || '';
-  if ((cfg.auth || 'none') !== 'none' && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
+  if (!['none', 'login'].includes(cfg.auth || 'none') && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
   try {
     const got = wmsPullRecords_(cfg, secret, opts);
     const pick = cfg.taskUrl ? wmsAddPickers_(cfg, secret, got.records) : null;
@@ -1298,7 +1427,7 @@ function wmsFillPickers_(options) {
   if (!cfg.url || !cfg.taskUrl) return { ok: false, error: 'Enter and save the WMS API and the task API addresses first' };
   const p = wmsPullProps_();
   const secret = p.props.getProperty(p.secret) || '';
-  if ((cfg.auth || 'none') !== 'none' && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
+  if (!['none', 'login'].includes(cfg.auth || 'none') && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
   let got, stats;
   try {
     got = wmsPullRecords_(cfg, secret, { noSkip: true });

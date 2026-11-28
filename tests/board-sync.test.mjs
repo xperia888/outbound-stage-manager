@@ -1245,3 +1245,54 @@ test('WMS fill pickers: fills ONLY blank Pickers, only the Picker cell; lists fi
     assert.equal(call('wmsFillPickers', [{ apply: true }], 'wms-key-1').ok, false);
 });
 
+
+test('WMS login: signs in with username + password, keeps only the token, sends it as Bearer', () => {
+    const seen = [];
+    const { call, props } = wmsGs((url, o) => {
+        seen.push({ url, headers: o.headers, payload: o.payload });
+        if (url.endsWith('/api/login')) {
+            const b = JSON.parse(o.payload);
+            if (b.password !== 'p"w\\1' || b.client !== 'web_client') return { code: 401, body: { success: false, msg: 'Wrong password' } };
+            return { code: 200, body: { success: true, data: { user: { token: 'Bearer tok-abc' } } } };
+        }
+        if (o.headers.Authorization !== 'Bearer tok-abc') return { code: 401, body: {} };
+        return { code: 200, body: [{ outbound_no: 'OB-1' }] };
+    });
+    const cfg = { url: 'https://w.example.com/api/outbound/query', method: 'POST', auth: 'login', username: 'jli@ongfs.com',
+        loginUrl: 'https://w.example.com/api/login', loginBody: '{"username":"{{username}}","password":"{{password}}","client":"web_client"}' };
+    // The password is never saved with the settings
+    call('wmsPullSaveConfig', [cfg, 'should-not-save']);
+    assert.equal(props.WMS_PULL_SECRET, undefined);
+    assert.match(call('wmsPullFetch', [{ test: true }]).error, /Sign in to the WMS first/);
+    // Wrong password: the WMS's own message is shown
+    assert.match(call('wmsLogin', ['jli@ongfs.com', 'bad']).error, /sign-in failed \(HTTP 401\): Wrong password/);
+    // Right password (JSON-escaped): the token is found at data.user.token and "Bearer " removed
+    const ok = call('wmsLogin', ['jli@ongfs.com', 'p"w\\1']);
+    assert.equal(ok.ok, true, ok.error);
+    assert.equal(ok.login.user, 'jli@ongfs.com');
+    assert.equal(JSON.stringify(ok).includes('tok-abc'), false, 'the token never goes to the browser');
+    assert.equal(Object.values(props).some(v => String(v).includes('p"w')), false, 'the password is never stored');
+    assert.equal(seen.at(-1).headers.Authorization, undefined, 'no Authorization header on the login call');
+    const r = call('wmsPullFetch', [{ test: true }]);
+    assert.equal(r.ok, true, r.error);
+    assert.equal(seen.at(-1).headers.Authorization, 'Bearer tok-abc');
+    // Saving the same settings keeps the sign-in; a 401 later signs out and asks to sign in again
+    call('wmsPullSaveConfig', [cfg, '']);
+    assert.ok(call('wmsPullGetConfig', []).login);
+    props.WMS_PULL_TOKEN = JSON.stringify({ token: 'old', user: 'jli@ongfs.com', at: 1, expires: 0 });
+    assert.match(call('wmsPullFetch', [{ test: true }]).error, /sign-in has expired/);
+    assert.equal(call('wmsPullGetConfig', []).login, null);
+    assert.equal(call('wmsSignOut', []).login, null);
+});
+
+test('WMS login: no token → lists field names only; failed sign-ins are limited', () => {
+    let answer = { code: 200, body: { success: true, data: { sessionKey: 'secret-value-1' } } };
+    const { call } = wmsGs(() => answer);
+    call('wmsPullSaveConfig', [{ url: 'https://w.example.com/q', auth: 'login', loginUrl: 'https://w.example.com/api/login' }]);
+    const e = call('wmsLogin', ['u', 'p']).error;
+    assert.match(e, /fields: success, data, data\.sessionKey/);
+    assert.equal(e.includes('secret-value-1'), false, 'never shows values');
+    answer = { code: 200, body: { success: false, message: 'Account locked' } };
+    for (let i = 0; i < 5; i++) assert.match(call('wmsLogin', ['u', 'p']).error, /Account locked/);
+    assert.match(call('wmsLogin', ['u', 'p']).error, /Too many failed WMS sign-ins/);
+});
