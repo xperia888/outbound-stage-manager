@@ -205,7 +205,7 @@
                         <h1 class="text-xs sm:text-sm md:text-base font-extrabold tracking-tight leading-none truncate">
                             Outbound Pallet Staging
                         </h1>
-                        <span id="app-version-badge" class="text-[10px] font-mono-code font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded" title="App version">v1.61</span>
+                        <span id="app-version-badge" class="text-[10px] font-mono-code font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded" title="App version">v1.62</span>
                         <button
                             type="button"
                             id="cloud-sync-pill"
@@ -1676,6 +1676,10 @@
                 </div>
             </div>
             <div class="p-4 space-y-3 max-h-[80vh] overflow-y-auto">
+                <label class="flex items-start gap-2 text-xs font-bold text-slate-700 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2 cursor-pointer select-none">
+                    <input type="checkbox" id="ship-today-parcel" class="mt-0.5 w-4 h-4 accent-violet-600 cursor-pointer" onchange="setShipTodayParcel(this.checked)">
+                    <span>Small parcel orders — also remind me of <b>late</b> small parcel orders (SPK… / P numbers, drop ship, UPS · FedEx · USPS · DHL) that haven't shipped<span class="block font-normal text-slate-500">Saved on this device. Today's small parcel orders are not listed.</span></span>
+                </label>
                 <div id="ship-today-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
                 <div id="ship-today-list" class="space-y-1.5"></div>
             </div>
@@ -1968,7 +1972,7 @@
          * 1. STATE & CONSTANTS
          * =========================================================================
          */
-        const APP_VERSION = 'v1.61';   // raised with every change; shown in the header
+        const APP_VERSION = 'v1.62';   // raised with every change; shown in the header
 
         /**
          * Warehouses. Each has its own board, access code, scan queue and sheet tabs.
@@ -4555,6 +4559,16 @@
         }
 
         /** [{ order, late, floor, docks, lanes, shippedCount, status }] — status: late / notStaged / onFloor / atDock / shipped */
+        // "Small parcel orders" box in Ship Today: also list late small parcel orders (saved on this device)
+        const SHIP_TODAY_PARCEL_KEY = 'outbound_ship_today_parcel_late';
+        let includeParcelLate = (() => { try { return localStorage.getItem(SHIP_TODAY_PARCEL_KEY) === '1'; } catch (e) { return false; } })();
+        function setShipTodayParcel(on) {
+            includeParcelLate = Boolean(on);
+            try { localStorage.setItem(SHIP_TODAY_PARCEL_KEY, includeParcelLate ? '1' : '0'); } catch (e) { /* this session only */ }
+            updateShipTodayBadge();
+            renderShipTodayModal();
+        }
+
         function computeShipToday() {
             const now = new Date();
             const today = shipDayKey(`${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`);
@@ -4567,7 +4581,9 @@
                 const ono = normalizeOrderNumber(o.orderNumber);
                 const day = shipDayKey(o.shipDate);
                 if (!ono || !day || day > today) return;
-                if (isSmallParcelOrder(o, ono)) return;   // Ship Today is for regular orders only
+                // Ship Today is for regular orders; late small parcel orders only when the box is ticked
+                const parcel = isSmallParcelOrder(o, ono);
+                if (parcel && (!includeParcelLate || day === today)) return;
                 const floor = floorBy[ono] || [];
                 const shippedCount = shippedBy[ono] || 0;
                 const done = shippedCount > 0 && floor.length === 0;
@@ -4575,9 +4591,9 @@
                 const docks = [...new Set(floor.map(p => String(p.dockNumber || '').trim()).filter(Boolean))];
                 const lanes = [...new Set(floor.map(p => { const c = appState.columns.find(x => x.id === p.columnId); return c ? c.name : ''; }).filter(Boolean))];
                 const status = done ? 'shipped' : floor.length === 0 ? 'notStaged' : docks.length ? 'atDock' : 'onFloor';
-                rows.push({ order: o, ono, day, late: day < today, floor, docks, lanes, shippedCount, status });
+                rows.push({ order: o, ono, day, late: day < today, parcel, floor, docks, lanes, shippedCount, status });
             });
-            const rank = r => (r.late ? 0 : { notStaged: 1, onFloor: 2, atDock: 3, shipped: 4 }[r.status]);
+            const rank = r => (r.late ? (r.parcel ? 0.5 : 0) : { notStaged: 1, onFloor: 2, atDock: 3, shipped: 4 }[r.status]);
             rows.sort((a, b) => rank(a) - rank(b) || a.ono.localeCompare(b.ono));
             return rows;
         }
@@ -4604,6 +4620,7 @@
             if (!modal) return;
             modal.classList.remove('hidden');
             modal.classList.add('flex');
+            document.getElementById('ship-today-parcel').checked = includeParcelLate;
             renderShipTodayModal();
             loadIntakeOrders({ force: true, onDone: renderShipTodayModal });
         }
@@ -4647,6 +4664,7 @@
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="font-mono-code font-extrabold text-sm text-slate-900">${escapeHtml(r.ono)}</span>
                             ${statusChip(r)}
+                            ${r.parcel ? '<span class="text-[10px] font-extrabold bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full">Small parcel</span>' : ''}
                             ${r.late ? `<span class="text-[11px] font-extrabold text-red-700">⚠ Was due ${escapeHtml(o.shipDate)}</span>` : ''}
                         </div>
                         <div class="text-[11px] text-slate-500 truncate">${escapeHtml(o.customer || '')}${o.carrier ? ' · ' + escapeHtml(o.carrier) : ''}${expected}${r.lanes.length ? ' · ' + escapeHtml(r.lanes.join(', ')) : ''}</div>
@@ -4655,7 +4673,7 @@
                 </div>`;
             }).join('') : `<div class="text-sm text-slate-500 py-6 text-center">${today.length ? '✓ All regular orders due today have shipped.' : 'No regular orders have today\'s ship / appointment date in Order Intake.'}</div>`;
             document.getElementById('ship-today-subtitle').textContent =
-                `Regular orders (small parcel not included) · ${today.length} due today · ${today.length - count('shipped')} still to ship · from Order Intake ship / appt date`;
+                `Regular orders${includeParcelLate ? ' + late small parcel' : ' (small parcel not included)'} · ${today.length} due today · ${today.length - count('shipped')} still to ship · from Order Intake ship / appt date`;
             if (window.lucide) lucide.createIcons();
         }
 

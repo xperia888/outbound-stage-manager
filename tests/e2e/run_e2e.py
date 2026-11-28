@@ -244,6 +244,23 @@ async def run_round(browser, wh, rnd, devices):
     badge_txt = await A.text_content('#header-ship-today-badge') or ''
     record(wh, rnd, 'Ship Today button shows the regular orders left and the late count', 'late' in badge_txt and '/' not in badge_txt, badge_txt)
 
+    # "Small parcel orders" box: also lists LATE small parcel orders (today's are still left out)
+    gas_call({'fn': 'upsertOrders', 'warehouse': wh, 'key': code, 'args': [[
+        {'orderNumber': f'SPK{tag}LATE', 'enteredBy': 'E2E', 'customer': 'Parcel Co', 'shipDate': (td - datetime.timedelta(days=2)).isoformat()}], {'source': 'Manual'}]})
+    await A.evaluate("loadIntakeOrders({ force: true })"); await A.wait_for_timeout(1500)
+    await A.click('#header-ship-today-btn'); await A.wait_for_timeout(1500)
+    listed = lambda: A.evaluate("[...document.querySelectorAll('#ship-today-list [data-ship-order]')].map(e => e.dataset.shipOrder)")
+    off = await listed()
+    await A.check('#ship-today-parcel'); await A.wait_for_timeout(300)
+    on = await listed()
+    parcel_row = await A.text_content(f'[data-ship-order="SPK{tag}LATE"]') if f'SPK{tag}LATE' in on else ''
+    record(wh, rnd, 'Ship Today "Small parcel orders" box adds late small parcel orders only (saved on this device)',
+           f'SPK{tag}LATE' not in off and f'SPK{tag}LATE' in on and f'SPK{tag}01' not in on and 'Small parcel' in parcel_row
+           and await A.evaluate("localStorage.getItem('outbound_ship_today_parcel_late')") == '1', [off, on])
+    await A.uncheck('#ship-today-parcel'); await A.wait_for_timeout(300)
+    record(wh, rnd, 'Ship Today: unticking hides them again', f'SPK{tag}LATE' not in await listed())
+    await A.evaluate("closeShipTodayModal()")
+
     # --- Scan Order window: order + carrier/destination + number of pallets ---------------------------
     await open_scan_window(A)
     await A.wait_for_timeout(200)
