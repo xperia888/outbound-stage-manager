@@ -2599,13 +2599,13 @@
             sortModel: [{ sort: 'asc', colId: 'created_by' }] }, null, 1),
         groupField: 'pickinglist_no_byproduct', taskGroupField: 'group_no', pickerField: 'assigned_to', pickerIdField: 'assigned_to_id', orderKeyField: 'outbound_no'
     };
-    // Matching for its fields: outbound_no is the DN number (order_no is the WMS's own OB… number)
+    // Matching for its fields: order_number = the DN number (outbound_no), or for small parcel the pick list number (SPK…)
     const ONUS_WMS_TEMPLATE = {
         name: 'ONUS WMS outbound (built-in)',
         template: { mode: 'insertOnly', defaults: { refType: 'PO#' }, mapping: {
-            orderNumber: ['outbound_no'], customer: ['owner_name'], cartons: ['ttl_box'], pallets: ['ttl_pallet'], carrier: ['carrier_name'],
+            orderNumber: ['order_number'], customer: ['owner_name'], cartons: ['ttl_box'], pallets: ['ttl_pallet'], carrier: ['carrier_name'],
             scac: ['scac'], proBol: ['bol_no'], reference: ['po_no'], orderType: ['outbound_type'], shipDate: ['ship_no_later'],
-            destination: ['consignee_city', 'consignee_state'], notes: ['outbound_note'], picker: ['picker_name'] } }
+            destination: ['consignee_city', 'consignee_state'], notes: ['parcel_dns', 'outbound_note'], picker: ['picker_name'] } }
     };
     $('wms-preset-btn').addEventListener('click', () => {
         Object.entries(WMS_FIELDS).forEach(([k, id]) => {
@@ -2714,7 +2714,7 @@
         if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read orders:</b> ${esc(r.error || 'No answer')}</div>`; return; }
         const keys = r.keys || [];
         const show = keys.slice(0, 8);
-        $('wms-test-out').innerHTML = `<div class="note ok"><b>Connected.</b> ${r.records.length} order(s) on the first page${r.skippedByRule ? ` (${r.skippedByRule} left out by your rule)` : ''} · ${keys.length} field(s).${pickerLine(r.pickers)} Nothing was saved.</div>
+        $('wms-test-out').innerHTML = `<div class="note ok"><b>Connected.</b> ${r.records.length} order(s) on the first page${r.skippedByRule ? ` (${r.skippedByRule} left out by your rule)` : ''} · ${keys.length} field(s).${parcelLine(r.parcel)}${pickerLine(r.pickers)} Nothing was saved.</div>
             <div class="wms-keys">${keys.slice(0, 60).map(k => `<span>${esc(k)}</span>`).join('')}${keys.length > 60 ? `<span>+${keys.length - 60} more</span>` : ''}</div>
             ${r.records.length ? `<div class="table-wrap"><table class="fit wms-sample"><thead><tr>${show.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead>
             <tbody>${r.records.slice(0, 3).map(rec => `<tr>${show.map(k => `<td class="w-mid">${esc(rec[k] == null ? '' : String(rec[k]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}`;
@@ -2746,7 +2746,7 @@
         loadSheet('WMS', 1);
         $('imp-file-name').textContent = imp.fileName;
         if (!applyBestTemplate()) {
-            if (imp.headers.includes('outbound_no') && imp.headers.includes('ttl_pallet')) applyTemplate(ONUS_WMS_TEMPLATE);
+            if (imp.headers.includes('order_number') && imp.headers.includes('ttl_pallet')) applyTemplate(ONUS_WMS_TEMPLATE);
             else { applyAutoMatch(true); $('tpl-msg').textContent = ''; }
         }
         setWmsImportLock(true);
@@ -2754,7 +2754,13 @@
         setImportStep(2);
         showView('import');
         loadImportTemplates();
-        toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''}${r.pickers ? `, ${r.pickers.matched} with a picker` : ''} — check the matching, then import`);
+        toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''}${r.pickers ? `, ${r.pickers.matched} with a picker` : ''}${r.parcel && r.parcel.parcelOrders ? `, ${r.parcel.parcelOrders} small parcel by pick list (SPK)` : ''} — check the matching, then import`);
+    }
+
+    /** Small parcel orders use the pick list number (SPK…) as the Order # */
+    function parcelLine(pc) {
+        if (!pc || !(pc.parcelOrders || pc.waitingForPickList || pc.alreadyAsDn)) return '';
+        return ` Small parcel: ${pc.parcelOrders} pick list order(s) (SPK…) from ${pc.parcelDns} DN(s)${pc.waitingForPickList ? `, ${pc.waitingForPickList} DN(s) waiting for a pick list (come in on a later pull)` : ''}${pc.alreadyAsDn ? `, ${pc.alreadyAsDn} pick list(s) left out — a DN on it is already in Order Intake` : ''}.`;
     }
 
     /** " · Pick tasks: 40 with a picker, 3 without a task, 1 to check" */

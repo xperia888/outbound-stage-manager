@@ -1296,3 +1296,37 @@ test('WMS login: no token → lists field names only; failed sign-ins are limite
     for (let i = 0; i < 5; i++) assert.match(call('wmsLogin', ['u', 'p']).error, /Account locked/);
     assert.match(call('wmsLogin', ['u', 'p']).error, /Too many failed WMS sign-ins/);
 });
+
+test('WMS pull: small parcel orders use the pick list number (SPK…) as Order #, regular orders the DN', () => {
+    const outbound = [
+        { outbound_no: 'DN100', pickinglist_no_byproduct: 'SPK7', carrier_name: 'UPS Ground', ttl_box: 3, ttl_pallet: 1, po_no: 'PO-1', ship_no_later: '2026-11-30', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN101', pickinglist_no_byproduct: 'SPK7', carrier_name: 'UPS Ground', ttl_box: '2', ttl_pallet: 0, po_no: 'PO-2', ship_no_later: '2026-11-28', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN102', pickinglist_no_byproduct: 'SPK8', carrier_name: 'Saia', ttl_box: 40, ttl_pallet: 4, outbound_status: 'ALLOCATED' },      // LTL: DN
+        { outbound_no: 'DN103', pickinglist_no_byproduct: 'SPK9', carrier_name: 'FedEx Freight', ttl_pallet: 2, outbound_status: 'ALLOCATED' },  // freight: DN
+        { outbound_no: 'DN104', pickinglist_no_byproduct: null, ship_method: 'USPS Priority', outbound_status: 'ALLOCATED' },   // no pick list yet: later
+        { outbound_no: 'DN105', pickinglist_no_byproduct: 'SPK10', carrier_name: 'DHL', outbound_status: 'ALLOCATED' },          // DN already in Order Intake
+        { outbound_no: 'DN106', pickinglist_no_byproduct: 'SPK11', carrier_name: 'FedEx', outbound_status: 'ALLOCATED' }
+    ];
+    const tasks = [{ type: 'PICKING', group_no: 'SPK7', assigned_to: 'Maria L' }, { type: 'PICKING', group_no: 'SPK11', assigned_to: 'Kim' }];
+    const { call, sheets } = wmsGs(onusFake(outbound, tasks));
+    call('upsertOrders', [[{ orderNumber: 'DN105', customer: 'Acme' }, { orderNumber: 'SPK11', customer: 'Acme' }], { enteredBy: 'Amy' }]);
+    call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
+    const r = call('wmsPullFetch', [{}]);
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(r.records.map(x => x.order_number), ['SPK7', 'DN102', 'DN103', 'SPK11']);
+    const spk7 = r.records[0];
+    assert.equal(spk7.parcel_dns, 'DNs: DN100, DN101');
+    assert.equal(spk7.ttl_box, 5);
+    assert.equal(spk7.ttl_pallet, 1);
+    assert.equal(spk7.po_no, 'PO-1, PO-2');
+    assert.equal(spk7.ship_no_later, '2026-11-28', 'earliest ship-by date');
+    assert.equal(spk7.picker_name, 'Maria L');
+    assert.equal(spk7.outbound_no, 'DN100', 'original fields kept');
+    assert.deepEqual(r.parcel, { parcelOrders: 2, parcelDns: 3, waitingForPickList: 1, alreadyAsDn: 1 });
+    assert.ok(r.keys.includes('order_number'));
+    // Fill missing pickers matches small parcel orders by their SPK number
+    const before = JSON.stringify(sheets.get('Orders').rows[1]);
+    const fill = call('wmsFillPickers', [{ apply: false }]);
+    assert.deepEqual(fill.fills, [{ orderNumber: 'SPK11', picker: 'Kim' }]);
+    assert.equal(JSON.stringify(sheets.get('Orders').rows[1]), before);
+});
