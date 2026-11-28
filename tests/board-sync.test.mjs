@@ -216,6 +216,7 @@ test('scan log: nothing is queued in Local Mode', () => {
 function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null, extraProps = {}, fetch = null } = {}) {
     const code = readFileSync(new URL('../Code.gs', import.meta.url), 'utf8');
     const sheets = new Map();
+    const fetchBatches = [];
     const makeSheet = () => {
         const rows = [];
         const range = (r, c, nr = 1, nc = 1) => ({
@@ -276,7 +277,9 @@ function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null
             fetch: (url, o) => {
                 const r = fetch ? fetch(url, o || {}) : { code: 500, body: 'no fake WMS' };
                 return { getResponseCode: () => r.code, getContentText: () => (typeof r.body === 'string' ? r.body : JSON.stringify(r.body)) };
-            }
+            },
+            // Requests sent together: logged as one batch
+            fetchAll: reqs => { fetchBatches.push(reqs.map(r => r.url)); return reqs.map(r => ctx.UrlFetchApp.fetch(r.url, r)); }
         },
         Utilities: { base64Encode: t => Buffer.from(String(t)).toString('base64'), formatDate: d => new Date(d).toISOString() },
         ContentService: {
@@ -288,7 +291,7 @@ function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null
     };
     vm.createContext(ctx);
     vm.runInContext(code, ctx);
-    return { ctx, sheets };
+    return { ctx, sheets, fetchBatches };
 }
 
 test('Code.gs logScanEvents writes one row per event and skips retried duplicates', () => {
@@ -1144,7 +1147,9 @@ test('WMS pull: ONUS style — POST body startRow/endRow, plain-array answer, SH
     assert.equal(r.ok, true, r.error);
     assert.deepEqual(r.records.map(x => x.outbound_no), ['DN0', 'DN2', 'DN3', 'DN4'], 'SHIPPED DN1 left out');
     assert.equal(r.skippedByRule, 1);
-    assert.deepEqual(bodies.map(b => [b.startRow, b.endRow]), [[0, 2], [2, 4], [4, 6], [6, 8]], 'keeps paging past a short page until an empty one');
+    // Pages are asked for 5 at a time; reading stops at the first empty one
+    assert.deepEqual(bodies.map(b => [b.startRow, b.endRow]), [[0, 2], [2, 4], [4, 6], [6, 8], [8, 10]], 'keeps paging past a short page until an empty one');
+    assert.equal(r.pages, 4, 'pages after the empty one are not used');
     assert.deepEqual(bodies[0].filterModel, {}, 'the rest of the body is sent as entered');
     assert.equal(r.records[0].po_no, '', 'null fields are kept as blanks');
 
@@ -1152,8 +1157,10 @@ test('WMS pull: ONUS style — POST body startRow/endRow, plain-array answer, SH
     let n = 0;
     const g2 = wmsGs(() => { n++; return { code: 200, body: rows.slice(0, 2) }; });
     g2.call('wmsPullSaveConfig', [{ url: 'https://x.example.com/q', method: 'POST', auth: 'bearer', paging: 'rows', pageSize: '2', body: '{}' }, 't']);
-    assert.equal(g2.call('wmsPullFetch', [{}]).records.length, 2);
-    assert.equal(n, 2, 'stopped when the page repeated');
+    const rep = g2.call('wmsPullFetch', [{}]);
+    assert.equal(rep.records.length, 2);
+    assert.equal(rep.pages, 2, 'stopped when the page repeated');
+    assert.equal(n, 5, 'one batch of 5 asked for, no more');
 });
 
 function onusFake(outbound, tasks, calls = []) {
@@ -1308,7 +1315,7 @@ test('WMS pull: small parcel orders use the pick list number (SPK…) as Order #
         { outbound_no: 'DN106', pickinglist_no_byproduct: 'SPK11', carrier_name: 'FedEx', outbound_status: 'ALLOCATED' }
     ];
     const tasks = ['SPK7', 'SPK8', 'SPK9', 'SPK10', 'SPK11'].map((g, i) => ({ type: 'PICKING', group_no: g, assigned_to: { SPK7: 'Maria L', SPK11: 'Kim' }[g] || null, created_at: '2026-11-2' + i + ' 09:00:00' }));
-    const { call, sheets } = wmsGs(onusFake(outbound, tasks));
+    const { call, sheets, fetchBatches } = wmsGs(onusFake(outbound, tasks));
     call('upsertOrders', [[{ orderNumber: 'DN105', customer: 'Acme' }, { orderNumber: 'SPK11', customer: 'Acme' }], { enteredBy: 'Amy' }]);
     call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
     const r = call('wmsPullFetch', [{}]);
@@ -1326,6 +1333,9 @@ test('WMS pull: small parcel orders use the pick list number (SPK…) as Order #
     assert.equal(r.pickers.notCommitted, 1, 'DN104 has no pick list = not committed yet');
     assert.equal(spk7.committed_at, '2026-11-20 09:00:00', 'release date = the pick list task created_at, unchanged');
     assert.ok(r.keys.includes('order_number'));
+    // The pick-task query goes out together with the first order pages, not after them
+    assert.ok(fetchBatches[0].some(u => u.includes('/task/')) && fetchBatches[0].some(u => u.includes('/outbound/')), JSON.stringify(fetchBatches[0]));
+    assert.equal(typeof r.seconds.total, 'number');
     // Fill missing pickers matches small parcel orders by their SPK number
     const before = JSON.stringify(sheets.get('Orders').rows[1]);
     const fill = call('wmsFillPickers', [{ apply: false }]);

@@ -882,7 +882,7 @@
     // ===================================================================================
     /** Same Apps Script web app as the staging board. */
     // Version of this page — raised with every change
-    const APP_VERSION = '1.51';
+    const APP_VERSION = '1.53';
     document.getElementById('app-ver').innerHTML = `<b>v${APP_VERSION}</b>`;
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
@@ -1031,9 +1031,10 @@
     }
 
     const CLOUD_TIMEOUT_MS = 30000;
-    async function cloud(fn, args = [], { key = null, warehouse = null } = {}) {
+    const WMS_TIMEOUT_MS = 6 * 60000;   // WMS reads can be slow; Apps Script stops a request after 6 minutes anyway
+    async function cloud(fn, args = [], { key = null, warehouse = null, timeout = CLOUD_TIMEOUT_MS } = {}) {
         const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
-        const timer = setTimeout(() => ctrl && ctrl.abort(), CLOUD_TIMEOUT_MS);
+        const timer = setTimeout(() => ctrl && ctrl.abort(), timeout);
         try {
             const res = await fetch(CLOUD_API_URL, {
                 method: 'POST',
@@ -1048,7 +1049,7 @@
             if (r && r.unauthorized && key == null && !r.forbidden) showSignIn('That code no longer works. Please sign in again.');
             return r || { ok: false, error: 'No answer' };
         } catch (e) {
-            return { ok: false, error: e && e.name === 'AbortError' ? 'The server took too long to answer' : 'Could not reach the server' };
+            return { ok: false, error: e && e.name === 'AbortError' ? `The server took too long to answer (more than ${Math.round(timeout / 1000)} s)` : 'Could not reach the server' };
         } finally {
             clearTimeout(timer);
         }
@@ -2700,7 +2701,7 @@
         if (!user || !pw) { toast('Enter your WMS username and password', true); (user ? $('wms-secret') : $('wms-username')).focus(); return; }
         if (!(await wmsSave(true))) return;
         $('wms-login-btn').disabled = true;
-        const r = await cloud('wmsLogin', [user, pw]);
+        const r = await cloud('wmsLogin', [user, pw], { timeout: 60000 });
         $('wms-login-btn').disabled = false;
         $('wms-secret').value = '';
         if (!r.ok) { toast(r.error || 'Could not sign in', true); return; }
@@ -2712,16 +2713,25 @@
         if (r.ok) { wmsApply(r); toast('Signed out of the WMS'); } else toast(r.error || 'Could not sign out', true);
     });
 
+    /** A WMS call with a longer wait and a running timer, so a slow WMS doesn't look stuck. */
+    async function wmsCall(fn, args, what) {
+        const t0 = Date.now();
+        const tick = () => { $('wms-test-out').innerHTML = `<div class="sub2">${esc(what)}… ${Math.round((Date.now() - t0) / 1000)} s — this can take a minute or two.</div>`; };
+        tick();
+        const iv = setInterval(tick, 1000);
+        try { return await cloud(fn, args, { timeout: WMS_TIMEOUT_MS }); } finally { clearInterval(iv); }
+    }
+    const secondsLine = r => (r && r.seconds ? ` <span class="sub2">(${r.seconds.total} s)</span>` : '');
+
     $('wms-test-btn').addEventListener('click', async () => {
         if (!(await wmsSave(true))) return;
-        $('wms-test-out').innerHTML = '<div class="sub2">Connecting to the WMS…</div>';
         $('wms-test-btn').disabled = true;
-        const r = await cloud('wmsPullFetch', [{ test: true }]);
+        const r = await wmsCall('wmsPullFetch', [{ test: true }], 'Connecting to the WMS');
         $('wms-test-btn').disabled = false;
         if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read orders:</b> ${esc(r.error || 'No answer')}</div>`; return; }
         const keys = r.keys || [];
         const show = keys.slice(0, 8);
-        $('wms-test-out').innerHTML = `<div class="note ok"><b>Connected.</b> ${r.records.length} order(s) on the first page${r.skippedByRule ? ` (${r.skippedByRule} left out by your rule)` : ''} · ${keys.length} field(s).${parcelLine(r.parcel)}${pickerLine(r.pickers)} Nothing was saved.</div>
+        $('wms-test-out').innerHTML = `<div class="note ok"><b>Connected.</b> ${r.records.length} order(s) on the first page${r.skippedByRule ? ` (${r.skippedByRule} left out by your rule)` : ''} · ${keys.length} field(s).${parcelLine(r.parcel)}${pickerLine(r.pickers)} Nothing was saved.${secondsLine(r)}</div>
             <div class="wms-keys">${keys.slice(0, 60).map(k => `<span>${esc(k)}</span>`).join('')}${keys.length > 60 ? `<span>+${keys.length - 60} more</span>` : ''}</div>
             ${r.records.length ? `<div class="table-wrap"><table class="fit wms-sample"><thead><tr>${show.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead>
             <tbody>${r.records.slice(0, 3).map(rec => `<tr>${show.map(k => `<td class="w-mid">${esc(rec[k] == null ? '' : String(rec[k]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}`;
@@ -2731,8 +2741,7 @@
         if (!(await ensureName())) return;
         if (!(await wmsSave(true))) return;
         $('wms-pull-btn').disabled = true;
-        $('wms-test-out').innerHTML = '<div class="sub2">Reading orders from the WMS…</div>';
-        const r = await cloud('wmsPullFetch', [{}]);
+        const r = await wmsCall('wmsPullFetch', [{}], 'Reading orders and pick tasks from the WMS');
         $('wms-pull-btn').disabled = false;
         if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read orders:</b> ${esc(r.error || 'No answer')}</div>`; return; }
         if (!r.records.length) { $('wms-test-out').innerHTML = '<div class="note">The WMS returned no orders for this period.</div>'; return; }
@@ -2780,8 +2789,7 @@
     $('wms-fill-btn').addEventListener('click', async () => {
         if (!(await wmsSave(true))) return;
         $('wms-fill-btn').disabled = true;
-        $('wms-test-out').innerHTML = '<div class="sub2">Reading orders and pick tasks from the WMS…</div>';
-        const r = await cloud('wmsFillPickers', [{ apply: false }]);
+        const r = await wmsCall('wmsFillPickers', [{ apply: false }], 'Reading orders and pick tasks from the WMS');
         $('wms-fill-btn').disabled = false;
         if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read pick tasks:</b> ${esc(r.error || 'No answer')}</div>`; return; }
         const n = r.fills.length;
@@ -2794,8 +2802,8 @@
         const go = $('wms-fill-go');
         if (go) go.addEventListener('click', async () => {
             go.disabled = true;
-            const a = await cloud('wmsFillPickers', [{ apply: true }]);
-            if (!a.ok) { toast(a.error || 'Could not fill pickers', true); go.disabled = false; return; }
+            const a = await wmsCall('wmsFillPickers', [{ apply: true }], 'Filling pickers');
+            if (!a.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not fill pickers:</b> ${esc(a.error || 'No answer')}</div>`; toast(a.error || 'Could not fill pickers', true); return; }
             $('wms-test-out').innerHTML = `<div class="note ok"><b>Filled ${a.fills.length} picker(s).</b> ${a.alreadySet} already had one and were left as they were.</div>`;
             toast(`Filled ${a.fills.length} picker(s)`);
             loadOrders();
