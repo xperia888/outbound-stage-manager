@@ -93,6 +93,15 @@
     .btn.dark:hover { background: var(--slate-800); }
     .btn.danger { color: var(--bad); border-color: #fca5a5; }
     .btn.danger:hover { background: var(--bad-soft); }
+    /* Bulk select / delete */
+    #orders-table:not(.selecting) .sel-col { display: none; }
+    #orders-table .sel-col { width: 34px; text-align: center; }
+    #orders-table .sel-col input { width: 17px; height: 17px; cursor: pointer; accent-color: var(--bad); }
+    #orders-table tr.selected td { background: var(--bad-soft); }
+    .bulk-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line); background: #fff7ed; }
+    .bulk-bar .spacer { flex: 1; }
+    .bulk-bar select { max-width: 380px; }
+    .btn.on { background: var(--ink); color: #fff; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .field label { display: block; font-size: 11.5px; font-weight: 700; color: var(--text-2); margin-bottom: 4px; }
     .field label .req { color: var(--bad); }
@@ -466,14 +475,23 @@
                     <span class="sub2" id="list-updated"></span>
                     <button type="button" class="btn" id="refresh-btn">↻ Refresh</button>
                     <button type="button" class="btn" id="export-btn">Export CSV</button>
+                    <button type="button" class="btn" id="select-btn" title="Select orders to delete (e.g. a batch imported by mistake)">☐ Select</button>
                     <button type="button" class="btn primary" id="new-btn">+ New Order</button>
                 </div>
+            </div>
+            <div class="bulk-bar hidden" id="bulk-bar">
+                <b id="bulk-count">0 selected</b>
+                <select id="bulk-batch" aria-label="Select an import batch"><option value="">Select an import batch…</option></select>
+                <button type="button" class="btn" id="bulk-clear">Clear</button>
+                <span class="spacer"></span>
+                <span class="sub2">Orders with pallets on the floor or shipped are never deleted. Deleted rows are kept in the “Deleted” tab of the sheet.</span>
+                <button type="button" class="btn danger" id="bulk-delete" disabled>Delete selected…</button>
             </div>
             <div class="table-wrap">
                 <table class="fit" id="orders-table">
                     <thead>
                         <tr>
-                            <th>Released</th><th>Order # / Type</th><th>Customer</th><th>Reference</th>
+                            <th class="sel-col"><input type="checkbox" id="sel-all" aria-label="Select all shown" title="Select all shown"></th><th>Released</th><th>Order # / Type</th><th>Customer</th><th>Reference</th>
                             <th class="num">Plt / Ctn</th><th>Floor</th><th>Stage Lane</th><th>Picker</th><th>Carrier / VRID</th><th>Ready / Ship</th>
                         </tr>
                     </thead>
@@ -901,7 +919,7 @@
     // ===================================================================================
     /** Same Apps Script web app as the staging board. */
     // Version of this page — raised with every change
-    const APP_VERSION = '1.58';
+    const APP_VERSION = '1.59';
     document.getElementById('app-ver').innerHTML = `<b>v${APP_VERSION}</b>`;
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
@@ -1332,7 +1350,7 @@
         const list = filteredOrders();
         const body = $('orders-body');
         if (!list.length) {
-            body.innerHTML = `<tr><td colspan="10" class="empty">${orders.length ? 'No orders match these filters.' : 'No orders yet. Use “+ New Order” or “Import from WMS”.'}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="11" class="empty">${orders.length ? 'No orders match these filters.' : 'No orders yet. Use “+ New Order” or “Import from WMS”.'}</td></tr>`;
         } else {
             body.innerHTML = list.map(o => {
                 const st = floorState(o);
@@ -1358,7 +1376,9 @@
                 const laneCell = sl.lanes.length
                     ? `<div class="lanes" title="${sl.live ? 'On the floor now' : 'Last staged in (shipped / removed)'}">${sl.lanes.map(l => `<span class="lane-chip${sl.live ? '' : ' past'}">${esc(l)}</span>`).join('')}</div>`
                     : '<span class="sub2">—</span>';
-                return `<tr data-order="${esc(o.orderNumber)}" class="${o.status === 'Cancelled' ? 'cancelled' : ''}">
+                const sel = selectedOrders.has(norm(o.orderNumber));
+                return `<tr data-order="${esc(o.orderNumber)}" class="${o.status === 'Cancelled' ? 'cancelled' : ''}${sel ? ' selected' : ''}">
+                    <td class="sel-col"><input type="checkbox" class="sel-row" data-ono="${esc(norm(o.orderNumber))}"${sel ? ' checked' : ''} aria-label="Select ${esc(o.orderNumber)}"></td>
                     <td class="nw">${releasedCell(o)}<div class="sub2">${esc(o.enteredBy || '')}</div></td>
                     <td class="nw"><span class="ono">${esc(o.orderNumber)}</span><button type="button" class="copy-btn" data-copy="${esc(o.orderNumber)}" title="Copy order #" aria-label="Copy ${esc(o.orderNumber)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><div class="sub2 nw">${esc(o.orderType || '')}${o.orderType && o.source ? ' · ' : ''}${esc(o.source || '')}</div></td>
                     <td class="w-cust"><div class="cust" title="${esc(o.customer)}">${esc(o.customer)}</div>${o.destination ? `<div class="sub2">${esc(o.destination)}</div>` : ''}</td>
@@ -1373,6 +1393,7 @@
             }).join('');
         }
         $('list-foot').textContent = `${list.length} of ${orders.length} order(s) shown. Floor progress comes from the staging board.`;
+        renderBulkBar(list);
         $('list-updated').textContent = lastLoadedAt ? `Updated ${new Date(lastLoadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : '';
     }
 
@@ -1394,7 +1415,90 @@
     }
     function fmtShort(ms) { const d = new Date(ms); return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`; }
 
+    // ===================================================================================
+    // Bulk select / delete (e.g. a batch imported by mistake)
+    // ===================================================================================
+    const selectedOrders = new Set();   // normalized order numbers
+    let selectMode = false;
+
+    /** Orders saved together (same Created time, person and source) = one import batch. Newest first. */
+    function importBatches() {
+        const by = new Map();
+        orders.forEach(o => {
+            if (!o.createdAt) return;
+            const who = o.createdBy || o.enteredBy || '';
+            const key = `${o.createdAt}|${who}|${o.source || ''}`;
+            const b = by.get(key) || { key, createdAt: o.createdAt, who, source: o.source || '', list: [] };
+            b.list.push(norm(o.orderNumber));
+            by.set(key, b);
+        });
+        return [...by.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 40);
+    }
+
+    function renderBulkBar(shown) {
+        $('orders-table').classList.toggle('selecting', selectMode);
+        $('bulk-bar').classList.toggle('hidden', !selectMode);
+        $('select-btn').classList.toggle('on', selectMode);
+        $('select-btn').textContent = selectMode ? '✓ Selecting' : '☐ Select';
+        if (!selectMode) return;
+        $('bulk-count').textContent = `${selectedOrders.size} selected`;
+        $('bulk-delete').disabled = !selectedOrders.size;
+        const vis = (shown || filteredOrders()).map(o => norm(o.orderNumber));
+        const all = $('sel-all');
+        all.checked = vis.length > 0 && vis.every(k => selectedOrders.has(k));
+        all.indeterminate = !all.checked && vis.some(k => selectedOrders.has(k));
+        const keep = $('bulk-batch').value;
+        $('bulk-batch').innerHTML = '<option value="">Select an import batch…</option>' + importBatches().map(b =>
+            `<option value="${esc(b.key)}">${esc(fmtShort(Date.parse(b.createdAt)))} · ${esc(b.who || '—')} · ${esc(b.source || '—')} · ${b.list.length} order${b.list.length === 1 ? '' : 's'}</option>`).join('');
+        $('bulk-batch').value = keep && [...$('bulk-batch').options].some(x => x.value === keep) ? keep : '';
+    }
+
+    $('select-btn').addEventListener('click', () => {
+        selectMode = !selectMode;
+        if (!selectMode) selectedOrders.clear();
+        renderOrders();
+    });
+    $('bulk-clear').addEventListener('click', () => { selectedOrders.clear(); $('bulk-batch').value = ''; renderOrders(); });
+    $('sel-all').addEventListener('change', e => {
+        filteredOrders().forEach(o => { const k = norm(o.orderNumber); if (e.target.checked) selectedOrders.add(k); else selectedOrders.delete(k); });
+        renderOrders();
+    });
+    $('bulk-batch').addEventListener('change', e => {
+        const b = importBatches().find(x => x.key === e.target.value);
+        if (!b) return;
+        selectedOrders.clear();
+        b.list.forEach(k => selectedOrders.add(k));
+        renderOrders();
+        toast(`${b.list.length} order(s) of that batch selected${b.list.some(k => !filteredOrders().some(o => norm(o.orderNumber) === k)) ? ' — some are hidden by the filters' : ''}`);
+    });
+    $('bulk-delete').addEventListener('click', async () => {
+        if (!(await ensureName())) return;
+        const list = [...selectedOrders];
+        if (!list.length) return;
+        const onFloor = list.filter(k => { const p = progress[k] || {}; return (p.staged || 0) + (p.shipped || 0) > 0; });
+        const typed = await promptBox(`Delete ${list.length} order${list.length === 1 ? '' : 's'}?`,
+            `This removes them from Order Intake.${onFloor.length ? ` ${onFloor.length} have pallets on the floor or shipped and will be kept.` : ''} A copy of each deleted row goes to the “Deleted” tab of the sheet. Type DELETE to confirm.`, '');
+        if (typed == null) return;
+        if (String(typed).trim().toUpperCase() !== 'DELETE') { toast('Not deleted — type DELETE to confirm', true); return; }
+        $('bulk-delete').disabled = true;
+        const r = await cloud('deleteOrders', [list, { by: userName }]);
+        $('bulk-delete').disabled = false;
+        if (!r.ok) { toast(r.error || 'Could not delete', true); return; }
+        selectedOrders.clear();
+        await loadOrders();
+        toast(`${r.deleted} order(s) deleted${r.keptOnBoard && r.keptOnBoard.length ? ` · ${r.keptOnBoard.length} kept (on the floor / shipped)` : ''}${r.notFound && r.notFound.length ? ` · ${r.notFound.length} not found` : ''} — copies are in “${r.logSheet || 'Deleted'}”`);
+    });
+
     $('orders-body').addEventListener('click', async e => {
+        const box = e.target.closest('.sel-row');
+        if (box) {
+            e.stopPropagation();
+            if (box.checked) selectedOrders.add(box.dataset.ono); else selectedOrders.delete(box.dataset.ono);
+            box.closest('tr').classList.toggle('selected', box.checked);
+            renderBulkBar();
+            return;
+        }
+        if (e.target.closest('.sel-col')) return;
         const btn = e.target.closest('.copy-btn');
         if (btn) {
             e.stopPropagation();

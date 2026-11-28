@@ -58,7 +58,7 @@ const ROLE_FUNCTIONS_ = {
   floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
     'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut', 'getPickerNames', 'savePickerNames'],
-  cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
+  cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'deleteOrders', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
     'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut', 'getPickerNames', 'savePickerNames'],
   api: ['listOrders', 'upsertOrders']
@@ -173,6 +173,7 @@ function runRequest_(req, role) {
     case 'getPickerNames': return { ok: true, names: readPickerNames_() };
     case 'savePickerNames': return savePickerNames_(args[0]);
     case 'setOrderStatus': return setOrderStatus_(args[0], args[1], args[2]);
+    case 'deleteOrders': return deleteOrders_(args[0], args[1]);
     case 'orderProgress': return orderProgress_();
     case 'intakeStatus': return intakeStatus_(role);
     case 'listImportTemplates': return listImportTemplates_();
@@ -1690,6 +1691,84 @@ function wmsFillPickers_(options) {
 }
 
 /** Before a WMS pull adds orders: copy of the Orders tab ("Orders backup 2026-11-27 14:50"); the newest 3 are kept. */
+const DELETE_ORDERS_MAX_ = 2000;
+
+/**
+ * Deletes orders (e.g. a batch imported by mistake). CS code only.
+ * - Orders with pallets on the floor or shipped are never deleted (reported in keptOnBoard).
+ * - Every deleted row is first copied, with who / when, to the "<Orders> Deleted" tab, so it can be put back.
+ * options: { by: name }
+ */
+function deleteOrders_(orderNumbers, options) {
+  const opts = options || {};
+  const by = String(opts.by || '').trim().slice(0, 80);
+  if (!by) return { ok: false, error: 'Enter your name first' };
+  if (!Array.isArray(orderNumbers) || !orderNumbers.length) return { ok: false, error: 'No orders selected' };
+  if (orderNumbers.length > DELETE_ORDERS_MAX_) return { ok: false, error: 'At most ' + DELETE_ORDERS_MAX_ + ' orders at a time' };
+  const want = {};
+  orderNumbers.forEach(n => { const k = normalizeOrderNumber_(n); if (k) want[k] = true; });
+
+  // Orders the floor has touched stay
+  let onBoard = {};
+  try {
+    const board = loadBoardState_();
+    const state = board.ok && board.stateJson ? JSON.parse(board.stateJson) : {};
+    onBoard = boardProgress_(state);
+  } catch (e) {
+    return { ok: false, error: 'Could not read the staging board, so nothing was deleted: ' + e };
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { ok: false, error: 'Busy — try again' };
+  try {
+    const sheet = getOrdersSheet_();
+    const rows = readOrderRows_(sheet);
+    const del = [], keptOnBoard = [];
+    const found = {};
+    rows.forEach((r, i) => {
+      const k = normalizeOrderNumber_(r[0]);
+      if (!k || !want[k]) return;
+      found[k] = true;
+      const p = onBoard[k];
+      if (p && (p.staged > 0 || p.shipped > 0)) { keptOnBoard.push(k); return; }
+      del.push(i);
+    });
+    const notFound = Object.keys(want).filter(k => !found[k]);
+    if (!del.length) return { ok: true, deleted: 0, deletedOrders: [], keptOnBoard: keptOnBoard, notFound: notFound };
+
+    // 1) Keep a copy of every row being deleted
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const logName = ACTIVE_WH_.ordersSheet + ' Deleted';
+    let log = ss.getSheetByName(logName);
+    if (!log) {
+      log = ss.insertSheet(logName);
+      log.getRange(1, 1, 1, ORDER_FIELDS_.length + 2).setValues([ORDER_FIELDS_.map(f => f.header).concat(['Deleted At', 'Deleted By'])]);
+      if (log.setFrozenRows) log.setFrozenRows(1);
+    }
+    const now = new Date();
+    const copy = del.map(i => rows[i].slice(0, ORDER_FIELDS_.length).concat([now, by]));
+    const start = Math.max(log.getLastRow(), 1) + 1;
+    log.getRange(start, 1, copy.length, ORDER_FIELDS_.length + 2).setValues(copy);
+
+    // 2) Delete, bottom-up, in runs of neighbouring rows
+    const sheetRows = del.map(i => i + 2).sort((a, b) => b - a);
+    let i = 0;
+    while (i < sheetRows.length) {
+      let j = i;
+      while (j + 1 < sheetRows.length && sheetRows[j + 1] === sheetRows[j] - 1) j++;
+      sheet.deleteRows(sheetRows[j], j - i + 1);
+      i = j + 1;
+    }
+    const deletedOrders = del.map(i => normalizeOrderNumber_(rows[i][0]));
+    console.log('deleteOrders: ' + by + ' deleted ' + deletedOrders.length + ' order(s) in ' + ACTIVE_WH_.ordersSheet);
+    return { ok: true, deleted: deletedOrders.length, deletedOrders: deletedOrders, keptOnBoard: keptOnBoard, notFound: notFound, logSheet: logName };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function backupOrdersSheet_(sheet) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();

@@ -40,6 +40,7 @@ function makeSheet(name) {
         setName(n) { sheets.delete(name); name = n; sheets.set(n, sheet); return sheet; },
         copyTo() { const c = makeSheet('Copy of ' + name); rows.forEach(r => c.rows.push((r || []).slice())); return c; },
         getLastRow: () => rows.length,
+        deleteRows(start, n) { rows.splice(start - 1, n); },
         setFrozenRows() {},
         getRange(a, c, nr, nc) {
             if (typeof a !== 'string') return range(a, c, nr, nc);
