@@ -26,6 +26,7 @@ WMS_ORDERS = [
 ]
 wms_calls = []
 ONUS_TOKEN = 'onus-bearer-xyz'
+ONUS_USER, ONUS_PW = 'tester@example.com', 'test-pw-1'   # fake WMS account (test server only)
 ONUS_ROWS = [  # shaped like the ONUS WMS Outbound Query answer (plain array)
     {'outbound_id': 434126, 'outbound_no': 'DN2611201697', 'order_no': 'OB20261120241167', 'po_no': 'SF-RO-20261120-27139', 'outbound_status': 'ALLOCATED',
      'pickinglist_no_byproduct': 'SPK202611200082', 'owner_name': 'Etekcity Corp', 'outbound_type': 'dropship', 'ttl_box': 12, 'ttl_pallet': 3,
@@ -42,6 +43,12 @@ ONUS_TASKS = [
 class WmsHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_POST(self):
+        if self.path.endswith('/api/login'):   # WMS login API: {username, password, client} -> token
+            body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
+            wms_calls.append({'path': self.path, 'key': self.headers.get('Authorization'), 'login_user': body.get('username'), 'client': body.get('client')})
+            good = body.get('username') == ONUS_USER and body.get('password') == ONUS_PW and body.get('client') == 'web_client'
+            out = json.dumps({'success': True, 'data': {'token': ONUS_TOKEN}} if good else {'success': False, 'msg': 'Invalid username or password'}).encode()
+            self.send_response(200 if good else 401); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(out); return
         if '/task/' in self.path:
             body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
             wms_calls.append({'path': self.path, 'key': self.headers.get('Authorization'), 'task_body': body})
@@ -613,11 +620,25 @@ async def main():
         # ONUS WMS preset: POST outbound query, Bearer token, startRow/endRow paging, built-in matching
         await pg.click('#wms-preset-btn'); await pg.wait_for_timeout(200)
         preset = await pg.evaluate("[$('wms-url').value, $('wms-method').value, $('wms-auth').value, $('wms-paging').value, $('wms-skip-field').value, JSON.parse($('wms-body').value).endRow]")
-        record('"Use ONUS WMS settings" fills in the Outbound Query setup', preset == ['https://prd-onus.target-ai.com:18890/api/outbound/query', 'POST', 'bearer', 'rows', 'outbound_status', 100], preset)
+        record('"Use ONUS WMS settings" fills in the Outbound Query setup', preset == ['https://prd-onus.target-ai.com:18890/api/outbound/query', 'POST', 'login', 'rows', 'outbound_status', 100], preset)
+        record('ONUS preset signs in through the WMS login API', await pg.input_value('#wms-login-url') == 'https://prd-onus.target-ai.com:18890/api/login'
+               and json.loads(await pg.input_value('#wms-login-body')).get('client') == 'web_client' and await pg.is_visible('#wms-login-btn'))
         await pg.fill('#wms-url', 'https://fake-wms.local/api/outbound/query')   # the test WMS instead of the real one
         await pg.fill('#wms-task-url', 'https://fake-wms.local/api/task/query/for/outbound')
+        await pg.fill('#wms-login-url', 'https://fake-wms.local/api/login')
+        await pg.fill('#wms-page-size', '2')
+        # Wrong password: refused with the WMS's message, nothing kept
+        await pg.fill('#wms-username', ONUS_USER); await pg.fill('#wms-secret', 'wrong-pw')
+        await pg.click('#wms-login-btn'); await pg.wait_for_timeout(1500)
+        record('WMS login: wrong password is refused with the WMS message', 'Invalid username or password' in (await pg.text_content('body')) and 'Not signed in' in (await pg.text_content('#wms-login-state')))
+        await pg.fill('#wms-secret', ONUS_PW)
+        await pg.click('#wms-login-btn'); await pg.wait_for_timeout(1500)
+        record('WMS login: signed in, password box cleared', ONUS_USER in (await pg.text_content('#wms-login-state')) and await pg.input_value('#wms-secret') == '')
+        full = urllib.request.urlopen(f'http://127.0.0.1:{GAS_PORT}/dump').read().decode()
+        props_now = json.loads(full)['props']
+        record('WMS login: the password is not stored anywhere', ONUS_PW not in json.dumps(props_now) and ONUS_PW not in json.dumps(json.loads(full)['sheets'])
+               and 'token' in props_now.get('WMS_PULL_TOKEN', ''))
         await pg.locator('#wms-pull-card').screenshot(path=f'{OUT}/wms_onus_preset.png')
-        await pg.fill('#wms-page-size', '2'); await pg.fill('#wms-secret', ONUS_TOKEN)
         await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(2500)
         mapped = await pg.evaluate("Object.fromEntries(Object.entries(imp.mapping).map(([k, v]) => [k, v.map(i => imp.headers[i]).join(' + ')]))")
         record('ONUS pull: picker comes from the picking task (assigned_to)', mapped.get('picker') == 'picker_name', mapped)
