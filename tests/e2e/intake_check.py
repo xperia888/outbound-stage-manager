@@ -28,21 +28,24 @@ wms_calls = []
 ONUS_TOKEN = 'onus-bearer-xyz'
 ONUS_USER, ONUS_PW = 'tester@example.com', 'test-pw-1'   # fake WMS account (test server only)
 ONUS_ROWS = [  # shaped like the ONUS WMS Outbound Query answer (plain array)
-    {'outbound_id': 434126, 'outbound_no': 'DN2611201697', 'order_no': 'OB20261120241167', 'po_no': 'SF-RO-20261120-27139', 'outbound_status': 'ALLOCATED',
+    {'outbound_id': 434200, 'wh_no': 'ONUS-CHINO', 'outbound_no': 'DN-CHINO-1', 'order_no': 'OB9', 'outbound_status': 'ALLOCATED', 'pickinglist_no_byproduct': 'SPK-CHINO-1',
+     'owner_name': 'CHINO ONLY', 'ttl_pallet': 2, 'carrier_name': 'Saia'},
+    {'outbound_id': 434126, 'wh_no': 'ONUS-ONT', 'outbound_no': 'DN2611201697', 'order_no': 'OB20261120241167', 'po_no': 'SF-RO-20261120-27139', 'outbound_status': 'ALLOCATED',
      'pickinglist_no_byproduct': 'SPK202611200082', 'owner_name': 'Etekcity Corp', 'outbound_type': 'dropship', 'ttl_box': 12, 'ttl_pallet': 3,
      'carrier_name': 'UPS Ground', 'scac': 'UPSN', 'bol_no': None, 'consignee_city': 'Reno', 'consignee_state': 'NV', 'ship_no_later': '2026-11-29 00:00:00', 'outbound_note': None},
-    {'outbound_id': 434123, 'outbound_no': 'DN2611201694', 'order_no': 'OB20261120241164', 'po_no': 'SF-RO-20261120-27140', 'outbound_status': 'ALLOCATED',
+    {'outbound_id': 434123, 'wh_no': 'ONUS-ONT', 'outbound_no': 'DN2611201694', 'order_no': 'OB20261120241164', 'po_no': 'SF-RO-20261120-27140', 'outbound_status': 'ALLOCATED',
      'pickinglist_no_byproduct': 'SPK202611200082', 'owner_name': 'Etekcity Corp', 'ttl_box': 2, 'ttl_pallet': 1, 'carrier_name': 'UPS Ground', 'consignee_city': 'Reno', 'consignee_state': 'NV'},
-    {'outbound_id': 434130, 'outbound_no': 'DN2611201700', 'order_no': 'OB5', 'po_no': 'PO-LTL', 'outbound_status': 'ALLOCATED', 'pickinglist_no_byproduct': 'SPK202611200090',
+    {'outbound_id': 434130, 'wh_no': 'ONUS-ONT', 'outbound_no': 'DN2611201700', 'order_no': 'OB5', 'po_no': 'PO-LTL', 'outbound_status': 'ALLOCATED', 'pickinglist_no_byproduct': 'SPK202611200090',
      'owner_name': 'Etekcity Corp', 'ttl_box': 60, 'ttl_pallet': 6, 'carrier_name': 'Saia'},
-    {'outbound_id': 434127, 'outbound_no': 'DN2611201698', 'order_no': 'OB2', 'po_no': 'PO-2', 'outbound_status': 'SHIPPED', 'owner_name': 'Etekcity Corp', 'ttl_pallet': 1},
-    {'outbound_id': 434128, 'outbound_no': 'DN-E2E-1', 'order_no': 'OB3', 'po_no': 'PO-3', 'outbound_status': 'PICKING', 'pickinglist_no_byproduct': 'SPK-E2E-1', 'owner_name': 'NOT THIS', 'ttl_pallet': 50},
-    {'outbound_id': 434129, 'outbound_no': 'DN-OLD-7', 'order_no': 'OB4', 'outbound_status': 'SHIPPED', 'owner_name': 'NOT THIS EITHER', 'pickinglist_no_byproduct': 'SPK-OLD-7'},
+    {'outbound_id': 434127, 'wh_no': 'ONUS-ONT', 'outbound_no': 'DN2611201698', 'order_no': 'OB2', 'po_no': 'PO-2', 'outbound_status': 'SHIPPED', 'owner_name': 'Etekcity Corp', 'ttl_pallet': 1},
+    {'outbound_id': 434128, 'wh_no': 'ONUS-ONT', 'outbound_no': 'DN-E2E-1', 'order_no': 'OB3', 'po_no': 'PO-3', 'outbound_status': 'PICKING', 'pickinglist_no_byproduct': 'SPK-E2E-1', 'owner_name': 'NOT THIS', 'ttl_pallet': 50},
+    {'outbound_id': 434129, 'wh_no': 'ONUS-ONT', 'outbound_no': 'DN-OLD-7', 'order_no': 'OB4', 'outbound_status': 'SHIPPED', 'owner_name': 'NOT THIS EITHER', 'pickinglist_no_byproduct': 'SPK-OLD-7'},
 ]
 ONUS_TASKS = [
     {'task_id': 9001, 'type': 'PICKING', 'status': 'COMPLETED', 'group_no': 'SPK202611200082', 'assigned_to': 'Maria L', 'assigned_to_id': 77, 'assigned_by': 'Lead Lee', 'created_by': 'Lead Lee', 'created_at': '2026-11-24 10:15:00'},
     {'task_id': 9004, 'type': 'PICKING', 'status': 'ASSIGNED', 'group_no': 'SPK202611200090', 'assigned_to': None, 'created_at': '2026-11-24 13:05:00'},
     {'task_id': 9005, 'type': 'PICKING', 'status': 'ASSIGNED', 'group_no': 'SPK-E2E-1', 'assigned_to': None, 'created_at': '2026-11-23 09:00:00'},
+    {'task_id': 9006, 'type': 'PICKING', 'status': 'ASSIGNED', 'group_no': 'SPK-CHINO-1', 'assigned_to': 'Chino Pat', 'created_at': '2026-11-24 11:00:00'},
     {'task_id': 9002, 'type': 'PICKING', 'status': 'ASSIGNED', 'group_no': 'SPK-OLD-7', 'assigned_to': 'Jose M', 'assigned_to_id': 78},
     {'task_id': 9003, 'type': 'LOADING', 'status': 'ASSIGNED', 'group_no': 'SPK-OLD-7', 'assigned_to': 'Loader Lou'},
 ]
@@ -645,6 +648,20 @@ async def main():
         props_now = json.loads(full)['props']
         record('WMS login: the password is not stored anywhere', ONUS_PW not in json.dumps(props_now) and ONUS_PW not in json.dumps(json.loads(full)['sheets'])
                and 'token' in props_now.get('WMS_PULL_TOKEN', ''))
+        # A WMS warehouse (wh_no) must be chosen before pulling
+        calls_before = len(wms_calls)
+        await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(800)
+        record('WMS warehouse: pulling without choosing one is stopped before asking the WMS', 'Choose the WMS warehouse' in (await pg.text_content('#wms-test-out') or '')
+               and len(wms_calls) == calls_before and await pg.is_visible('#view-api'))
+        await pg.click('#wms-test-btn'); await pg.wait_for_timeout(2000)
+        opts = await pg.evaluate("[...$('wms-wh-no').options].map(o => o.value)")
+        record('WMS warehouse: Test connection lists the warehouses the WMS sent', 'ONUS-ONT' in opts and 'ONUS-CHINO' in opts, opts)
+        # Another warehouse than this page's needs a yes
+        await pg.select_option('#wms-wh-no', 'ONUS-CHINO'); await pg.wait_for_timeout(800)
+        await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(500)
+        record('WMS warehouse: choosing another warehouse than this page asks first', await pg.is_visible('#confirm') and 'ONUS-CHINO' in (await pg.text_content('#confirm-title') or ''))
+        await pg.click('#confirm-no'); await pg.wait_for_timeout(300)
+        await pg.select_option('#wms-wh-no', 'ONUS-ONT'); await pg.wait_for_timeout(800)
         await pg.locator('#wms-pull-card').screenshot(path=f'{OUT}/wms_onus_preset.png')
         await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(2500)
         mapped = await pg.evaluate("Object.fromEntries(Object.entries(imp.mapping).map(([k, v]) => [k, v.map(i => imp.headers[i]).join(' + ')]))")

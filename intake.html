@@ -737,6 +737,8 @@
                 <form id="wms-form" autocomplete="off" onsubmit="return false">
                     <div class="form-grid">
                         <div class="field"><label for="wms-name">WMS name</label><input type="text" id="wms-name" maxlength="60" placeholder="e.g. Extensiv, Deposco"></div>
+                        <div class="field"><label for="wms-wh-no">WMS warehouse (wh_no)</label><select id="wms-wh-no"><option value="">— Choose warehouse —</option></select>
+                            <div class="hint">Only orders of this warehouse are pulled. Press Test connection to list the warehouses the WMS sends.</div></div>
                         <div class="field span2"><label for="wms-url">API address (orders list)</label><input type="url" id="wms-url" maxlength="500" placeholder="https://api.your-wms.com/orders?updatedSince={{from}}">
                             <div class="hint">Must start with https://. Optional: <span class="mono">{{from}}</span> / <span class="mono">{{to}}</span> (YYYY-MM-DD), <span class="mono">{{fromIso}}</span> / <span class="mono">{{toIso}}</span> are filled in with the look-back below.</div></div>
                         <div class="field"><label for="wms-method">Method</label><select id="wms-method"><option>GET</option><option>POST</option></select></div>
@@ -882,7 +884,7 @@
     // ===================================================================================
     /** Same Apps Script web app as the staging board. */
     // Version of this page — raised with every change
-    const APP_VERSION = '1.53';
+    const APP_VERSION = '1.54';
     document.getElementById('app-ver').innerHTML = `<b>v${APP_VERSION}</b>`;
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
@@ -2589,7 +2591,7 @@
         skipField: 'wms-skip-field', skipValues: 'wms-skip-values',
         taskUrl: 'wms-task-url', taskBody: 'wms-task-body', taskPageSize: 'wms-task-page-size', taskType: 'wms-task-type',
         taskGroupField: 'wms-task-group-field', groupField: 'wms-group-field', pickerField: 'wms-picker-field', pickerIdField: 'wms-picker-id-field',
-        orderKeyField: 'wms-order-key-field', loginUrl: 'wms-login-url', loginBody: 'wms-login-body', tokenPath: 'wms-token-path' };
+        orderKeyField: 'wms-order-key-field', whNo: 'wms-wh-no', loginUrl: 'wms-login-url', loginBody: 'wms-login-body', tokenPath: 'wms-token-path' };
 
     // ONUS WMS "Outbound Query" (POST /api/outbound/query, AG Grid row model, Bearer token, answer = plain array)
     const ONUS_WMS_PRESET = {
@@ -2618,7 +2620,7 @@
     $('wms-preset-btn').addEventListener('click', () => {
         Object.entries(WMS_FIELDS).forEach(([k, id]) => {
             const el = $(id);
-            if (k === 'username') return;   // keep the username typed in
+            if (k === 'username' || k === 'whNo') return;   // keep the username and the chosen warehouse
             if (k in ONUS_WMS_PRESET) el.value = ONUS_WMS_PRESET[k];
             else el.value = el.tagName === 'SELECT' ? el.options[0].value : '';   // clear leftovers from another setup
         });
@@ -2667,7 +2669,19 @@
         Object.entries(WMS_FIELDS).forEach(([k, id]) => { const v = String($(id).value || '').trim(); if (v) c[k] = v; });
         return c;
     }
+    /** Warehouse choices: the saved one, this page's warehouse, and any the WMS sent (with their order counts). */
+    function wmsWarehouseOptions(saved, seen) {
+        const sel = $('wms-wh-no');
+        const keep = saved != null ? saved : sel.value;
+        const codes = new Set([WAREHOUSES[WH].name].concat(keep ? [keep] : [], Object.keys(seen || {})));
+        sel.innerHTML = '<option value="">— Choose warehouse —</option>' + [...codes].sort()
+            .map(c => `<option value="${esc(c)}">${esc(c)}${seen && seen[c] ? ` (${seen[c]} order${seen[c] === 1 ? '' : 's'})` : ''}</option>`).join('');
+        sel.value = keep || '';
+    }
+    $('wms-wh-no').addEventListener('change', () => wmsSave(true));
+
     function wmsApply(r) {
+        wmsWarehouseOptions((r.config || {}).whNo || '', null);
         wmsState = { hasSecret: !!r.hasSecret, lastPullAt: r.lastPullAt || '', login: r.login || null };
         const c = r.config || {};
         Object.entries(WMS_FIELDS).forEach(([k, id]) => {
@@ -2723,15 +2737,44 @@
     }
     const secondsLine = r => (r && r.seconds ? ` <span class="sub2">(${r.seconds.total} s)</span>` : '');
 
+    let wmsNoWarehouseUrl = '';   // the API address whose answer had no wh_no field
+    /** A WMS warehouse must be chosen before pulling; one other than this page's warehouse needs a yes. */
+    async function wmsWarehouseReady() {
+        const w = $('wms-wh-no').value;
+        if (!w && wmsNoWarehouseUrl && wmsNoWarehouseUrl === $('wms-url').value.trim()) return true;   // this WMS sends no wh_no (seen on Test connection)
+        if (!w) {
+            $('wms-test-out').innerHTML = '<div class="note warn"><b>Choose the WMS warehouse (wh_no) first.</b> Only orders of that warehouse are pulled. Press Test connection to list the warehouses the WMS sends.</div>';
+            $('wms-wh-no').focus();
+            return false;
+        }
+        const here = WAREHOUSES[WH].name;
+        if (w.toUpperCase() !== here.toUpperCase()
+            && !(await confirmBox(`Pull ${w} orders into ${here}?`, `This page is ${here}, but the WMS warehouse chosen is ${w}. Its orders would be added to ${here}'s Order Intake.`, 'Pull them'))) return false;
+        return true;
+    }
+    /** "Warehouse ONUS-ONT: 120 orders · 8 of other warehouses left out" */
+    const warehouseLine = r => {
+        const seen = r && r.warehouses ? Object.entries(r.warehouses) : [];
+        if (!seen.length) return '';
+        return ` Warehouses in the answer: ${seen.map(([k, n]) => `${esc(k)} (${n})`).join(', ')}${r.otherWarehouse ? ` — ${r.otherWarehouse} of other warehouses left out` : ''}.`;
+    };
+    const showNeedWarehouse = r => {
+        wmsWarehouseOptions(null, r.warehouses);
+        $('wms-test-out').innerHTML = `<div class="note warn"><b>Choose the WMS warehouse (wh_no) first.</b>${warehouseLine(r)}</div>`;
+        $('wms-wh-no').focus();
+    };
+
     $('wms-test-btn').addEventListener('click', async () => {
         if (!(await wmsSave(true))) return;
         $('wms-test-btn').disabled = true;
         const r = await wmsCall('wmsPullFetch', [{ test: true }], 'Connecting to the WMS');
         $('wms-test-btn').disabled = false;
+        if (r.ok) wmsNoWarehouseUrl = Object.keys(r.warehouses || {}).length ? '' : $('wms-url').value.trim();
+        if (r.warehouses) wmsWarehouseOptions(null, r.warehouses);
         if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read orders:</b> ${esc(r.error || 'No answer')}</div>`; return; }
         const keys = r.keys || [];
         const show = keys.slice(0, 8);
-        $('wms-test-out').innerHTML = `<div class="note ok"><b>Connected.</b> ${r.records.length} order(s) on the first page${r.skippedByRule ? ` (${r.skippedByRule} left out by your rule)` : ''} · ${keys.length} field(s).${parcelLine(r.parcel)}${pickerLine(r.pickers)} Nothing was saved.${secondsLine(r)}</div>
+        $('wms-test-out').innerHTML = `<div class="note ok"><b>Connected.</b> ${r.records.length} order(s) on the first page${r.skippedByRule ? ` (${r.skippedByRule} left out by your rule)` : ''} · ${keys.length} field(s).${parcelLine(r.parcel)}${warehouseLine(r)}${pickerLine(r.pickers)} Nothing was saved.${secondsLine(r)}</div>
             <div class="wms-keys">${keys.slice(0, 60).map(k => `<span>${esc(k)}</span>`).join('')}${keys.length > 60 ? `<span>+${keys.length - 60} more</span>` : ''}</div>
             ${r.records.length ? `<div class="table-wrap"><table class="fit wms-sample"><thead><tr>${show.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead>
             <tbody>${r.records.slice(0, 3).map(rec => `<tr>${show.map(k => `<td class="w-mid">${esc(rec[k] == null ? '' : String(rec[k]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}`;
@@ -2739,12 +2782,14 @@
 
     $('wms-pull-btn').addEventListener('click', async () => {
         if (!(await ensureName())) return;
+        if (!(await wmsWarehouseReady())) return;
         if (!(await wmsSave(true))) return;
         $('wms-pull-btn').disabled = true;
-        const r = await wmsCall('wmsPullFetch', [{}], 'Reading orders and pick tasks from the WMS');
+        const r = await wmsCall('wmsPullFetch', [{}], `Reading ${$('wms-wh-no').value} orders and pick tasks from the WMS`);
         $('wms-pull-btn').disabled = false;
+        if (r.needWarehouse) { showNeedWarehouse(r); return; }
         if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read orders:</b> ${esc(r.error || 'No answer')}</div>`; return; }
-        if (!r.records.length) { $('wms-test-out').innerHTML = '<div class="note">The WMS returned no orders for this period.</div>'; return; }
+        if (!r.records.length) { $('wms-test-out').innerHTML = `<div class="note">The WMS returned no ${esc($('wms-wh-no').value)} orders to add.${warehouseLine(r)}</div>`; return; }
         $('wms-test-out').innerHTML = '';
         if (r.lastPullAt) wmsState.lastPullAt = r.lastPullAt;
         startWmsImport(r);
@@ -2770,7 +2815,7 @@
         setImportStep(2);
         showView('import');
         loadImportTemplates();
-        toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''}${r.pickers ? `, ${r.pickers.matched} with a picker` : ''}${r.parcel && r.parcel.parcelOrders ? `, ${r.parcel.parcelOrders} small parcel by pick list (SPK)` : ''} — check the matching, then import`);
+        toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''}${r.otherWarehouse ? `, ${r.otherWarehouse} of other warehouses left out` : ''}${r.pickers ? `, ${r.pickers.matched} with a picker` : ''}${r.parcel && r.parcel.parcelOrders ? `, ${r.parcel.parcelOrders} small parcel by pick list (SPK)` : ''} — check the matching, then import`);
     }
 
     /** Small parcel orders use the pick list number (SPK…) as the Order # */
@@ -2787,10 +2832,12 @@
 
     // Fill missing pickers: list first, then fill only blank Pickers on confirm
     $('wms-fill-btn').addEventListener('click', async () => {
+        if (!(await wmsWarehouseReady())) return;
         if (!(await wmsSave(true))) return;
         $('wms-fill-btn').disabled = true;
         const r = await wmsCall('wmsFillPickers', [{ apply: false }], 'Reading orders and pick tasks from the WMS');
         $('wms-fill-btn').disabled = false;
+        if (r.needWarehouse) { showNeedWarehouse(r); return; }
         if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read pick tasks:</b> ${esc(r.error || 'No answer')}</div>`; return; }
         const n = r.fills.length;
         $('wms-test-out').innerHTML = `<div class="note ${n ? '' : 'ok'}"><b>${n ? `${n} order(s) in Order Intake can get their picker` : 'No blank pickers to fill'}.</b>

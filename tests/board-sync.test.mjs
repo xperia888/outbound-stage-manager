@@ -1342,3 +1342,35 @@ test('WMS pull: small parcel orders use the pick list number (SPK…) as Order #
     assert.deepEqual(fill.fills, [{ orderNumber: 'SPK11', picker: 'Kim' }]);
     assert.equal(JSON.stringify(sheets.get('Orders').rows[1]), before);
 });
+
+test('WMS pull: a WMS warehouse (wh_no) must be chosen; only its orders and pick tasks are used', () => {
+    const outbound = [
+        { outbound_no: 'DN1', wh_no: 'ONUS-ONT', pickinglist_no_byproduct: 'SPK1', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN2', wh_no: 'ONUS-CHINO', pickinglist_no_byproduct: 'SPK2', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN3', wh_no: 'onus-ont ', pickinglist_no_byproduct: 'SPK3', outbound_status: 'ALLOCATED' }
+    ];
+    const tasks = [
+        { type: 'PICKING', group_no: 'SPK1', wh_no: 'ONUS-ONT', assigned_to: 'Maria L', created_at: '2026-11-24 10:00:00' },
+        { type: 'PICKING', group_no: 'SPK2', wh_no: 'ONUS-CHINO', assigned_to: 'Chino Pat', created_at: '2026-11-24 10:00:00' },
+        { type: 'PICKING', group_no: 'SPK3', wh_no: 'ONUS-CHINO', assigned_to: 'Wrong WH', created_at: '2026-11-24 10:00:00' }   // task of another warehouse: not used
+    ];
+    const { call } = wmsGs(onusFake(outbound, tasks));
+    call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
+    // Test connection works without a choice and lists the warehouses it saw
+    const t = call('wmsPullFetch', [{ test: true }]);
+    assert.equal(t.ok, true, t.error);
+    assert.deepEqual(t.warehouses, { 'ONUS-ONT': 1, 'ONUS-CHINO': 1, 'onus-ont': 1 });
+    // A pull (and Fill missing pickers) needs one chosen
+    const no = call('wmsPullFetch', [{}]);
+    assert.equal(no.ok, false);
+    assert.equal(no.needWarehouse, true);
+    assert.match(no.error, /Choose the WMS warehouse/);
+    assert.equal(call('wmsFillPickers', [{ apply: false }]).needWarehouse, true);
+    call('wmsPullSaveConfig', [Object.assign({}, ONUS_CFG, { whNo: 'ONUS-ONT' }), 'tok']);
+    assert.equal(call('wmsPullGetConfig', []).config.whNo, 'ONUS-ONT');
+    const r = call('wmsPullFetch', [{}]);
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(r.records.map(x => x.outbound_no), ['DN1'], 'CHINO left out; DN3 has no ONT picking task = not committed');
+    assert.equal(r.otherWarehouse, 1);
+    assert.equal(r.records[0].picker_name, 'Maria L');
+});
