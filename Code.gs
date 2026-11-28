@@ -1306,6 +1306,9 @@ function wmsPullFetch_(options) {
   try {
     const got = wmsPullRecords_(cfg, secret, opts);
     const pick = cfg.taskUrl ? wmsAddPickers_(cfg, secret, got.records) : null;
+    const parcel = wmsOrderNumbers_(cfg, got.records, wmsExistingOrderNumbers_());
+    got.records = parcel.records;
+    got.parcel = parcel.stats;
     const keys = [];
     const seen = {};
     got.records.forEach(r => Object.keys(r).forEach(k => { if (!seen[k]) { seen[k] = true; keys.push(k); } }));
@@ -1314,6 +1317,71 @@ function wmsPullFetch_(options) {
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
   }
+}
+
+/** UPS / FedEx / USPS / DHL (not "… Freight") — same rule as the staging page's small parcel lanes. */
+function wmsIsSmallParcel_(r) {
+  return ['carrier_name', 'ship_method', 'delivery_service', 'delivery_service_code', 'scac'].some(k => {
+    const c = String(r[k] == null ? '' : r[k]).toLowerCase();
+    return c.trim() && !/freight/.test(c) && /\bups\b|fed\s*-?\s*ex|\busps\b|postal|\bdhl\b/.test(c);
+  });
+}
+
+function wmsExistingOrderNumbers_() {
+  const have = {};
+  try {
+    if (!SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ACTIVE_WH_.ordersSheet)) return have;   // reading never creates the tab
+    const sheet = getOrdersSheet_();
+    const col = ORDER_FIELDS_.findIndex(f => f.key === 'orderNumber');
+    readOrderRows_(sheet).forEach(r => { const k = normalizeOrderNumber_(r[col]); if (k) have[k] = true; });
+  } catch (e) { /* no Orders tab yet */ }
+  return have;
+}
+
+/**
+ * Adds order_number to each record — what Order Intake uses as the Order #:
+ *  - regular orders: the DN number (outbound_no)
+ *  - small parcel (UPS / FedEx / USPS / DHL): the pick list number (SPK…, pickinglist_no_byproduct), so CS can follow
+ *    the picking. DNs on the same pick list become ONE order: cartons + pallets added up, the DNs listed in parcel_dns.
+ * Small parcel orders without a pick list yet (not committed in the WMS) are left for a later pull, and a pick list
+ * whose DN is already in Order Intake is left out, so the same shipment is never entered twice.
+ */
+function wmsOrderNumbers_(cfg, records, existing) {
+  const dnField = cfg.orderKeyField || 'outbound_no';
+  const plField = cfg.groupField || 'pickinglist_no_byproduct';
+  const stats = { parcelOrders: 0, parcelDns: 0, waitingForPickList: 0, alreadyAsDn: 0 };
+  const has = existing || {};
+  const out = [];
+  const groups = {};
+  records.forEach(r => {
+    const dn = String(r[dnField] == null ? '' : r[dnField]).trim();
+    if (!(plField in r) || !wmsIsSmallParcel_(r)) { r.order_number = dn; out.push(r); return; }
+    const pl = String(r[plField] == null ? '' : r[plField]).trim();
+    if (!pl) { stats.waitingForPickList++; return; }
+    if (!groups[pl]) { groups[pl] = []; out.push({ __group: pl }); }
+    groups[pl].push(r);
+  });
+  const num = v => Number(String(v == null ? '' : v).replace(/,/g, '')) || 0;
+  const uniq = (list, k) => list.map(r => String(r[k] == null ? '' : r[k]).trim()).filter((v, i, a) => v && a.indexOf(v) === i);
+  const result = [];
+  out.forEach(r => {
+    if (!r.__group) { result.push(r); return; }
+    const list = groups[r.__group];
+    const dns = uniq(list, dnField);
+    if (dns.some(d => has[normalizeOrderNumber_(d)])) { stats.alreadyAsDn++; return; }
+    const m = Object.assign({}, list[0]);
+    m.order_number = r.__group;
+    m.parcel_dns = list.length > 1 || dns.length ? 'DNs: ' + dns.join(', ') : '';
+    m.ttl_box = list.reduce((t, x) => t + num(x.ttl_box), 0);
+    m.ttl_pallet = list.reduce((t, x) => t + num(x.ttl_pallet), 0);
+    ['po_no', 'outbound_note', 'bol_no'].forEach(k => { if (k in m) m[k] = uniq(list, k).join(', '); });
+    const dates = uniq(list, 'ship_no_later').sort();
+    if (dates.length) m.ship_no_later = dates[0];   // the earliest ship-by date
+    stats.parcelOrders++;
+    stats.parcelDns += list.length;
+    result.push(m);
+  });
+  return { records: result, stats: stats };
 }
 
 /** Reads the outbound records (all pages); options.test = first page; options.noSkip = keep the leave-out records too. */
@@ -1432,13 +1500,13 @@ function wmsFillPickers_(options) {
   try {
     got = wmsPullRecords_(cfg, secret, { noSkip: true });
     stats = wmsAddPickers_(cfg, secret, got.records);
+    got.records = wmsOrderNumbers_(cfg, got.records, {}).records;   // SPK… for small parcel, DN otherwise
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
   }
-  const keyField = cfg.orderKeyField || 'outbound_no';
   const pickerByOrder = {};
   got.records.forEach(r => {
-    const k = normalizeOrderNumber_(r[keyField]);
+    const k = normalizeOrderNumber_(r.order_number);
     if (k && r.picker_name) pickerByOrder[k] = String(r.picker_name).slice(0, 80);
   });
   const lock = LockService.getScriptLock();

@@ -31,6 +31,10 @@ ONUS_ROWS = [  # shaped like the ONUS WMS Outbound Query answer (plain array)
     {'outbound_id': 434126, 'outbound_no': 'DN2611201697', 'order_no': 'OB20261120241167', 'po_no': 'SF-RO-20261120-27139', 'outbound_status': 'ALLOCATED',
      'pickinglist_no_byproduct': 'SPK202611200082', 'owner_name': 'Etekcity Corp', 'outbound_type': 'dropship', 'ttl_box': 12, 'ttl_pallet': 3,
      'carrier_name': 'UPS Ground', 'scac': 'UPSN', 'bol_no': None, 'consignee_city': 'Reno', 'consignee_state': 'NV', 'ship_no_later': '2026-11-29 00:00:00', 'outbound_note': None},
+    {'outbound_id': 434123, 'outbound_no': 'DN2611201694', 'order_no': 'OB20261120241164', 'po_no': 'SF-RO-20261120-27140', 'outbound_status': 'ALLOCATED',
+     'pickinglist_no_byproduct': 'SPK202611200082', 'owner_name': 'Etekcity Corp', 'ttl_box': 2, 'ttl_pallet': 1, 'carrier_name': 'UPS Ground', 'consignee_city': 'Reno', 'consignee_state': 'NV'},
+    {'outbound_id': 434130, 'outbound_no': 'DN2611201700', 'order_no': 'OB5', 'po_no': 'PO-LTL', 'outbound_status': 'ALLOCATED', 'pickinglist_no_byproduct': 'SPK202611200090',
+     'owner_name': 'Etekcity Corp', 'ttl_box': 60, 'ttl_pallet': 6, 'carrier_name': 'Saia'},
     {'outbound_id': 434127, 'outbound_no': 'DN2611201698', 'order_no': 'OB2', 'po_no': 'PO-2', 'outbound_status': 'SHIPPED', 'owner_name': 'Etekcity Corp', 'ttl_pallet': 1},
     {'outbound_id': 434128, 'outbound_no': 'DN-E2E-1', 'order_no': 'OB3', 'po_no': 'PO-3', 'outbound_status': 'PICKING', 'owner_name': 'NOT THIS', 'ttl_pallet': 50},
     {'outbound_id': 434129, 'outbound_no': 'DN-OLD-7', 'order_no': 'OB4', 'outbound_status': 'SHIPPED', 'owner_name': 'NOT THIS EITHER', 'pickinglist_no_byproduct': 'SPK-OLD-7'},
@@ -642,21 +646,24 @@ async def main():
         await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(2500)
         mapped = await pg.evaluate("Object.fromEntries(Object.entries(imp.mapping).map(([k, v]) => [k, v.map(i => imp.headers[i]).join(' + ')]))")
         record('ONUS pull: picker comes from the picking task (assigned_to)', mapped.get('picker') == 'picker_name', mapped)
-        record('ONUS pull: built-in matching uses outbound_no as the Order # (not order_no)', mapped.get('orderNumber') == 'outbound_no' and mapped.get('customer') == 'owner_name'
+        record('ONUS pull: Order # = DN, or the SPK pick list for small parcel', mapped.get('orderNumber') == 'order_number' and mapped.get('customer') == 'owner_name'
                and mapped.get('pallets') == 'ttl_pallet' and mapped.get('destination') == 'consignee_city + consignee_state' and 'status' not in mapped, mapped)
         await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(400)
         counts = await pg.get_attribute('#imp-counts', 'data-summary') or ''
-        record('ONUS pull: SHIPPED left out, existing DN-E2E-1 skipped, 1 new', counts.startswith('1 new') and '1 skip' in counts, counts)
+        record('ONUS pull: SHIPPED left out, existing DN-E2E-1 skipped, 2 new (1 SPK + 1 LTL DN)', counts.startswith('2 new') and '1 skip' in counts, counts)
         before2 = {r[0]: r for r in dump()['Orders'][1:]}
         await pg.click('#imp-go-btn'); await pg.wait_for_timeout(2000)
         rows2 = dump()['Orders']; after2 = {r[0]: r for r in rows2[1:]}
-        o = dict(zip(rows2[0], after2.get('DN2611201697', [])))
-        record('ONUS pull: new order saved, nothing else changed', all(after2.get(k) == v for k, v in before2.items()) and len(after2) == len(before2) + 1
-               and o.get('Customer') == 'Etekcity Corp' and o.get('Pallets') == 3 and o.get('Cartons') == 12 and o.get('Carrier') == 'UPS Ground'
-               and o.get('Reference') == 'SF-RO-20261120-27139' and o.get('Destination') == 'Reno, NV' and o.get('Source') == 'WMS pull'
+        o = dict(zip(rows2[0], after2.get('SPK202611200082', [])))
+        ltl = dict(zip(rows2[0], after2.get('DN2611201700', [])))
+        record('ONUS pull: UPS DNs saved as ONE order under the SPK pick list number, nothing else changed', all(after2.get(k) == v for k, v in before2.items()) and len(after2) == len(before2) + 2
+               and 'DN2611201697' not in after2 and 'DN2611201694' not in after2
+               and o.get('Customer') == 'Etekcity Corp' and o.get('Pallets') == 4 and o.get('Cartons') == 14 and o.get('Carrier') == 'UPS Ground'
+               and 'DNs: DN2611201697, DN2611201694' in str(o.get('Notes')) and o.get('Reference') == 'SF-RO-20261120-27139, SF-RO-20261120-27140' and o.get('Destination') == 'Reno, NV' and o.get('Source') == 'WMS pull'
                and o.get('Picker') == 'Maria L', o)
+        record('ONUS pull: LTL order keeps its DN number', ltl.get('Pallets') == 6 and ltl.get('Carrier') == 'Saia', ltl)
         onus_bodies = [c['body'] for c in wms_calls if c.get('body') is not None]
-        record('ONUS pull: startRow/endRow paged in the body until an empty page', [(b['startRow'], b['endRow']) for b in onus_bodies[-3:]] == [(0, 2), (2, 4), (4, 6)], onus_bodies[-3:])
+        record('ONUS pull: startRow/endRow paged in the body until an empty page', [(b['startRow'], b['endRow']) for b in onus_bodies[-4:]] == [(0, 2), (2, 4), (4, 6), (6, 8)], onus_bodies[-4:])
         tb = [c['task_body'] for c in wms_calls if c.get('task_body')]
         record('task query sent with the PICKING filter and the CANCLE spelling', tb and tb[-1]['filterModel']['type']['values'] == ['PICKING']
                and 'CANCLE' in tb[-1]['filterModel']['status']['values'] and tb[-1]['endRow'] == 50000, tb[-1:] )
