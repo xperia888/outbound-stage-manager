@@ -215,6 +215,30 @@ async def run_round(browser, wh, rnd, devices):
     ok_b = await wait_for(B, f"appState.pallets.filter(p => p.orderNumber === '{rel}').length === 3", 20000)
     record(wh, rnd, 'Device B sees the picked order', ok_b)
 
+    # --- Ship Today: orders whose ship / appointment date is today --------------------------------------
+    import datetime
+    td = datetime.date.today()
+    gas_call({'fn': 'upsertOrders', 'warehouse': wh, 'key': code, 'args': [[
+        {'orderNumber': rel, 'enteredBy': 'E2E', 'shipDate': td.isoformat()},                                     # 3 plts on the floor
+        {'orderNumber': f'DN-{tag}-ST1', 'enteredBy': 'E2E', 'customer': 'Ship Co', 'pallets': 4, 'shipDate': td.strftime('%m/%d/%Y')},   # not staged
+        {'orderNumber': f'DN-{tag}-LATE', 'enteredBy': 'E2E', 'customer': 'Late Co', 'shipDate': (td - datetime.timedelta(days=1)).isoformat()},
+        {'orderNumber': f'DN-{tag}-TMR', 'enteredBy': 'E2E', 'customer': 'Later Co', 'shipDate': (td + datetime.timedelta(days=1)).isoformat()}], {'source': 'Manual'}]})
+    record(wh, rnd, 'Header shows the app version', (await A.text_content('#app-version-badge') or '').strip() == await A.evaluate('APP_VERSION'))
+    await A.click('#header-ship-today-btn')
+    shown = await wait_for(A, f"!!document.querySelector('[data-ship-order=\"DN-{tag}-ST1\"]')", 15000)
+    rows = await A.evaluate("[...document.querySelectorAll('#ship-today-list [data-ship-order]')].map(e => e.dataset.shipOrder + ' ' + e.textContent.replace(/\\s+/g, ' ').trim())")
+    mine = [r for r in rows if f'-{tag}-' in r]
+    def row(o): return next((r for r in mine if r.startswith(o + ' ')), '')
+    record(wh, rnd, 'Ship Today lists today\'s orders with their status (and late ones), not tomorrow\'s',
+           shown and 'Not staged yet' in row(f'DN-{tag}-ST1') and 'On floor · 3 plts' in row(rel)
+           and 'Was due' in row(f'DN-{tag}-LATE') and not row(f'DN-{tag}-TMR')
+           and mine.index(row(f'DN-{tag}-LATE')) == 0, mine)
+    await A.click(f'[data-ship-order="{rel}"] button:has-text("Locate")'); await A.wait_for_timeout(400)
+    record(wh, rnd, 'Ship Today → Locate closes the list and highlights the order on the board',
+           not await A.is_visible('#ship-today-modal') and await A.evaluate('highlightedOrderNumber') == rel)
+    badge_txt = await A.text_content('#header-ship-today-badge') or ''
+    record(wh, rnd, 'Ship Today button shows left / due today and the late count', '/' in badge_txt and 'late' in badge_txt, badge_txt)
+
     # --- Scan Order window: order + carrier/destination + number of pallets ---------------------------
     await open_scan_window(A)
     await A.wait_for_timeout(200)
