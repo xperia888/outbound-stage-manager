@@ -1306,6 +1306,12 @@ function wmsPullFetch_(options) {
   try {
     const got = wmsPullRecords_(cfg, secret, opts);
     const pick = cfg.taskUrl ? wmsAddPickers_(cfg, secret, got.records) : null;
+    if (pick) {
+      // Released to Warehouse = the committed date. Not committed yet (no picking task) → not released: comes in on a later pull
+      const before = got.records.length;
+      got.records = got.records.filter(r => r.__committed);
+      pick.notCommitted = before - got.records.length;
+    }
     const parcel = wmsOrderNumbers_(cfg, got.records, wmsExistingOrderNumbers_());
     got.records = parcel.records;
     got.parcel = parcel.stats;
@@ -1457,8 +1463,11 @@ function wmsPickTasks_(cfg, secret) {
       const g = String(t[gField] == null ? '' : t[gField]).trim();
       if (!g) return;
       const cur = byGroup[g];
-      if (cur) { byGroup[g] = { conflict: (cur.conflict || 1) + 1 }; return; }
-      byGroup[g] = { picker: t[pField] == null ? '' : String(t[pField]).trim(), pickerId: t[idField] == null ? '' : String(t[idField]), status: t.status || '', taskId: t.task_id == null ? '' : String(t.task_id) };
+      // The picking task is created when the order is committed: its created_at = the committed time (kept as the WMS gives it)
+      const created = t.created_at == null ? '' : String(t.created_at).trim();
+      const earlier = (a, b) => (!a ? b : !b ? a : ((Date.parse(b) || Infinity) < (Date.parse(a) || Infinity) ? b : a));
+      if (cur) { byGroup[g] = { conflict: (cur.conflict || 1) + 1, createdAt: earlier(cur.createdAt, created) }; return; }
+      byGroup[g] = { picker: t[pField] == null ? '' : String(t[pField]).trim(), pickerId: t[idField] == null ? '' : String(t[idField]), status: t.status || '', taskId: t.task_id == null ? '' : String(t.task_id), createdAt: created };
     });
     if (list.length < size) break;   // a full page means there may be more
   }
@@ -1475,8 +1484,10 @@ function wmsAddPickers_(cfg, secret, records) {
     const g = String(r[gField] == null ? '' : r[gField]).trim();
     const task = g ? t.byGroup[g] : null;
     // Field names from the "Outbound & Picker Data Integration Rules"; empty when there is no single matching task
-    r.picker_id = ''; r.picker_name = ''; r.picking_task_id = ''; r.picking_task_status = ''; r.picker_exception = '';
+    r.picker_id = ''; r.picker_name = ''; r.picking_task_id = ''; r.picking_task_status = ''; r.picker_exception = ''; r.committed_at = '';
+    Object.defineProperty(r, '__committed', { value: Boolean(task), enumerable: false });   // has a picking task = committed
     if (!task) { out.noTask++; return; }
+    r.committed_at = task.createdAt || '';
     if (task.conflict) { out.conflicts++; r.picker_exception = task.conflict + ' PICKING tasks share pick list ' + g + ' — none was chosen'; return; }
     r.picker_name = task.picker; r.picker_id = task.pickerId; r.picking_task_status = task.status; r.picking_task_id = task.taskId;
     if (task.picker) out.matched++; else out.noPicker++;

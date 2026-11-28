@@ -36,11 +36,13 @@ ONUS_ROWS = [  # shaped like the ONUS WMS Outbound Query answer (plain array)
     {'outbound_id': 434130, 'outbound_no': 'DN2611201700', 'order_no': 'OB5', 'po_no': 'PO-LTL', 'outbound_status': 'ALLOCATED', 'pickinglist_no_byproduct': 'SPK202611200090',
      'owner_name': 'Etekcity Corp', 'ttl_box': 60, 'ttl_pallet': 6, 'carrier_name': 'Saia'},
     {'outbound_id': 434127, 'outbound_no': 'DN2611201698', 'order_no': 'OB2', 'po_no': 'PO-2', 'outbound_status': 'SHIPPED', 'owner_name': 'Etekcity Corp', 'ttl_pallet': 1},
-    {'outbound_id': 434128, 'outbound_no': 'DN-E2E-1', 'order_no': 'OB3', 'po_no': 'PO-3', 'outbound_status': 'PICKING', 'owner_name': 'NOT THIS', 'ttl_pallet': 50},
+    {'outbound_id': 434128, 'outbound_no': 'DN-E2E-1', 'order_no': 'OB3', 'po_no': 'PO-3', 'outbound_status': 'PICKING', 'pickinglist_no_byproduct': 'SPK-E2E-1', 'owner_name': 'NOT THIS', 'ttl_pallet': 50},
     {'outbound_id': 434129, 'outbound_no': 'DN-OLD-7', 'order_no': 'OB4', 'outbound_status': 'SHIPPED', 'owner_name': 'NOT THIS EITHER', 'pickinglist_no_byproduct': 'SPK-OLD-7'},
 ]
 ONUS_TASKS = [
-    {'task_id': 9001, 'type': 'PICKING', 'status': 'COMPLETED', 'group_no': 'SPK202611200082', 'assigned_to': 'Maria L', 'assigned_to_id': 77, 'assigned_by': 'Lead Lee', 'created_by': 'Lead Lee'},
+    {'task_id': 9001, 'type': 'PICKING', 'status': 'COMPLETED', 'group_no': 'SPK202611200082', 'assigned_to': 'Maria L', 'assigned_to_id': 77, 'assigned_by': 'Lead Lee', 'created_by': 'Lead Lee', 'created_at': '2026-11-24 10:15:00'},
+    {'task_id': 9004, 'type': 'PICKING', 'status': 'ASSIGNED', 'group_no': 'SPK202611200090', 'assigned_to': None, 'created_at': '2026-11-24 13:05:00'},
+    {'task_id': 9005, 'type': 'PICKING', 'status': 'ASSIGNED', 'group_no': 'SPK-E2E-1', 'assigned_to': None, 'created_at': '2026-11-23 09:00:00'},
     {'task_id': 9002, 'type': 'PICKING', 'status': 'ASSIGNED', 'group_no': 'SPK-OLD-7', 'assigned_to': 'Jose M', 'assigned_to_id': 78},
     {'task_id': 9003, 'type': 'LOADING', 'status': 'ASSIGNED', 'group_no': 'SPK-OLD-7', 'assigned_to': 'Loader Lou'},
 ]
@@ -662,6 +664,10 @@ async def main():
                and 'DNs: DN2611201697, DN2611201694' in str(o.get('Notes')) and o.get('Reference') == 'SF-RO-20261120-27139, SF-RO-20261120-27140' and o.get('Destination') == 'Reno, NV' and o.get('Source') == 'WMS pull'
                and o.get('Picker') == 'Maria L', o)
         record('ONUS pull: LTL order keeps its DN number', ltl.get('Pallets') == 6 and ltl.get('Carrier') == 'Saia', ltl)
+        record('ONUS pull: Released to Warehouse = committed date (pick task created), window from its time',
+               str(o.get('Released to Warehouse', '')).startswith('2026-11-24') and o.get('Release Window') == '10:00am-12:00pm'
+               and str(ltl.get('Released to Warehouse', '')).startswith('2026-11-24') and ltl.get('Release Window') == '12:30pm-14:00pm',
+               [o.get('Released to Warehouse'), o.get('Release Window'), ltl.get('Released to Warehouse'), ltl.get('Release Window')])
         onus_bodies = [c['body'] for c in wms_calls if c.get('body') is not None]
         record('ONUS pull: startRow/endRow paged in the body until an empty page', [(b['startRow'], b['endRow']) for b in onus_bodies[-4:]] == [(0, 2), (2, 4), (4, 6), (6, 8)], onus_bodies[-4:])
         tb = [c['task_body'] for c in wms_calls if c.get('task_body')]
