@@ -254,11 +254,14 @@ async def run_round(browser, wh, rnd, devices):
     await A.check('#ship-today-parcel'); await A.wait_for_timeout(300)
     on = await listed()
     parcel_row = await A.text_content(f'[data-ship-order="SPK{tag}LATE"]') if f'SPK{tag}LATE' in on else ''
-    record(wh, rnd, 'Ship Today "Small parcel orders" box adds late small parcel orders only (saved on this device)',
+    await A.wait_for_timeout(2500)   # saved to the shared board
+    shared = json.loads(gas_call({'fn': 'loadBoardState', 'warehouse': wh, 'key': code})['stateJson'] or '{}').get('shipTodaySettings', {})
+    record(wh, rnd, 'Ship Today "Small parcel orders" box adds late small parcel orders only (shared in the board)',
            f'SPK{tag}LATE' not in off and f'SPK{tag}LATE' in on and f'SPK{tag}01' not in on and 'Small parcel' in parcel_row
-           and await A.evaluate("localStorage.getItem('outbound_ship_today_parcel_late')") == '1', [off, on])
-    await A.uncheck('#ship-today-parcel'); await A.wait_for_timeout(300)
-    record(wh, rnd, 'Ship Today: unticking hides them again', f'SPK{tag}LATE' not in await listed())
+           and shared.get('parcelLate') is True, [off, on, shared])
+    await A.uncheck('#ship-today-parcel'); await A.wait_for_timeout(2500)
+    shared = json.loads(gas_call({'fn': 'loadBoardState', 'warehouse': wh, 'key': code})['stateJson'] or '{}').get('shipTodaySettings', {})
+    record(wh, rnd, 'Ship Today: unticking hides them again (and for every device)', f'SPK{tag}LATE' not in await listed() and shared.get('parcelLate') is False, shared)
     await A.evaluate("closeShipTodayModal()")
 
     # --- Scan Order window: order + carrier/destination + number of pallets ---------------------------

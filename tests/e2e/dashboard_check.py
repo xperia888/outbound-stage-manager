@@ -126,6 +126,16 @@ async def main():
             await pg.keyboard.press('t'); await pg.wait_for_timeout(200)
             light=not await pg.evaluate("document.body.classList.contains('dark')")
             print(f'    theme switch: dark={dark} back_to_light={light}')
+            if w == 1920:
+                # "Small parcel orders" ticked on the staging page (shared in the board) → late small parcel counted too
+                st2=dict(state); st2['shipTodaySettings']={'parcelLate': True}
+                req({'fn':'saveBoardState','args':[json.dumps(st2)],'key':'ont-e2e','warehouse':'ONT'})   # no base: overwrite
+                await pg.reload(); await pg.wait_for_timeout(3500)
+                on=await pg.evaluate("[document.querySelector('#kpi-ship .label').textContent, document.querySelector('#kpi-ship .late-chip')?.textContent, document.querySelector('#kpi-ship .late-chip')?.title]")
+                ok2 = on[0]=='Ship today+PCL' and on[1]=='+2 late' and 'SO-40195' in on[2] and 'incl. 1 small parcel' in on[2]
+                print(f"    {'PASS' if ok2 else 'FAIL'} parcel reminder ticked: late small parcel counted on the card:", on)
+                req({'fn':'saveBoardState','args':[json.dumps(state)],'key':'ont-e2e','warehouse':'ONT'})
+                await pg.reload(); await pg.wait_for_timeout(3500)
             await ctx.close()
         await b.close()
 os.makedirs(os.path.join(E2E, 'out'), exist_ok=True)

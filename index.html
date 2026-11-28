@@ -205,7 +205,7 @@
                         <h1 class="text-xs sm:text-sm md:text-base font-extrabold tracking-tight leading-none truncate">
                             Outbound Pallet Staging
                         </h1>
-                        <span id="app-version-badge" class="text-[10px] font-mono-code font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded" title="App version">v1.62</span>
+                        <span id="app-version-badge" class="text-[10px] font-mono-code font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded" title="App version">v1.63</span>
                         <button
                             type="button"
                             id="cloud-sync-pill"
@@ -1678,7 +1678,7 @@
             <div class="p-4 space-y-3 max-h-[80vh] overflow-y-auto">
                 <label class="flex items-start gap-2 text-xs font-bold text-slate-700 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2 cursor-pointer select-none">
                     <input type="checkbox" id="ship-today-parcel" class="mt-0.5 w-4 h-4 accent-violet-600 cursor-pointer" onchange="setShipTodayParcel(this.checked)">
-                    <span>Small parcel orders — also remind me of <b>late</b> small parcel orders (SPK… / P numbers, drop ship, UPS · FedEx · USPS · DHL) that haven't shipped<span class="block font-normal text-slate-500">Saved on this device. Today's small parcel orders are not listed.</span></span>
+                    <span>Small parcel orders — also remind me of <b>late</b> small parcel orders (SPK… / P numbers, drop ship, UPS · FedEx · USPS · DHL) that haven't shipped<span class="block font-normal text-slate-500">Shared: every staging device and the TV dashboard follow this. Today's small parcel orders are not listed.</span></span>
                 </label>
                 <div id="ship-today-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-2"></div>
                 <div id="ship-today-list" class="space-y-1.5"></div>
@@ -1972,7 +1972,7 @@
          * 1. STATE & CONSTANTS
          * =========================================================================
          */
-        const APP_VERSION = 'v1.62';   // raised with every change; shown in the header
+        const APP_VERSION = 'v1.63';   // raised with every change; shown in the header
 
         /**
          * Warehouses. Each has its own board, access code, scan queue and sheet tabs.
@@ -2677,7 +2677,7 @@
             const b = base || {};
             const merged = { ...remote };
 
-            ['layoutMode', 'autoResize', 'columnWidth', 'cardGroupMode', 'dwellSettings'].forEach(key => {
+            ['layoutMode', 'autoResize', 'columnWidth', 'cardGroupMode', 'dwellSettings', 'shipTodaySettings'].forEach(key => {
                 const changedHere = base && JSON.stringify(local[key]) !== JSON.stringify(b[key]);
                 merged[key] = changedHere ? local[key] : remote[key];
             });
@@ -4559,12 +4559,12 @@
         }
 
         /** [{ order, late, floor, docks, lanes, shippedCount, status }] — status: late / notStaged / onFloor / atDock / shipped */
-        // "Small parcel orders" box in Ship Today: also list late small parcel orders (saved on this device)
-        const SHIP_TODAY_PARCEL_KEY = 'outbound_ship_today_parcel_late';
-        let includeParcelLate = (() => { try { return localStorage.getItem(SHIP_TODAY_PARCEL_KEY) === '1'; } catch (e) { return false; } })();
+        // "Small parcel orders" box in Ship Today: also list late small parcel orders.
+        // Saved in the board (shipTodaySettings), so every device and the TV dashboard follow it.
+        const parcelLateOn = () => Boolean(appState.shipTodaySettings && appState.shipTodaySettings.parcelLate);
         function setShipTodayParcel(on) {
-            includeParcelLate = Boolean(on);
-            try { localStorage.setItem(SHIP_TODAY_PARCEL_KEY, includeParcelLate ? '1' : '0'); } catch (e) { /* this session only */ }
+            appState.shipTodaySettings = { ...(appState.shipTodaySettings || {}), parcelLate: Boolean(on) };
+            saveState();
             updateShipTodayBadge();
             renderShipTodayModal();
         }
@@ -4583,7 +4583,7 @@
                 if (!ono || !day || day > today) return;
                 // Ship Today is for regular orders; late small parcel orders only when the box is ticked
                 const parcel = isSmallParcelOrder(o, ono);
-                if (parcel && (!includeParcelLate || day === today)) return;
+                if (parcel && (!parcelLateOn() || day === today)) return;
                 const floor = floorBy[ono] || [];
                 const shippedCount = shippedBy[ono] || 0;
                 const done = shippedCount > 0 && floor.length === 0;
@@ -4620,7 +4620,7 @@
             if (!modal) return;
             modal.classList.remove('hidden');
             modal.classList.add('flex');
-            document.getElementById('ship-today-parcel').checked = includeParcelLate;
+            document.getElementById('ship-today-parcel').checked = parcelLateOn();
             renderShipTodayModal();
             loadIntakeOrders({ force: true, onDone: renderShipTodayModal });
         }
@@ -4673,7 +4673,7 @@
                 </div>`;
             }).join('') : `<div class="text-sm text-slate-500 py-6 text-center">${today.length ? '✓ All regular orders due today have shipped.' : 'No regular orders have today\'s ship / appointment date in Order Intake.'}</div>`;
             document.getElementById('ship-today-subtitle').textContent =
-                `Regular orders${includeParcelLate ? ' + late small parcel' : ' (small parcel not included)'} · ${today.length} due today · ${today.length - count('shipped')} still to ship · from Order Intake ship / appt date`;
+                `Regular orders${parcelLateOn() ? ' + late small parcel' : ' (small parcel not included)'} · ${today.length} due today · ${today.length - count('shipped')} still to ship · from Order Intake ship / appt date`;
             if (window.lucide) lucide.createIcons();
         }
 
@@ -6716,6 +6716,7 @@
                     overdueDays: Math.max(1, parseFloat(candidate.dwellSettings?.overdueDays) || DEFAULT_DWELL_OVERDUE_DAYS),
                     overWeekDays: Math.max(2, parseFloat(candidate.dwellSettings?.overWeekDays) || DEFAULT_DWELL_OVERWEEK_DAYS)
                 },
+                shipTodaySettings: { parcelLate: Boolean(candidate.shipTodaySettings && candidate.shipTodaySettings.parcelLate) },
                 columns: cleanedColumns,
                 pallets: cleanedPallets,
                 shippedPallets: Array.isArray(candidate.shippedPallets) ? candidate.shippedPallets : []
