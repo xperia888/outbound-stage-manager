@@ -881,29 +881,9 @@
     // Settings
     // ===================================================================================
     /** Same Apps Script web app as the staging board. */
-    // Version of this page — raised with every change. The release date is the date of the latest commit on main.
+    // Version of this page — raised with every change
     const APP_VERSION = '1.51';
-    (function showVersion() {
-        const el = document.getElementById('app-ver');
-        const show = (date, sha) => {
-            el.innerHTML = `<b>v${APP_VERSION}</b>${date ? ` · Released ${date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`;
-            el.title = `Order Intake v${APP_VERSION}${sha ? ' · commit ' + sha.slice(0, 7) : ''}${date ? ' · ' + date.toLocaleString() : ''}`;
-        };
-        show(null, '');
-        let cached = null;
-        try { cached = JSON.parse(sessionStorage.getItem('intake-release') || 'null'); } catch (e) { /* none */ }
-        if (cached && cached.v === APP_VERSION && Date.now() - cached.at < 3600000) { show(new Date(cached.date), cached.sha); return; }
-        fetch('https://api.github.com/repos/xperia888/outbound-stage-manager/commits?sha=main&per_page=1', { headers: { Accept: 'application/vnd.github+json' } })
-            .then(r => (r.ok ? r.json() : null))
-            .then(list => {
-                const c = list && list[0];
-                const d = c && c.commit && (c.commit.committer || c.commit.author) && (c.commit.committer || c.commit.author).date;
-                if (!d) return;
-                show(new Date(d), c.sha || '');
-                try { sessionStorage.setItem('intake-release', JSON.stringify({ v: APP_VERSION, date: d, sha: c.sha || '', at: Date.now() })); } catch (e) { /* fine */ }
-            })
-            .catch(() => { /* offline or rate-limited: the version alone is shown */ });
-    })();
+    document.getElementById('app-ver').innerHTML = `<b>v${APP_VERSION}</b>`;
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
     const WAREHOUSES = {
