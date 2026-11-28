@@ -1181,7 +1181,7 @@ test('WMS pickers: outbound pick list = task group_no; only PICKING tasks; no ta
         { outbound_no: 'DN5', pickinglist_no_byproduct: 'SPK3', outbound_status: 'ALLOCATED' }    // two picking tasks → check
     ];
     const tasks = [
-        { task_id: 1, type: 'PICKING', status: 'COMPLETED', group_no: 'SPK1', assigned_to: 'Maria L', assigned_to_id: 77, assigned_by: 'Boss', created_by: 'Boss' },
+        { task_id: 1, type: 'PICKING', status: 'COMPLETED', group_no: 'SPK1', assigned_to: 'Maria L', assigned_to_id: 77, assigned_by: 'Boss', created_by: 'Boss', created_at: '2026-11-24T17:05:00+00:00' },
         { task_id: 2, type: 'LOADING', status: 'ASSIGNED', group_no: 'SPK2', assigned_to: 'Loader Lou' },   // not a picking task
         { task_id: 3, type: 'PICKING', status: 'ASSIGNED', group_no: 'SPK2', assigned_to: null, assigned_by: 'Boss' },
         { task_id: 4, type: 'PICKING', status: 'ASSIGNED', group_no: 'SPK3', assigned_to: 'A' },
@@ -1196,14 +1196,14 @@ test('WMS pickers: outbound pick list = task group_no; only PICKING tasks; no ta
     assert.equal(by.DN1['picker_id'], '77');
     assert.equal(by.DN2['picker_name'], 'Maria L', 'one task → many outbound records');
     assert.equal(by.DN3['picker_name'], '', 'unassigned: no other user is used instead');
-    assert.equal(by.DN4['picker_name'], '');
+    assert.equal(by.DN4, undefined, 'not committed (no picking task): left out until it is');
+    assert.equal(by.DN1.committed_at, '2026-11-24T17:05:00+00:00', 'committed time kept as the WMS gives it');
     assert.equal(by.DN5['picker_name'], '', 'two picking tasks: none is picked');
     assert.match(by.DN5.picker_exception, /2 PICKING tasks share pick list SPK3/);
     assert.equal(by.DN1.picking_task_id, '1');
     assert.equal(by.DN1.picking_task_status, 'COMPLETED');
     assert.equal(by.DN1.pickinglist_no_byproduct, 'SPK1', 'original fields kept');
-    assert.equal(by.DN4.picker_exception, '');
-    assert.deepEqual(JSON.parse(JSON.stringify(r.pickers)), { tasks: 4, matched: 2, noTask: 1, noPicker: 1, conflicts: 1 });
+    assert.deepEqual(JSON.parse(JSON.stringify(r.pickers)), { tasks: 4, matched: 2, noTask: 1, noPicker: 1, conflicts: 1, notCommitted: 1 });
 });
 
 test('WMS fill pickers: fills ONLY blank Pickers, only the Picker cell; lists first, writes on apply', () => {
@@ -1307,7 +1307,7 @@ test('WMS pull: small parcel orders use the pick list number (SPK…) as Order #
         { outbound_no: 'DN105', pickinglist_no_byproduct: 'SPK10', carrier_name: 'DHL', outbound_status: 'ALLOCATED' },          // DN already in Order Intake
         { outbound_no: 'DN106', pickinglist_no_byproduct: 'SPK11', carrier_name: 'FedEx', outbound_status: 'ALLOCATED' }
     ];
-    const tasks = [{ type: 'PICKING', group_no: 'SPK7', assigned_to: 'Maria L' }, { type: 'PICKING', group_no: 'SPK11', assigned_to: 'Kim' }];
+    const tasks = ['SPK7', 'SPK8', 'SPK9', 'SPK10', 'SPK11'].map((g, i) => ({ type: 'PICKING', group_no: g, assigned_to: { SPK7: 'Maria L', SPK11: 'Kim' }[g] || null, created_at: '2026-11-2' + i + ' 09:00:00' }));
     const { call, sheets } = wmsGs(onusFake(outbound, tasks));
     call('upsertOrders', [[{ orderNumber: 'DN105', customer: 'Acme' }, { orderNumber: 'SPK11', customer: 'Acme' }], { enteredBy: 'Amy' }]);
     call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
@@ -1322,7 +1322,9 @@ test('WMS pull: small parcel orders use the pick list number (SPK…) as Order #
     assert.equal(spk7.ship_no_later, '2026-11-28', 'earliest ship-by date');
     assert.equal(spk7.picker_name, 'Maria L');
     assert.equal(spk7.outbound_no, 'DN100', 'original fields kept');
-    assert.deepEqual(r.parcel, { parcelOrders: 2, parcelDns: 3, waitingForPickList: 1, alreadyAsDn: 1 });
+    assert.deepEqual(r.parcel, { parcelOrders: 2, parcelDns: 3, waitingForPickList: 0, alreadyAsDn: 1 });
+    assert.equal(r.pickers.notCommitted, 1, 'DN104 has no pick list = not committed yet');
+    assert.equal(spk7.committed_at, '2026-11-20 09:00:00', 'release date = the pick list task created_at, unchanged');
     assert.ok(r.keys.includes('order_number'));
     // Fill missing pickers matches small parcel orders by their SPK number
     const before = JSON.stringify(sheets.get('Orders').rows[1]);

@@ -2605,11 +2605,12 @@
             sortModel: [{ sort: 'asc', colId: 'created_by' }] }, null, 1),
         groupField: 'pickinglist_no_byproduct', taskGroupField: 'group_no', pickerField: 'assigned_to', pickerIdField: 'assigned_to_id', orderKeyField: 'outbound_no'
     };
+    // Release date = committed_at (when the order was committed in the WMS = its picking task was created).
     // Matching for its fields: order_number = the DN number (outbound_no), or for small parcel the pick list number (SPK…)
     const ONUS_WMS_TEMPLATE = {
         name: 'ONUS WMS outbound (built-in)',
         template: { mode: 'insertOnly', defaults: { refType: 'PO#' }, mapping: {
-            orderNumber: ['order_number'], customer: ['owner_name'], cartons: ['ttl_box'], pallets: ['ttl_pallet'], carrier: ['carrier_name'],
+            orderNumber: ['order_number'], releaseDate: ['committed_at'], customer: ['owner_name'], cartons: ['ttl_box'], pallets: ['ttl_pallet'], carrier: ['carrier_name'],
             scac: ['scac'], proBol: ['bol_no'], reference: ['po_no'], orderType: ['outbound_type'], shipDate: ['ship_no_later'],
             destination: ['consignee_city', 'consignee_state'], notes: ['parcel_dns', 'outbound_note'], picker: ['picker_name'] } }
     };
@@ -2772,7 +2773,7 @@
     /** " · Pick tasks: 40 with a picker, 3 without a task, 1 to check" */
     function pickerLine(pk) {
         if (!pk) return '';
-        return ` Pick tasks: ${pk.tasks} read · ${pk.matched} order(s) with a picker${pk.noTask ? `, ${pk.noTask} without a task yet` : ''}${pk.noPicker ? `, ${pk.noPicker} not assigned yet` : ''}${pk.conflicts ? `, <b>${pk.conflicts} with more than one picking task (left blank — check in the WMS)</b>` : ''}.`;
+        return ` Pick tasks: ${pk.tasks} read · ${pk.matched} order(s) with a picker${pk.notCommitted ? `, ${pk.notCommitted} not committed yet (left out until they are — the release date is the committed date)` : pk.noTask ? `, ${pk.noTask} without a task yet` : ''}${pk.noPicker ? `, ${pk.noPicker} not assigned yet` : ''}${pk.conflicts ? `, <b>${pk.conflicts} with more than one picking task (left blank — check in the WMS)</b>` : ''}.`;
     }
 
     // Fill missing pickers: list first, then fill only blank Pickers on confirm
