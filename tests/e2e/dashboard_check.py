@@ -59,7 +59,8 @@ intake=[{'orderNumber':'SO-40160','customer':'A','shipDate':today.isoformat()}, 
         {'orderNumber':'P20261127001','customer':'A','shipDate':today.isoformat()},
         {'orderNumber':'DN-DROP-1','customer':'A','orderType':'dropship','shipDate':today.isoformat()},
         {'orderNumber':'DN-UPS-1','customer':'A','carrier':'UPS_GROUND','shipDate':today.isoformat()},
-        {'orderNumber':'DN-FXF-1','customer':'A','carrier':'FedEx Freight','shipDate':today.isoformat()}]   # freight = regular (not staged)
+        {'orderNumber':'DN-FXF-1','customer':'A','carrier':'FedEx Freight','shipDate':today.isoformat()},
+        {'orderNumber':'SO-40195','customer':'A','carrier':'USPS','shipDate':yday.isoformat()}]   # small parcel, late: not counted / not red   # freight = regular (not staged)
 print('intake:',req({'fn':'upsertOrders','args':[intake,{'enteredBy':'E2E'}],'key':'ont-e2e','warehouse':'ONT'}).get('ok'))
 site=http.server.ThreadingHTTPServer(('127.0.0.1',8769),functools.partial(http.server.SimpleHTTPRequestHandler,directory=REPO))
 site.RequestHandlerClass.log_message=lambda *a: None
@@ -90,7 +91,7 @@ async def main():
                 const first=document.querySelector('#zones-row .zone');
                 const firstLanes=[...first.querySelectorAll('.lane .lname')].map(e=>e.textContent);
                 const pcl=[...document.querySelectorAll('.lane.parcel .lname')].map(e=>e.textContent);
-                const staged=getComputedStyle(document.querySelector('.tile:not(.docked):not([class*=lvl-w]):not([class*=lvl-o])')).backgroundColor;
+                const staged=getComputedStyle(document.querySelector('.tile:not(.docked):not(.late-order):not([class*=lvl-w]):not([class*=lvl-o])')).backgroundColor;
                 // every tile in a 2x spot has the same height
                 const halves=[...document.querySelectorAll('#lanes-row .spot.filled')].filter(s=>s.querySelectorAll('.tile').length===2).map(s=>[...s.querySelectorAll('.tile')].map(t=>Math.round(t.getBoundingClientRect().height)));
                 const lone=document.querySelectorAll('.tile.open-half').length;
@@ -101,6 +102,9 @@ async def main():
                 const stackNames=stack ? [...stack.querySelectorAll('.zname')].map(e=>e.textContent) : [];
                 const zr=[...document.querySelectorAll('#zones-row > *')].map(e=>Math.round(e.getBoundingClientRect().width));
                 return {ship: ship ? ship.querySelector('.label').textContent + ' | ' + ship.querySelector('.value').textContent + ' | ' + ship.querySelector('.note').textContent : null,
+                    lateTiles: document.querySelectorAll('.tile.late-order').length,
+                    lateTileOrders: [...new Set([...document.querySelectorAll('.tile.late-order')].map(t => t.title.split(' · ')[1]))],
+                    lateSpan: [...document.querySelectorAll('.order-span.late')].map(e => e.title),
                     shipStandsOut: ship ? ship.classList.contains('todo') && getComputedStyle(ship).backgroundColor !== getComputedStyle(document.querySelector('.kpi:not(#kpi-ship)')).backgroundColor : false, stackNames, zoneWidths: zr,
                     zones, firstLanes, sHasParcel: sRow.includes('S60') || sRow.includes('S61'), aside: !!document.querySelector('aside'),
                     kpis:[...document.querySelectorAll('.kpi .label')].map(e=>e.textContent), ver: document.getElementById('app-ver').textContent,
@@ -108,7 +112,8 @@ async def main():
                     bad: [...document.querySelectorAll('#lanes-row .spot.filled')].filter(s=>s.querySelectorAll('.tile').length===2).map(s=>[s.closest('.lane').querySelector('.lname').textContent, ...[...s.querySelectorAll('.tile')].map(t=>t.className+':'+t.getBoundingClientRect().height.toFixed(1))]).filter(x=>Math.abs(parseFloat(x[1].split(':')[1])-parseFloat(x[2].split(':')[1]))>1).slice(0,4)};
             }""")
             ok = (chk['zones'][:4]==['Parcel','N09','W05','W06'] and chk['stackNames']==['W05','W06']
-                  and chk['ship']=='Ship today | 4 | of 5 due · 29 plts on floor' and chk['shipStandsOut'] and chk['firstLanes']==['USPS','DHL','S60','S61'] and chk['dhlDim']=='0.45'
+                  and chk['ship']=='Ship today | 4+1 late | of 5 due · 29 plts on floor · 24 late plts' and chk['shipStandsOut']
+                  and chk['lateTiles']==24 and chk['lateTileOrders']==['SO-40122'] and 'SO-40122' in chk['lateSpan'] and chk['firstLanes']==['USPS','DHL','S60','S61'] and chk['dhlDim']=='0.45'
                   and not chk['sHasParcel'] and not chk['aside'] and chk['ver'].startswith('v1.')
                   and any('Dwell' in k for k in chk['kpis']) and 'Staged today' in chk['kpis'] and (w < 900 or chk['floorToBottom'] <= 20)
                   and {'S60','S61','USPS'} <= set(chk['pcl']) and chk['staged'] in ('rgb(21, 128, 61)',) and chk['halvesSame'] and chk['lone']>=1)
