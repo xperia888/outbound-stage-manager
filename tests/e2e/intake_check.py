@@ -707,6 +707,25 @@ async def main():
         record('a normal file import can update again', not await pg.is_disabled('input[name=imp-mode][value=upsert]'))
         await pg.evaluate("showView('orders')")
 
+        # Picker names: PDA account → person's name
+        req({'fn': 'upsertOrders', 'args': [[{'orderNumber': 'DN-PDA-7', 'customer': 'Acme', 'picker': 'picker7'}], {'enteredBy': 'Amy'}], 'key': 'cs-e2e', 'warehouse': 'ONT'})
+        await pg.click('#refresh-btn'); await pg.wait_for_timeout(1500)
+        await pg.click('#tabs button[data-view="api"]'); await pg.wait_for_timeout(300)
+        record('Picker names: accounts on orders without a name are offered', 'picker7' in (await pg.text_content('#pn-unnamed') or ''), await pg.text_content('#pn-unnamed'))
+        await pg.click('#pn-unnamed .pn-pick[data-acct="picker7"]')
+        await pg.locator('#pn-rows tr').last.locator('.pn-name').fill('Pat Rivera')
+        await pg.click('#pn-save'); await pg.wait_for_timeout(1500)
+        await pg.locator('#picker-names-card').screenshot(path=f'{OUT}/picker_names.png')
+        record('Picker names: saved', 'picker7' in json.dumps(json.loads(urllib.request.urlopen(f'http://127.0.0.1:{GAS_PORT}/dump').read())['props'].get('PICKER_NAMES', '')))
+        await pg.evaluate("showView('orders')"); await pg.wait_for_timeout(300)
+        row_txt = await pg.text_content('tr[data-order="DN-PDA-7"]') or ''
+        stored = next(r for r in dump()['Orders'][1:] if r[0] == 'DN-PDA-7')
+        record('Picker names: an order saved with the account shows the name, the stored value is unchanged', 'Pat Rivera' in row_txt and 'picker7' in stored, row_txt)
+        req({'fn': 'upsertOrders', 'args': [[{'orderNumber': 'DN-PDA-8', 'customer': 'Acme', 'picker': 'picker7'}], {'enteredBy': 'Amy'}], 'key': 'cs-e2e', 'warehouse': 'ONT'})
+        hdr = dump()['Orders'][0]
+        new8 = next(r for r in dump()['Orders'][1:] if r[0] == 'DN-PDA-8')
+        record('Picker names: a new order with the account is saved with the name', new8[hdr.index('Picker')] == 'Pat Rivera', new8)
+
         await pg.click('#signout-btn'); await pg.wait_for_timeout(150); await pg.click('#confirm-yes'); await pg.wait_for_timeout(300)
         record('sign out clears the name for the next person', await pg.is_visible('#signin') and await pg.input_value('#signin-name') == '')
         record('no page errors', not errs, errs)

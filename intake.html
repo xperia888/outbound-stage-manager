@@ -819,6 +819,23 @@
                 <div id="wms-test-out" style="margin-top:12px"></div>
             </div>
         </div>
+        <div class="card" id="picker-names-card">
+            <div class="card-head">
+                <div>
+                    <h2>Picker names</h2>
+                    <p>The WMS gives the picker's PDA account (e.g. picker4). Enter who uses each account: imported and pulled orders then get the person's name as Picker, and orders saved with an account show the name.</p>
+                </div>
+                <span id="pn-status"></span>
+            </div>
+            <div class="card-body">
+                <div class="table-wrap"><table class="fit" id="pn-table"><thead><tr><th>PDA account</th><th>Person's name</th><th></th></tr></thead><tbody id="pn-rows"></tbody></table></div>
+                <div id="pn-unnamed" class="sub2" style="margin-top:8px"></div>
+                <div class="btn-row" style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end">
+                    <button type="button" class="btn" id="pn-add">+ Add picker</button>
+                    <button type="button" class="btn primary" id="pn-save">Save picker names</button>
+                </div>
+            </div>
+        </div>
         <div class="card">
             <div class="card-head">
                 <div>
@@ -884,7 +901,7 @@
     // ===================================================================================
     /** Same Apps Script web app as the staging board. */
     // Version of this page — raised with every change
-    const APP_VERSION = '1.56';
+    const APP_VERSION = '1.57';
     document.getElementById('app-ver').innerHTML = `<b>v${APP_VERSION}</b>`;
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
@@ -1182,11 +1199,72 @@
         all: null
     };
 
+    // Picker names: PDA account (lower case) → person's name
+    let pickerNames = {};
+    const pickerShown = v => { const t = String(v == null ? '' : v).trim(); return (t && pickerNames[t.toLowerCase()]) || t; };
+    /** The person's name, with the PDA account under it when the order holds the account. */
+    const pickerCell = v => {
+        const t = String(v == null ? '' : v).trim();
+        const n = t && pickerNames[t.toLowerCase()];
+        return n ? `${esc(n)}<div class="sub2 mono">${esc(t)}</div>` : esc(t);
+    };
+    function renderPickerNames() {
+        const rows = Object.entries(pickerNames).sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
+        $('pn-rows').innerHTML = rows.map(([a, n]) => pnRow(a, n)).join('') || pnRow('', '');
+        pnUnnamed();
+    }
+    const pnRow = (a, n) => `<tr><td><input type="text" class="pn-acct mono" maxlength="80" value="${esc(a)}" placeholder="picker4"></td>
+        <td><input type="text" class="pn-name" maxlength="80" value="${esc(n)}" placeholder="Person's name"></td>
+        <td><button type="button" class="btn pn-del" title="Remove">✕</button></td></tr>`;
+    /** PDA accounts on orders here that have no name yet (one word with a number, e.g. picker4; not a name already) */
+    function pnUnnamed() {
+        const known = new Set(Object.keys(pickerNames));
+        const names = new Set(Object.values(pickerNames).map(x => x.toLowerCase()));
+        [...document.querySelectorAll('.pn-acct')].forEach(i => known.add(i.value.trim().toLowerCase()));
+        const counts = {};
+        orders.forEach(o => {
+            const t = String(o.picker || '').trim();
+            if (!t || /\s/.test(t) || !/\d/.test(t) || known.has(t.toLowerCase()) || names.has(t.toLowerCase())) return;   // accounts look like picker4
+            counts[t] = (counts[t] || 0) + 1;
+        });
+        const list = Object.keys(counts).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        $('pn-unnamed').innerHTML = list.length ? `Accounts on orders without a name: ${list.map(a => `<a href="#" class="pn-pick mono" data-acct="${esc(a)}">${esc(a)}</a> (${counts[a]})`).join(', ')} — click to add.` : '';
+    }
+    $('pn-add').addEventListener('click', () => { $('pn-rows').insertAdjacentHTML('beforeend', pnRow('', '')); $('pn-rows').lastElementChild.querySelector('input').focus(); });
+    $('pn-rows').addEventListener('click', e => { if (e.target.classList.contains('pn-del')) { e.target.closest('tr').remove(); pnUnnamed(); } });
+    $('pn-unnamed').addEventListener('click', e => {
+        const a = e.target.closest('.pn-pick');
+        if (!a) return;
+        e.preventDefault();
+        const empty = [...$('pn-rows').querySelectorAll('tr')].find(tr => !tr.querySelector('.pn-acct').value.trim() && !tr.querySelector('.pn-name').value.trim());
+        if (!empty) $('pn-rows').insertAdjacentHTML('beforeend', pnRow(a.dataset.acct, ''));
+        else empty.querySelector('.pn-acct').value = a.dataset.acct;
+        const tr = empty || $('pn-rows').lastElementChild;
+        tr.querySelector('.pn-name').focus();
+        pnUnnamed();
+    });
+    $('pn-save').addEventListener('click', async () => {
+        const list = [...$('pn-rows').querySelectorAll('tr')].map(tr => ({ account: tr.querySelector('.pn-acct').value.trim(), name: tr.querySelector('.pn-name').value.trim() }));
+        $('pn-save').disabled = true;
+        const r = await cloud('savePickerNames', [list]);
+        $('pn-save').disabled = false;
+        if (!r.ok) { toast(r.error || 'Could not save', true); return; }
+        pickerNames = r.names || {};
+        renderPickerNames();
+        $('pn-status').innerHTML = `<span class="chip shipped">${Object.keys(pickerNames).length} picker(s)</span>`;
+        renderOrders();
+        toast('Picker names saved');
+    });
+
     async function loadOrders() {
         if (!currentKey()) { showSignIn(); return; }
         $('refresh-btn').disabled = true;
         const days = Number($('days-filter').value);
-        const [list, prog] = await Promise.all([cloud('listOrders', [{ days }]), cloud('orderProgress')]);
+        const [list, prog, pn] = await Promise.all([cloud('listOrders', [{ days }]), cloud('orderProgress'), cloud('getPickerNames')]);
+        if (pn && pn.ok) {
+            pickerNames = pn.names || {};
+            $('pn-status').innerHTML = `<span class="chip ${Object.keys(pickerNames).length ? 'shipped' : 'waiting'}">${Object.keys(pickerNames).length} picker(s)</span>`;
+        }
         $('refresh-btn').disabled = false;
         if (!list.ok) {
             $('list-foot').innerHTML = `<span class="err-text">${esc(list.error || 'Could not load orders')}</span>`;
@@ -1197,6 +1275,7 @@
         lastLoadedAt = Date.now();
         refreshDatalists();
         renderOrders();
+        if (pn && pn.ok) renderPickerNames();
     }
 
     /** Open (not shipped, not cancelled) and no carrier entered. */
@@ -1206,7 +1285,7 @@
     function searchedOrders() {
         const q = $('search').value.trim().toLowerCase();
         if (!q) return orders;
-        return orders.filter(o => [o.orderNumber, o.customer, o.reference, o.carrier, o.proBol, o.destination, o.orderType, o.picker, o.vrid, stageLanesOf(o).lanes.join(' ')]
+        return orders.filter(o => [o.orderNumber, o.customer, o.reference, o.carrier, o.proBol, o.destination, o.orderType, o.picker, pickerShown(o.picker), o.vrid, stageLanesOf(o).lanes.join(' ')]
             .some(v => String(v || '').toLowerCase().includes(q)));
     }
 
@@ -1286,7 +1365,7 @@
                     <td class="num nw">${o.pallets == null ? '' : `<b>${o.pallets}</b>`}${o.cartons == null ? '' : `<div class="sub2">${o.cartons} ctn</div>`}</td>
                     <td class="nw"><span class="chip ${st.key}">${esc(st.label)}</span>${bar}${floorText}${since}${shippedAt}</td>
                     <td>${laneCell}</td>
-                    <td class="w-mid">${esc(o.picker || '')}</td>
+                    <td class="w-mid">${pickerCell(o.picker)}</td>
                     <td class="w-mid">${missingCarrier(o) ? '<span class="no-carrier">No carrier</span>' : esc(o.carrier || '')}${o.scac ? ` <span class="sub2 mono">${esc(o.scac)}</span>` : ''}${o.vrid ? `<div class="sub2 mono">VRID ${esc(o.vrid)}</div>` : ''}</td>
                     <td class="nw">${o.readyDate ? `<span class="two"><span class="sub2">Ready</span> ${esc(shortDay(o.readyDate))}</span>` : ''}${o.shipDate ? `<span class="two"><span class="sub2">Ship</span> ${esc(shortDay(o.shipDate))}</span>` : ''}</td>
                 </tr>`;
@@ -2140,7 +2219,7 @@
             <td class="w-mid">${esc([p.o.refType, p.o.reference].filter(Boolean).join(' '))}</td>
             <td>${esc(p.o.orderType || '')}</td>
             <td class="w-mid">${esc(p.o.carrier || '')}${p.o.vrid ? `<div class="sub2 mono">${esc(p.o.vrid)}</div>` : ''}</td>
-            <td class="w-mid">${esc(p.o.picker || '')}</td>
+            <td class="w-mid">${pickerCell(p.o.picker)}</td>
             <td class="nw">${releasedCell(p.o)}</td>
         </tr>`).join('') + (imp.parsed.length > show.length ? `<tr><td colspan="10" class="sub2">…and ${imp.parsed.length - show.length} more row(s)</td></tr>` : '');
         const n = c.new + c.update;
@@ -2339,7 +2418,8 @@
         });
         const byPicker = {};
         views.filter(v => (inDay(v.released) || v.scannedInRange || v.shippedInRange) && v.o.picker).forEach(v => {
-            const p = byPicker[v.o.picker] = byPicker[v.o.picker] || { orders: 0, pallets: 0, shipped: 0 };
+            const who = pickerShown(v.o.picker);
+            const p = byPicker[who] = byPicker[who] || { orders: 0, pallets: 0, shipped: 0 };
             p.orders++; p.pallets += Number(v.o.pallets) || 0; p.shipped += v.shippedInRange;
         });
         const byUser = {};
@@ -2405,7 +2485,7 @@
                 ${open.length ? `<div class="rep-table"><table><thead><tr><th>Order #</th><th>Customer</th><th>Released</th><th>Age</th><th>Status</th><th class="num">On floor / expected</th><th>Stage lanes</th><th>Picker</th><th>Carrier</th></tr></thead><tbody>
                 ${open.map(v => `<tr><td class="ono">${esc(v.o.orderNumber)}</td><td>${esc(v.o.customer || '')}</td><td>${esc(whenShort(v.released, from))}</td>
                     <td class="${durClass(endRef - v.released, 24, 48)}">${esc(dur(endRef - v.released))}</td><td>${statusChip(v.status)}</td>
-                    <td class="num">${v.onFloor}${v.expected != null ? ' / ' + v.expected : ''}</td><td class="mono">${esc(v.lanes.join(', '))}</td><td>${esc(v.o.picker || '')}</td><td>${esc(v.o.carrier || '')}</td></tr>`).join('')}
+                    <td class="num">${v.onFloor}${v.expected != null ? ' / ' + v.expected : ''}</td><td class="mono">${esc(v.lanes.join(', '))}</td><td>${esc(pickerShown(v.o.picker))}</td><td>${esc(v.o.carrier || '')}</td></tr>`).join('')}
                 </tbody></table></div>` : empty('All released orders are shipped.')}
             </div>
             <div class="rep-sec">
@@ -2495,7 +2575,7 @@
                     <th class="num">Plt exp / stg / shp</th><th>Lanes / Dock</th><th>Status</th></tr></thead><tbody>
                 ${views.map(v => `<tr>
                     <td class="w-cust"><span class="ono">${esc(v.o.orderNumber)}</span><div class="sub2">${esc(v.o.customer || '')}</div></td>
-                    <td class="w-mid">${esc(v.creator)}${v.o.picker ? `<div class="sub2">Picker ${esc(v.o.picker)}</div>` : ''}</td>
+                    <td class="w-mid">${esc(v.creator)}${v.o.picker ? `<div class="sub2">Picker ${esc(pickerShown(v.o.picker))}</div>` : ''}</td>
                     <td class="w-mid">${esc(v.o.orderType || '')}<div class="sub2">${esc([v.o.refType, v.o.reference].filter(Boolean).join(' '))}</div></td>
                     <td class="w-mid">${esc(v.o.carrier || '')}${v.o.vrid ? `<div class="sub2 mono">${esc(v.o.vrid)}</div>` : ''}</td>
                     <td class="nw">${whenTwo(v.released)}</td>
@@ -2517,7 +2597,7 @@
         const head = ['Order #', 'Customer', 'Created by', 'Last edited by', 'Order type', 'Reference type', 'Reference', 'Picker', 'Carrier', 'VRID', 'Released', 'First staged', 'At dock', 'Last shipped',
             'Release to staged (h)', 'Staged to shipped (h)', 'Release to shipped (h)', 'Pallets expected', 'Pallets staged', 'Pallets on floor', 'Pallets shipped', 'Over/short', 'Stage lanes', 'Dock', 'Status', 'Order ready date', 'Ship / appt date', 'Release window'];
         const cell = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-        const lines = [head.map(cell).join(',')].concat(reportRows.map(v => [v.o.orderNumber, v.o.customer, v.creator, v.o.enteredBy, v.o.orderType, v.o.refType, v.o.reference, v.o.picker, v.o.carrier, v.o.vrid,
+        const lines = [head.map(cell).join(',')].concat(reportRows.map(v => [v.o.orderNumber, v.o.customer, v.creator, v.o.enteredBy, v.o.orderType, v.o.refType, v.o.reference, pickerShown(v.o.picker), v.o.carrier, v.o.vrid,
             iso(v.released), iso(v.firstStaged), iso(v.firstDock), iso(v.lastShip), hours(v.releaseToStage), hours(v.stageToShip), hours(v.total),
             v.expected, v.staged, v.onFloor, v.shipped, v.variance, v.lanes.join(', '), v.docks.join(', '), v.status, v.o.readyDate, v.o.shipDate, v.o.releaseWindow].map(cell).join(',')));
         const name = reportKind === 'eod' ? `eod-${$('rep-day').value}` : `order-lifecycle-${$('rep-from').value}-to-${$('rep-to').value}`;

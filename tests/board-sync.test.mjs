@@ -1429,3 +1429,31 @@ test('WMS pull: drop ship orders are small parcel — Order # is the SPK pick li
     assert.equal(r.records[0].parcel_dns, 'DNs: DN2611273651, DN2611273148');
     assert.equal(r.records[0].ttl_pallet, 3);
 });
+
+test('picker names: PDA account → person name per warehouse; saved Pickers get the name, the WMS pull shows it', () => {
+    const outbound = [{ outbound_no: 'DN1', pickinglist_no_byproduct: 'SPK1', outbound_type: 'regular', outbound_status: 'ALLOCATED' }];
+    const tasks = [{ type: 'PICKING', group_no: 'SPK1', assigned_to: 'picker4', created_at: '2026-11-27 12:40:00' }];
+    const { call, props } = wmsGs(onusFake(outbound, tasks));
+    assert.deepEqual(call('getPickerNames', []).names, {});
+    assert.match(call('savePickerNames', [[{ account: 'picker4', name: '' }]]).error, /both/);
+    assert.match(call('savePickerNames', [[{ account: 'picker4', name: 'A' }, { account: 'PICKER4', name: 'B' }]]).error, /twice/);
+    const saved = call('savePickerNames', [[{ account: 'Picker4', name: 'Maria Lopez' }, { account: 'picker1', name: 'Jose Martinez' }, { account: '', name: '' }]]);
+    assert.equal(saved.ok, true, saved.error);
+    assert.deepEqual(saved.names, { picker4: 'Maria Lopez', picker1: 'Jose Martinez' });
+    assert.ok(props.PICKER_NAMES, 'ONT list in its own property');
+    // Pull: picker_name is the person, picker_account the PDA login
+    call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
+    const r = call('wmsPullFetch', [{}]);
+    assert.equal(r.records[0].picker_name, 'Maria Lopez');
+    assert.equal(r.records[0].picker_account, 'picker4');
+    // Saving orders: an account becomes the name; a typed name or an unknown account stays as it is
+    call('upsertOrders', [[
+        { orderNumber: 'DN-A', customer: 'Acme', picker: 'PICKER1' },
+        { orderNumber: 'DN-B', customer: 'Acme', picker: 'Kim Lee' },
+        { orderNumber: 'DN-C', customer: 'Acme', picker: 'picker9' }
+    ], { enteredBy: 'Amy' }]);
+    const by = Object.fromEntries(call('listOrders', []).orders.map(o => [o.orderNumber, o.picker]));
+    assert.deepEqual([by['DN-A'], by['DN-B'], by['DN-C']], ['Jose Martinez', 'Kim Lee', 'picker9']);
+    // The WMS push key can't read or change the list
+    assert.equal(call('getPickerNames', [], 'wms-key-1').ok, false);
+});
