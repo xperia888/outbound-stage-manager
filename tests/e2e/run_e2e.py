@@ -222,22 +222,27 @@ async def run_round(browser, wh, rnd, devices):
         {'orderNumber': rel, 'enteredBy': 'E2E', 'shipDate': td.isoformat()},                                     # 3 plts on the floor
         {'orderNumber': f'DN-{tag}-ST1', 'enteredBy': 'E2E', 'customer': 'Ship Co', 'pallets': 4, 'shipDate': td.strftime('%m/%d/%Y')},   # not staged
         {'orderNumber': f'DN-{tag}-LATE', 'enteredBy': 'E2E', 'customer': 'Late Co', 'shipDate': (td - datetime.timedelta(days=1)).isoformat()},
-        {'orderNumber': f'DN-{tag}-TMR', 'enteredBy': 'E2E', 'customer': 'Later Co', 'shipDate': (td + datetime.timedelta(days=1)).isoformat()}], {'source': 'Manual'}]})
+        {'orderNumber': f'DN-{tag}-TMR', 'enteredBy': 'E2E', 'customer': 'Later Co', 'shipDate': (td + datetime.timedelta(days=1)).isoformat()},
+        # small parcel: not in Ship Today
+        {'orderNumber': f'SPK{tag}01', 'enteredBy': 'E2E', 'customer': 'Parcel Co', 'shipDate': td.isoformat()},
+        {'orderNumber': f'DN-{tag}-DROP', 'enteredBy': 'E2E', 'customer': 'Drop Co', 'orderType': 'dropship', 'shipDate': td.isoformat()},
+        {'orderNumber': f'DN-{tag}-UPS', 'enteredBy': 'E2E', 'customer': 'UPS Co', 'carrier': 'UPS Ground', 'shipDate': td.isoformat()}], {'source': 'Manual'}]})
     record(wh, rnd, 'Header shows the app version', (await A.text_content('#app-version-badge') or '').strip() == await A.evaluate('APP_VERSION'))
     await A.click('#header-ship-today-btn')
     shown = await wait_for(A, f"!!document.querySelector('[data-ship-order=\"DN-{tag}-ST1\"]')", 15000)
     rows = await A.evaluate("[...document.querySelectorAll('#ship-today-list [data-ship-order]')].map(e => e.dataset.shipOrder + ' ' + e.textContent.replace(/\\s+/g, ' ').trim())")
     mine = [r for r in rows if f'-{tag}-' in r]
     def row(o): return next((r for r in mine if r.startswith(o + ' ')), '')
-    record(wh, rnd, 'Ship Today lists today\'s orders with their status (and late ones), not tomorrow\'s',
+    record(wh, rnd, 'Ship Today lists today\'s regular orders with their status (and late ones); not tomorrow\'s, not small parcel',
            shown and 'Not staged yet' in row(f'DN-{tag}-ST1') and 'On floor · 3 plts' in row(rel)
            and 'Was due' in row(f'DN-{tag}-LATE') and not row(f'DN-{tag}-TMR')
-           and mine.index(row(f'DN-{tag}-LATE')) == 0, mine)
+           and mine.index(row(f'DN-{tag}-LATE')) == 0
+           and not any(x in ' '.join(rows) for x in (f'SPK{tag}01', f'DN-{tag}-DROP', f'DN-{tag}-UPS')), mine)
     await A.click(f'[data-ship-order="{rel}"] button:has-text("Locate")'); await A.wait_for_timeout(400)
     record(wh, rnd, 'Ship Today → Locate closes the list and highlights the order on the board',
            not await A.is_visible('#ship-today-modal') and await A.evaluate('highlightedOrderNumber') == rel)
     badge_txt = await A.text_content('#header-ship-today-badge') or ''
-    record(wh, rnd, 'Ship Today button shows left / due today and the late count', '/' in badge_txt and 'late' in badge_txt, badge_txt)
+    record(wh, rnd, 'Ship Today button shows the regular orders left and the late count', 'late' in badge_txt and '/' not in badge_txt, badge_txt)
 
     # --- Scan Order window: order + carrier/destination + number of pallets ---------------------------
     await open_scan_window(A)

@@ -205,7 +205,7 @@
                         <h1 class="text-xs sm:text-sm md:text-base font-extrabold tracking-tight leading-none truncate">
                             Outbound Pallet Staging
                         </h1>
-                        <span id="app-version-badge" class="text-[10px] font-mono-code font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded" title="App version">v1.60</span>
+                        <span id="app-version-badge" class="text-[10px] font-mono-code font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded" title="App version">v1.61</span>
                         <button
                             type="button"
                             id="cloud-sync-pill"
@@ -291,7 +291,7 @@
                     id="header-ship-today-btn"
                     onclick="openShipTodayModal()"
                     class="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-[11px] sm:text-xs px-2 py-1.5 rounded-lg border border-slate-700 transition-all cursor-pointer shadow-sm"
-                    title="Orders with today's ship / appointment date (Order Intake) — make sure they ship today"
+                    title="Regular orders (not small parcel) with today's ship / appointment date that haven't shipped yet"
                 >
                     <i data-lucide="calendar-check" class="w-3.5 h-3.5"></i>
                     <span>Ship Today</span>
@@ -1968,7 +1968,7 @@
          * 1. STATE & CONSTANTS
          * =========================================================================
          */
-        const APP_VERSION = 'v1.60';   // raised with every change; shown in the header
+        const APP_VERSION = 'v1.61';   // raised with every change; shown in the header
 
         /**
          * Warehouses. Each has its own board, access code, scan queue and sheet tabs.
@@ -4547,6 +4547,13 @@
             return isNaN(d) ? '' : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
         }
 
+        /** Small parcel: pick list order # (SPK… / P + digits), drop ship, or a UPS / FedEx / USPS / DHL carrier. */
+        function isSmallParcelOrder(o, ono) {
+            if (/^SPK|^P\d/i.test(ono)) return true;
+            if (/^drop[\s_-]*ship/i.test(String(o.orderType || '').trim())) return true;
+            return isSmallParcelCarrier(o.carrier);
+        }
+
         /** [{ order, late, floor, docks, lanes, shippedCount, status }] — status: late / notStaged / onFloor / atDock / shipped */
         function computeShipToday() {
             const now = new Date();
@@ -4560,6 +4567,7 @@
                 const ono = normalizeOrderNumber(o.orderNumber);
                 const day = shipDayKey(o.shipDate);
                 if (!ono || !day || day > today) return;
+                if (isSmallParcelOrder(o, ono)) return;   // Ship Today is for regular orders only
                 const floor = floorBy[ono] || [];
                 const shippedCount = shippedBy[ono] || 0;
                 const done = shippedCount > 0 && floor.length === 0;
@@ -4583,7 +4591,7 @@
             const left = rows.filter(r => !r.late && r.status !== 'shipped').length;
             const late = rows.filter(r => r.late).length;
             const due = rows.filter(r => !r.late).length;
-            badge.textContent = `${left}/${due}${late ? ` +${late} late` : ''}`;
+            badge.textContent = `${left}${late ? ` +${late} late` : ''}`;   // regular orders still to ship
             const base = 'inline-flex items-center gap-1 font-extrabold text-[11px] sm:text-xs px-2 py-1.5 rounded-lg transition-all cursor-pointer shadow-sm border ';
             btn.className = base + (late ? 'bg-red-600 hover:bg-red-500 text-white border-red-400'
                 : left ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300'
@@ -4614,14 +4622,15 @@
                 list.innerHTML = `<div class="text-sm text-slate-500 py-6 text-center">${escapeHtml(intakeOrdersError || 'Loading orders from Order Intake…')}</div>`;
                 return;
             }
-            const rows = computeShipToday();
-            const today = rows.filter(r => !r.late);
+            const all = computeShipToday();
+            const rows = all.filter(r => r.status !== 'shipped');   // only what still has to ship
+            const today = all.filter(r => !r.late);
             const count = st => today.filter(r => r.status === st).length;
             const late = rows.filter(r => r.late).length;
             const box = (n, label, cls) => `<div class="rounded-xl border px-3 py-2 ${cls}"><div class="text-xl font-extrabold font-mono-code leading-none">${n}</div><div class="text-[11px] font-bold mt-1">${label}</div></div>`;
             sum.innerHTML = box(count('notStaged'), 'Not staged yet', 'bg-amber-50 border-amber-200 text-amber-900')
                 + box(count('onFloor') + count('atDock'), 'Staged / at dock', 'bg-sky-50 border-sky-200 text-sky-900')
-                + box(count('shipped'), 'Shipped', 'bg-emerald-50 border-emerald-200 text-emerald-900')
+                + box(count('shipped'), 'Already shipped (hidden)', 'bg-emerald-50 border-emerald-200 text-emerald-900')
                 + box(late, 'Late (earlier date)', late ? 'bg-red-50 border-red-200 text-red-800' : 'bg-slate-50 border-slate-200 text-slate-600');
             const statusChip = r => {
                 const plts = n => `${n} plt${n === 1 ? '' : 's'}`;
@@ -4644,9 +4653,9 @@
                     </div>
                     ${r.floor.length ? `<button type="button" onclick="locateShipTodayOrder(${jsArg(r.ono)})" class="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-extrabold bg-sky-600 hover:bg-sky-500 text-white rounded-lg cursor-pointer"><i data-lucide="crosshair" class="w-3 h-3"></i><span>Locate</span></button>` : ''}
                 </div>`;
-            }).join('') : '<div class="text-sm text-slate-500 py-6 text-center">No orders have today\'s ship / appointment date in Order Intake.</div>';
+            }).join('') : `<div class="text-sm text-slate-500 py-6 text-center">${today.length ? '✓ All regular orders due today have shipped.' : 'No regular orders have today\'s ship / appointment date in Order Intake.'}</div>`;
             document.getElementById('ship-today-subtitle').textContent =
-                `${today.length} order(s) due today · ${today.length - count('shipped')} still to ship · from Order Intake ship / appt date`;
+                `Regular orders (small parcel not included) · ${today.length} due today · ${today.length - count('shipped')} still to ship · from Order Intake ship / appt date`;
             if (window.lucide) lucide.createIcons();
         }
 
