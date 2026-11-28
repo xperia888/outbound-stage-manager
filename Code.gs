@@ -48,15 +48,19 @@ WAREHOUSES_.TEST.templatesSheet = 'Import Templates TEST';
 WAREHOUSES_.ONT.wmsPullPrefix = 'WMS_PULL';
 WAREHOUSES_.CHINO.wmsPullPrefix = 'WMS_PULL_CHINO';
 WAREHOUSES_.TEST.wmsPullPrefix = 'WMS_PULL_TEST';
+// Picker names: PDA user account (e.g. picker4) → the person's name. Script Property, JSON { account: name }
+WAREHOUSES_.ONT.pickerNamesProperty = 'PICKER_NAMES';
+WAREHOUSES_.CHINO.pickerNamesProperty = 'PICKER_NAMES_CHINO';
+WAREHOUSES_.TEST.pickerNamesProperty = 'PICKER_NAMES_TEST';
 
 /** What each kind of key may call. */
 const ROLE_FUNCTIONS_ = {
   floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
-    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut'],
+    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut', 'getPickerNames', 'savePickerNames'],
   cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
-    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut'],
+    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut', 'getPickerNames', 'savePickerNames'],
   api: ['listOrders', 'upsertOrders']
 };
 let ACTIVE_WH_ = WAREHOUSES_.ONT; // set per request by api(); each request runs on its own
@@ -166,6 +170,8 @@ function runRequest_(req, role) {
     case 'wmsFillPickers': return wmsFillPickers_(args[0]);
     case 'wmsLogin': return wmsLogin_(args[0], args[1]);
     case 'wmsSignOut': return wmsSignOut_();
+    case 'getPickerNames': return { ok: true, names: readPickerNames_() };
+    case 'savePickerNames': return savePickerNames_(args[0]);
     case 'setOrderStatus': return setOrderStatus_(args[0], args[1], args[2]);
     case 'orderProgress': return orderProgress_();
     case 'intakeStatus': return intakeStatus_(role);
@@ -489,6 +495,40 @@ function cleanOrderValue_(field, value) {
  * Only the fields present on an order are changed, so an import that has no Carrier
  * column leaves carriers already entered alone. New orders default to Released, now.
  */
+/** { account (lower case): name } for this warehouse. */
+function readPickerNames_() {
+  const key = ACTIVE_WH_.pickerNamesProperty;
+  if (!key) return {};
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(key) || '{}') || {}; } catch (e) { return {}; }
+}
+
+/** list: [{ account, name }] — replaces the whole list. Blank rows are dropped; an account appears once. */
+function savePickerNames_(list) {
+  const key = ACTIVE_WH_.pickerNamesProperty;
+  if (!key) return { ok: false, error: 'No picker names for this warehouse' };
+  if (!Array.isArray(list)) return { ok: false, error: 'Send a list of { account, name }' };
+  if (list.length > 500) return { ok: false, error: 'At most 500 pickers' };
+  const out = {};
+  for (const row of list) {
+    const account = String((row && row.account) || '').trim().slice(0, 80);
+    const name = String((row && row.name) || '').trim().slice(0, 80);
+    if (!account && !name) continue;
+    if (!account || !name) return { ok: false, error: 'Each row needs both the PDA account and the name' + (account ? ' (' + account + ')' : '') };
+    const k = account.toLowerCase();
+    if (out[k] && out[k] !== name) return { ok: false, error: 'PDA account ' + account + ' is listed twice' };
+    out[k] = name;
+  }
+  PropertiesService.getScriptProperties().setProperty(key, JSON.stringify(out));
+  return { ok: true, names: out };
+}
+
+/** The person's name for a PDA account; anything else is returned as it is. */
+function pickerDisplayName_(value, names) {
+  const v = String(value == null ? '' : value).trim();
+  const n = names && v ? names[v.toLowerCase()] : '';
+  return n || v;
+}
+
 function upsertOrders_(orders, options, role) {
   const list = Array.isArray(orders) ? orders : [];
   if (list.length === 0) return { ok: true, inserted: 0, updated: 0, skipped: 0, errors: [] };
@@ -504,6 +544,7 @@ function upsertOrders_(orders, options, role) {
     return { ok: false, needName: true, error: 'Name is required' };
   }
 
+  const pickerNames = readPickerNames_();
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) return { ok: false, error: 'Busy — try again' };
   try {
@@ -536,6 +577,7 @@ function upsertOrders_(orders, options, role) {
           values[key] = cleanOrderValue_(ORDER_FIELDS_[col[key]], o[key]);
         });
         if (!values.enteredBy && batchUser) values.enteredBy = batchUser;
+        if (values.picker) values.picker = pickerDisplayName_(values.picker, pickerNames);   // PDA account → the person's name
         if (o.status !== undefined && o.status !== '') {
           const st = ORDER_STATUSES_.find(x => x.toLowerCase() === String(o.status).trim().toLowerCase());
           if (!st) throw new Error('Status must be Released or Cancelled');
@@ -1568,18 +1610,20 @@ function wmsPickTasks_(cfg, secret, firstAnswer) {
  *  by pick list (pickinglist_no_byproduct = group_no). The original fields are kept as they are. */
 function wmsAddPickers_(cfg, secret, records, firstTaskAnswer) {
   const t = wmsPickTasks_(cfg, secret, firstTaskAnswer);
+  const names = readPickerNames_();
   const gField = cfg.groupField || 'pickinglist_no_byproduct';
   const out = { tasks: t.tasks, matched: 0, noTask: 0, noPicker: 0, conflicts: 0 };
   records.forEach(r => {
     const g = wmsPickList_(r, gField);   // '' for a missing or placeholder pick list: no task can match it
     const task = g ? t.byGroup[g] : null;
     // Field names from the "Outbound & Picker Data Integration Rules"; empty when there is no single matching task
-    r.picker_id = ''; r.picker_name = ''; r.picking_task_id = ''; r.picking_task_status = ''; r.picker_exception = ''; r.committed_at = '';
+    r.picker_id = ''; r.picker_name = ''; r.picker_account = ''; r.picking_task_id = ''; r.picking_task_status = ''; r.picker_exception = ''; r.committed_at = '';
     Object.defineProperty(r, '__committed', { value: Boolean(task), enumerable: false });   // has a picking task = committed
     if (!task) { out.noTask++; return; }
     r.committed_at = task.createdAt || '';
     if (task.conflict) { out.conflicts++; r.picker_exception = task.conflict + ' PICKING tasks share pick list ' + g + ' — none was chosen'; return; }
-    r.picker_name = task.picker; r.picker_id = task.pickerId; r.picking_task_status = task.status; r.picking_task_id = task.taskId;
+    // assigned_to is the PDA account (e.g. picker4): the Picker Names list gives the person's name
+    r.picker_account = task.picker; r.picker_name = pickerDisplayName_(task.picker, names); r.picker_id = task.pickerId; r.picking_task_status = task.status; r.picking_task_id = task.taskId;
     if (task.picker) out.matched++; else out.noPicker++;
   });
   return out;
