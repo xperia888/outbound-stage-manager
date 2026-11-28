@@ -61,10 +61,12 @@ Board state is saved to the `StateChunks` tab, split across rows to stay under t
 - **Layout:** it follows the warehouse floor, left to right.
   - **Loading doors:** D9 → D1, then the ramp. Each shows the order being loaded, its carrier, pallet count and the lanes it's coming from.
   - **Staging lanes:** every lane named S + number (now S30–S80) in **one line**, as on the floor. Each lane is a column of floor spots, with every pallet in its spot, 2x stacks split in two, dwell alerts (⚠ aging, ⏱ overdue, ⛔ over a week), and the door it's assigned to underneath.
-  - **Other zones:** N09, W05 and W06 locations sit in a row under the S lanes, one block per zone, in location-number order. Locations holding 12 show their spots in two columns. Zones are set in `FLOOR_LAYOUT.zones`.
+  - **Parcel block:** USPS, DHL and every lane ticked "Small parcel lane" (e.g. S60, S61 — they leave the S line) in one block, left of N09.
+  - **Other zones:** N09, W05 and W06 locations sit in a row under the S lanes, filling the bottom of the screen, one block per zone, in location-number order. Locations holding 12 show their spots in two columns. Zones are set in `FLOOR_LAYOUT.zones`.
   - **Order line:** a bracket under the lanes shows which order sits in which lanes.
   - **New lanes:** lanes added in the app appear on the dashboard automatically.
-- **Top and bottom:** KPIs across the top; orders on the floor, dwell alerts and today's totals along the bottom.
+- **Top cards:** pallets staged, floor spots used, open orders, orders at dock, **dwell** (⚠ aging · ⏱ overdue · ⛔ over a week, with the oldest pallet and its lane), staged today and shipped today. Locations not on the plan and other docks in use are in the footer line.
+- **Version:** shown next to the warehouse name (`APP_VERSION` in `dashboard.html`).
 - **Updates:** it refreshes every 10 seconds and warns if the connection drops.
 - **Read-only:** it never changes the board.
 - **Sign in:** enter the access code once on the TV. The code picks the warehouse.
@@ -199,7 +201,7 @@ Open a lane's settings (the sliders icon) and tick **Small parcel lane**. The la
 - When a big shipment is spread over several lanes, a regular order never spills into a parcel lane. You can still pick a parcel lane yourself.
 - **Find Space:** with an order typed in, parcel lanes only show for small parcel orders. With no order, they show last, marked "Small parcel only".
 - **Consolidate:** leaves small parcel pallets and parcel lanes alone (nothing is moved out of or into them).
-- **Live dashboard:** parcel lanes have a violet top bar and a **PCL** tag in place of the count. **USPS** and **DHL** have their own block to the left of N09. Add them in the staging app with exactly those names (and tick Small parcel lane); until then they show dimmed.
+- **Live dashboard:** parcel lanes have a violet top bar and a **PCL** tag in place of the count. **USPS**, **DHL** and all small parcel lanes share the **Parcel** block to the left of N09. Add them in the staging app with exactly those names (and tick Small parcel lane); until then they show dimmed.
 
 ## Search by location
 

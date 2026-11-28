@@ -126,7 +126,7 @@
         transform-origin: center center;
         background: var(--surface-0);
         display: grid;
-        grid-template-rows: 112px minmax(0, 1fr) 236px;
+        grid-template-rows: 112px minmax(0, 1fr);
         grid-template-columns: minmax(0, 1fr);
         overflow: hidden;
     }
@@ -176,17 +176,29 @@
     }
     .theme-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
     body.idle .theme-btn { opacity: 0.35; }
-    .kpis { display: flex; justify-content: center; gap: 14px; }
+    .kpis { display: flex; justify-content: center; align-items: center; gap: 10px; min-width: 0; }
     .kpi {
-        min-width: 136px; padding: 10px 14px; border-radius: 12px;
+        min-width: 112px; padding: 9px 12px; border-radius: 12px;
         background: var(--surface-2); border: 1px solid var(--line);
     }
-    .kpi .label { white-space: nowrap; font-size: 14px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+    .kpi .label { white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
     .kpi .value { font-size: 38px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
     .kpi .value small { font-size: 20px; font-weight: 700; color: var(--text-secondary); }
     .kpi .meter { height: 6px; border-radius: 3px; background: var(--surface-3); margin-top: 6px; overflow: hidden; }
     .kpi .meter > i { display: block; height: 100%; background: var(--brand); border-radius: 3px; }
     .kpi.alert .value { color: var(--critical); }
+    .kpi .value { white-space: nowrap; }
+    #kpi-dwell { flex: none; }
+    #kpi-dwell .value { font-size: 30px; line-height: 1.2; }
+    .kpi .value .dw { display: inline-flex; align-items: baseline; gap: 3px; margin-right: 12px; }
+    .kpi .value .dw:last-child { margin-right: 0; }
+    .kpi .value .dw i { font-style: normal; font-size: 16px; }
+    .kpi .value .dw.warning { color: var(--warning); }
+    .kpi .value .dw.overdue { color: var(--serious); }
+    .kpi .value .dw.overweek { color: var(--critical); }
+    .kpi .value .dw.zero { color: var(--text-muted); }
+    .kpi .note { font-size: 12px; color: var(--text-muted); white-space: nowrap; margin-top: 0; }
+    .app-ver { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--text-muted); }
     .clock { text-align: right; }
     .clock .time { font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
     .clock .date { font-size: 16px; color: var(--text-secondary); margin-top: 4px; }
@@ -196,13 +208,13 @@
     .sync.error .dot { background: var(--critical); }
 
     /* ---------- Body ---------- */
-    main { padding: 14px 24px 0; min-height: 0; min-width: 0; display: flex; }
+    main { padding: 14px 24px 16px; min-height: 0; min-width: 0; display: flex; }
 
     /* Floor plan */
     .floor {
         position: relative;
         display: grid;
-        grid-template-rows: 26px auto minmax(0, 1.15fr) minmax(0, 1fr) 20px;
+        grid-template-rows: 26px auto minmax(0, 1.1fr) minmax(0, 1fr) 20px;
         row-gap: 6px;
         grid-template-columns: minmax(0, 1fr);
         width: 100%; min-width: 0;
@@ -443,6 +455,8 @@
     }
     body.phone .kpi .value { font-size: 24px; }
     body.phone .kpi .value small { font-size: 13px; }
+    body.phone #kpi-dwell { grid-column: span 2; }
+    body.phone #kpi-dwell .value { font-size: 22px; }
 
     body.phone main { padding: 10px 10px 0; display: block; }
     body.phone .floor { display: block; padding: 10px; border-radius: 12px; }
@@ -494,7 +508,7 @@
             </div>
             <div class="brand-text">
                 <h1>Outbound Staging — Live</h1>
-                <div class="sub"><span class="wh-chip" id="wh-chip">ONUS-ONT</span><span>Staging area &amp; loading docks</span>
+                <div class="sub"><span class="wh-chip" id="wh-chip">ONUS-ONT</span><span>Staging area &amp; loading docks</span><span class="app-ver" id="app-ver"></span>
                     <button type="button" class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Switch light / dark (shortcut: T)"></button></div>
             </div>
         </div>
@@ -534,22 +548,6 @@
             </div>
         </section>
     </main>
-        <aside>
-            <div class="panel">
-                <h2>Orders on the floor <span id="orders-count"></span></h2>
-                <div class="orders" id="orders"></div>
-            </div>
-            <div class="panel" id="alerts-panel">
-                <h2>Dwell alerts <span id="alerts-thresholds"></span></h2>
-                <div class="alert-counts" id="alert-counts"></div>
-                <div class="alert-list" id="alert-list"></div>
-            </div>
-            <div class="panel">
-                <h2>Today</h2>
-                <div class="today" id="today"></div>
-                <div class="other-lanes" id="other-lanes"></div>
-            </div>
-        </aside>
     <div id="banner"></div>
 </div>
 
@@ -569,6 +567,8 @@
     // ===================================================================================
 
     /** Same Apps Script web app the staging board uses. */
+    /** Version of this page — raised with every change. */
+    const APP_VERSION = '1.58';
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const REFRESH_MS = 10000;
     const STALE_AFTER_MS = 60000;
@@ -589,7 +589,8 @@
         // zone by the part of its name before the dot (W05.89 → W05). null = every zone on the board, A→Z.
         // A block can also list single locations by their full name: { name: 'Parcel', locations: ['USPS', 'DHL'] }
         // (shown even before they are added on the board, dimmed).
-        zones: [{ name: 'USPS · DHL', locations: ['USPS', 'DHL'] }, 'N09', 'W05', 'W06']
+        // smallParcelLanes: true also puts every lane marked "small parcel" on the board (e.g. S60, S61) in this block.
+        zones: [{ name: 'Parcel', locations: ['USPS', 'DHL'], smallParcelLanes: true }, 'N09', 'W05', 'W06']
     };
 
     // Shared with the staging app (same site → same saved code and warehouse on this device)
@@ -763,13 +764,20 @@
         const pct = totalSpots ? Math.round((usedSpots / totalSpots) * 100) : 0;
         const alertsTotal = levels.overdue.length + levels.overweek.length;
 
+        const oldest = pallets.reduce((o, p) => (!o || (Number(p.createdAt) || Infinity) < (Number(o.createdAt) || Infinity) ? p : o), null);
+        const oldestCol = oldest ? colById.get(oldest.columnId) : null;
+        const t = dwellThresholds();
+        const dw = (l, icon) => `<span class="dw ${l}${levels[l].length ? '' : ' zero'}" title="${{ warning: 'Aging', overdue: 'Overdue', overweek: 'Over a week' }[l]}"><i>${icon}</i>${levels[l].length}</span>`;
         document.getElementById('kpis').innerHTML = `
             <div class="kpi"><div class="label">Pallets staged</div><div class="value">${pallets.length}</div></div>
             <div class="kpi"><div class="label">Floor spots used</div><div class="value">${usedSpots}<small> / ${totalSpots}</small></div>
                 <div class="meter"><i style="width:${Math.min(100, pct)}%"></i></div></div>
             <div class="kpi"><div class="label">Open orders</div><div class="value">${orders.size}</div></div>
             <div class="kpi"><div class="label">Orders at dock</div><div class="value">${atDockOrders}</div></div>
-            <div class="kpi${alertsTotal ? ' alert' : ''}"><div class="label">Overdue pallets</div><div class="value">${alertsTotal}</div></div>
+            <div class="kpi${alertsTotal ? ' alert' : ''}" id="kpi-dwell" title="Aging ${t.warningDays}d · overdue ${t.overdueDays}d · over a week ${t.overWeekDays}d+">
+                <div class="label">Dwell ⚠ ⏱ ⛔</div><div class="value">${dw('warning', '⚠')}${dw('overdue', '⏱')}${dw('overweek', '⛔')}</div>
+                <div class="note">${oldest ? `oldest ${age(oldest.createdAt)}${oldestCol ? ' · ' + esc(oldestCol.name) : ''}` : 'no pallets'}</div></div>
+            <div class="kpi"><div class="label">Staged today</div><div class="value">${stagedToday}</div></div>
             <div class="kpi"><div class="label">Shipped today</div><div class="value">${shippedToday.length}</div></div>`;
 
         // ---- Loading doors, left → right ----
@@ -824,7 +832,7 @@
         const zonesRow = document.getElementById('zones-row');
         zonesRow.style.display = zones.length ? '' : 'none';
         // Single named locations (USPS, DHL) get wider lanes so the block stays readable
-        zonesRow.style.gridTemplateColumns = zones.map(z => `minmax(0, ${z.singles ? Math.max(6, z.cols.length * 3) : Math.max(1, z.cols.length)}fr)`).join(' ');
+        zonesRow.style.gridTemplateColumns = zones.map(z => `minmax(0, ${z.singles ? Math.max(4, z.cols.length * 1.6) : Math.max(1, z.cols.length)}fr)`).join(' ');
         let zoneTint = 0;
         const inCol = c => (c.missing ? [] : palletsIn(c.id));
         zonesRow.innerHTML = zones.map(z => {
@@ -844,56 +852,14 @@
             </div>`;
         }).join('');
 
-        document.getElementById('floor-foot-right').innerHTML =
-            `updated <b>${new Date(lastOkAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>`;
-
-        // ---- Alerts ----
-        const t = dwellThresholds();
-        document.getElementById('alerts-thresholds').textContent = `aging ${t.warningDays}d · overdue ${t.overdueDays}d · ${t.overWeekDays}d+`;
-        document.getElementById('alert-counts').innerHTML = ['warning', 'overdue', 'overweek'].map(l => `
-            <div class="alert-count ${l}"><div class="n">${levels[l].length}</div>
-            <div class="t"><i></i>${{ warning: '⚠ Aging', overdue: '⏱ Overdue', overweek: '⛔ Over a week' }[l]}</div></div>`).join('');
-        const worst = [...levels.overweek, ...levels.overdue, ...levels.warning]
-            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).slice(0, document.body.classList.contains('phone') ? 8 : 3);
-        document.getElementById('alert-list').innerHTML = worst.length
-            ? worst.map(p => {
-                const l = dwellLevel(p);
-                const col = colById.get(p.columnId);
-                return `<div class="alert-item ${l}"><span class="ico">${LEVEL_ICON[l]}</span><span class="slp">${esc(p.slp)}</span>
-                    <span class="where">${esc(col ? col.name : '—')}</span><span class="age">${age(p.createdAt)}</span></div>`;
-            }).join('')
-            : '<div class="none-msg">✓ No aging pallets</div>';
-
-        // ---- Orders ----
-        const orderRows = [...orders.entries()].map(([ono, list]) => {
-            const docks = [...new Set(list.map(p => norm(p.dockNumber)).filter(Boolean))];
-            const lanes = [...new Set(list.map(p => (colById.get(p.columnId) || {}).name).filter(Boolean))];
-            const carriers = [...new Set(list.map(p => p.carrier).filter(Boolean))];
-            const oldest = Math.min(...list.map(p => Number(p.createdAt) || Date.now()));
-            return { ono, list, docks, lanes, carrier: carriers[0] || '', oldest };
-        }).sort((a, b) => (b.docks.length > 0) - (a.docks.length > 0) || a.oldest - b.oldest);
-        document.getElementById('orders-count').textContent = `${orderRows.length} order${orderRows.length === 1 ? '' : 's'}`;
-        const MAX_ORDERS = document.body.classList.contains('phone') ? 12 : 4;
-        document.getElementById('orders').innerHTML = orderRows.length
-            ? orderRows.slice(0, MAX_ORDERS).map(o => `
-                <div class="order-row${o.docks.length ? ' at-dock' : ''}">
-                    <div class="ono">${esc(o.ono)}</div>
-                    <div class="plts">${o.list.length} plt${o.list.length === 1 ? '' : 's'}</div>
-                    <div class="info">${esc(o.carrier || 'No carrier')} · ${esc(o.lanes.join(', ') || '—')} · ${age(o.oldest)}</div>
-                    <div class="dock${o.docks.length ? '' : ' none'}">${o.docks.length ? esc(o.docks.join(', ')) : 'No dock'}</div>
-                </div>`).join('') + (orderRows.length > MAX_ORDERS ? `<div class="more">+ ${orderRows.length - MAX_ORDERS} more order(s)</div>` : '')
-            : '<div class="none-msg">No orders on the floor</div>';
-
-        // ---- Today + lanes not on the plan ----
-        document.getElementById('today').innerHTML = `
-            <div class="box"><div class="n">${stagedToday}</div><div class="t">Staged today</div></div>
-            <div class="box"><div class="n">${shippedToday.length}</div><div class="t">Shipped today</div></div>`;
+        // Locations not on the plan and other docks in use: in the footer
         const others = cols.filter(c => !mappedColIds.has(c.id));
         const otherDocks = [...new Set(pallets.map(p => norm(p.dockNumber)).filter(d => d && !loadingDoorSet.has(d)))];
-        document.getElementById('other-lanes').innerHTML = [
+        document.getElementById('floor-foot-right').innerHTML = [
             others.length ? 'Other locations: ' + others.map(c => `<b>${esc(c.name)}</b> ${floorSpotsUsed(palletsIn(c.id))}/${Number(c.capacity) || 0}`).join(' · ') : '',
-            otherDocks.length ? 'Other docks in use: ' + otherDocks.map(d => `<b>${esc(d)}</b> ${pallets.filter(p => norm(p.dockNumber) === d).length} plts`).join(' · ') : ''
-        ].filter(Boolean).join('<br>');
+            otherDocks.length ? 'Other docks in use: ' + otherDocks.map(d => `<b>${esc(d)}</b> ${pallets.filter(p => norm(p.dockNumber) === d).length} plts`).join(' · ') : '',
+            `updated <b>${new Date(lastOkAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</b>`
+        ].filter(Boolean).join(' &nbsp;·&nbsp; ');
     }
 
     /** Lanes in floor order. Fills laneNames (same order) so missing lanes can still be labelled. */
@@ -905,9 +871,10 @@
             return laneNames.map(n => byName.get(norm(n)) || null);
         }
         const dir = FLOOR_LAYOUT.laneDirection === 'descending' ? -1 : 1;
+        const parcelBlock = (FLOOR_LAYOUT.zones || []).some(z => z && z.smallParcelLanes);
         const lanes = cols
             .map(c => ({ c, m: /^S\s*-?\s*(\d+)$/i.exec(String(c.name || '').trim()) }))
-            .filter(x => x.m)
+            .filter(x => x.m && !(parcelBlock && x.c.smallParcel))   // small parcel lanes go in the Parcel block
             .sort((a, b) => dir * (Number(a.m[1]) - Number(b.m[1])))
             .map(x => x.c);
         laneNames = lanes.map(c => c.name);
@@ -920,9 +887,11 @@
 
     /** [{ name, cols }] for the zones under the S lanes, each sorted by location number. */
     function zoneColumns(cols, alreadyMapped) {
+        const parcelBlock = (Array.isArray(FLOOR_LAYOUT.zones) ? FLOOR_LAYOUT.zones : []).some(z => z && z.smallParcelLanes);
         const byZone = new Map();
         cols.forEach(c => {
             if (alreadyMapped.has(c.id)) return;
+            if (parcelBlock && c.smallParcel) return;   // shown in the Parcel block
             const z = zoneOf(c.name);
             if (!z) return;
             if (!byZone.has(z)) byZone.set(z, []);
@@ -936,6 +905,13 @@
             if (z && typeof z === 'object' && Array.isArray(z.locations)) {
                 // Named single locations, in the order given; missing ones show as dimmed placeholders
                 const list = z.locations.map(n => byName.get(String(n).trim().toUpperCase()) || { id: null, name: String(n), missing: true });
+                if (z.smallParcelLanes) {
+                    // + every lane marked small parcel, by name (S60, S61, …)
+                    const named = new Set(list.map(c => c.id).filter(Boolean));
+                    cols.filter(c => c.smallParcel && !named.has(c.id) && !alreadyMapped.has(c.id))
+                        .sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true }))
+                        .forEach(c => list.push(c));
+                }
                 return { name: z.name || z.locations.join(' · '), cols: list, singles: true };
             }
             const name = String(z).toUpperCase();
@@ -1026,6 +1002,7 @@
     function renderChrome() {
         const chip = document.getElementById('wh-chip');
         chip.textContent = WAREHOUSES[WH].name;
+        document.getElementById('app-ver').textContent = 'v' + APP_VERSION;
         chip.className = 'wh-chip' + (WH === 'CHINO' ? ' chino' : WH === 'TEST' ? ' test' : '');
         document.title = `${WAREHOUSES[WH].name} · Outbound Staging — Live`;
         const now = new Date();
