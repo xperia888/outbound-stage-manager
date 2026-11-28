@@ -745,6 +745,28 @@ async def main():
         new8 = next(r for r in dump()['Orders'][1:] if r[0] == 'DN-PDA-8')
         record('Picker names: a new order with the account is saved with the name', new8[hdr.index('Picker')] == 'Pat Rivera', new8)
 
+        # Bulk delete: a batch imported by mistake
+        req({'fn': 'upsertOrders', 'args': [[{'orderNumber': f'DN-OOPS-{i}', 'customer': 'Oops Co'} for i in range(1, 4)], {'enteredBy': 'Amy', 'source': 'File'}], 'key': 'cs-e2e', 'warehouse': 'ONT'})
+        await pg.click('#refresh-btn'); await pg.wait_for_timeout(1500)
+        await pg.click('#select-btn'); await pg.wait_for_timeout(200)
+        batch = await pg.evaluate("[...$('bulk-batch').options].find(o => / 3 orders$/.test(o.textContent) && o.textContent.includes('File'))?.value")
+        await pg.select_option('#bulk-batch', batch); await pg.wait_for_timeout(300)
+        sel_txt = await pg.text_content('#bulk-count')
+        record('Bulk delete: picking an import batch selects its orders', sel_txt == '3 selected' and await pg.locator('#orders-body tr.selected').count() == 3, sel_txt)
+        await pg.click('#bulk-delete'); await pg.wait_for_timeout(300)
+        await pg.fill('#prompt-input', 'delet'); await pg.press('#prompt-input', 'Enter'); await pg.wait_for_timeout(800)
+        still = [r[0] for r in dump()['Orders'][1:] if str(r[0]).startswith('DN-OOPS')]
+        record('Bulk delete: nothing deleted without typing DELETE', len(still) == 3, still)
+        await pg.click('#bulk-delete'); await pg.wait_for_timeout(300)
+        await pg.fill('#prompt-input', 'DELETE'); await pg.press('#prompt-input', 'Enter'); await pg.wait_for_timeout(2000)
+        d = dump()
+        gone = [r[0] for r in d['Orders'][1:] if str(r[0]).startswith('DN-OOPS')]
+        logged = [r[0] for r in d.get('Orders Deleted', [])[1:]]
+        record('Bulk delete: the batch is deleted, copies kept in the Deleted tab, other orders untouched',
+               gone == [] and sorted(logged) == ['DN-OOPS-1', 'DN-OOPS-2', 'DN-OOPS-3'] and any(r[0] == 'DN-PDA-7' for r in d['Orders'][1:])
+               and await pg.locator('tr[data-order^="DN-OOPS"]').count() == 0, [gone, logged])
+        await pg.click('#select-btn')
+
         await pg.click('#signout-btn'); await pg.wait_for_timeout(150); await pg.click('#confirm-yes'); await pg.wait_for_timeout(300)
         record('sign out clears the name for the next person', await pg.is_visible('#signin') and await pg.input_value('#signin-name') == '')
         record('no page errors', not errs, errs)

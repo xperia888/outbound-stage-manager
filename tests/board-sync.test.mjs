@@ -245,6 +245,7 @@ function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null
                 return range(row, col, 1, ncols);
             },
             getLastRow() { return rows.length; },
+            deleteRows(start, n) { rows.splice(start - 1, n); },
             setFrozenRows() {}
         };
     };
@@ -1456,4 +1457,27 @@ test('picker names: PDA account → person name per warehouse; saved Pickers get
     assert.deepEqual([by['DN-A'], by['DN-B'], by['DN-C']], ['Jose Martinez', 'Kim Lee', 'picker9']);
     // The WMS push key can't read or change the list
     assert.equal(call('getPickerNames', [], 'wms-key-1').ok, false);
+});
+
+test('bulk delete: CS code only; floor-touched orders kept; deleted rows copied to the Deleted tab first', () => {
+    const { call, sheets, ctx } = wmsGs();
+    call('upsertOrders', [['A1', 'A2', 'A3', 'A4', 'KEEP', 'STAGED', 'SHIPPED'].map(n => ({ orderNumber: n, customer: 'Acme' })), { enteredBy: 'Amy' }]);
+    const state = { columns: [{ id: 'c1', name: 'S51' }], pallets: [{ id: 'p1', columnId: 'c1', orderNumber: 'STAGED', createdAt: 1 }],
+        shippedPallets: [{ id: 'p2', orderNumber: 'SHIPPED', shippedAt: 2 }] };
+    ctx.api({ fn: 'saveBoardState', key: 'secret-1', args: [JSON.stringify(state), null] });
+    // Not for the floor code or the WMS API key; a name is needed
+    assert.equal(JSON.parse(JSON.stringify(ctx.api({ fn: 'deleteOrders', key: 'secret-1', args: [['A1'], { by: 'X' }] }))).ok, false);
+    assert.equal(call('deleteOrders', [['A1'], { by: 'X' }], 'wms-key-1').ok, false);
+    assert.match(call('deleteOrders', [['A1'], {}]).error, /name/);
+    const r = call('deleteOrders', [['a1', 'A2', 'A4', 'STAGED', 'SHIPPED', 'NOPE'], { by: 'Amy' }]);
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(r.deletedOrders.sort(), ['A1', 'A2', 'A4']);
+    assert.deepEqual(r.keptOnBoard.sort(), ['SHIPPED', 'STAGED']);
+    assert.deepEqual(r.notFound, ['NOPE']);
+    const left = call('listOrders', [{ days: 0 }]).orders.map(o => o.orderNumber).sort();
+    assert.deepEqual(left, ['A3', 'KEEP', 'SHIPPED', 'STAGED']);
+    const log = sheets.get('Orders Deleted').rows;
+    assert.equal(log[0].at(-1), 'Deleted By');
+    assert.deepEqual(log.slice(1).map(x => [x[0], x.at(-1)]).sort(), [['A1', 'Amy'], ['A2', 'Amy'], ['A4', 'Amy']]);
+    assert.equal(log[1][1], 'Acme', 'the whole order is kept');
 });
