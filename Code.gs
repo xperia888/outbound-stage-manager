@@ -1335,12 +1335,14 @@ function wmsPullFetch_(options) {
     const pick = cfg.taskUrl ? wmsAddPickers_(cfg, secret, got.records, got.extraAnswers[0]) : null;
     got.seconds = { wms: Math.round((t1 - t0) / 100) / 10, total: Math.round((Date.now() - t0) / 100) / 10 };
     delete got.extraAnswers;
-    if (pick) {
-      // Released to Warehouse = the committed date. Not committed yet (no picking task) → not released: comes in on a later pull
-      const before = got.records.length;
-      got.records = got.records.filter(r => r.__committed);
-      pick.notCommitted = before - got.records.length;
-    }
+    // Released to Warehouse = the committed date. Not committed yet → not released: comes in on a later pull.
+    // Committed = it has a pick list (SPK…) and, when the task API is set, a picking task for it.
+    const plField = cfg.groupField || 'pickinglist_no_byproduct';
+    const before = got.records.length;
+    got.records = got.records.filter(r => (pick ? r.__committed : true)
+      && !((plField in r) && !String(r[plField] == null ? '' : r[plField]).trim()));
+    got.notCommitted = before - got.records.length;
+    if (pick) pick.notCommitted = got.notCommitted;
     const parcel = wmsOrderNumbers_(cfg, got.records, wmsExistingOrderNumbers_());
     got.records = parcel.records;
     got.parcel = parcel.stats;
@@ -1373,10 +1375,17 @@ function wmsByWarehouse_(cfg, records) {
 }
 
 /** UPS / FedEx / USPS / DHL (not "… Freight") — same rule as the staging page's small parcel lanes. */
+// SCAC codes of small parcel services (UPS, FedEx, USPS, DHL); freight ones (UPGF, FXFE, FXNL, …) are not here
+const WMS_PARCEL_SCACS_ = ['UPSN', 'UPSS', 'UPSC', 'FDEG', 'FDXG', 'FDXE', 'FDE', 'FEDX', 'FXSP', 'USPS', 'DHL', 'DHLC', 'DHLG', 'DHLE'];
 function wmsIsSmallParcel_(r) {
   return ['carrier_name', 'ship_method', 'delivery_service', 'delivery_service_code', 'scac'].some(k => {
-    const c = String(r[k] == null ? '' : r[k]).toLowerCase();
-    return c.trim() && !/freight/.test(c) && /\bups\b|fed\s*-?\s*ex|\busps\b|postal|\bdhl\b/.test(c);
+    const raw = String(r[k] == null ? '' : r[k]).trim();
+    if (!raw) return false;
+    // "UPS_GROUND", "FedEx-2Day", "usps.priority": split on anything that isn't a letter or digit
+    const c = raw.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+    if (/freight|\bltl\b/.test(c)) return false;
+    if (/\bups\b|fed ?ex|\busps\b|postal|\bdhl\b/.test(c)) return true;
+    return WMS_PARCEL_SCACS_.indexOf(raw.toUpperCase()) !== -1;
   });
 }
 

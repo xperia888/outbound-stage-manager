@@ -884,7 +884,7 @@
     // ===================================================================================
     /** Same Apps Script web app as the staging board. */
     // Version of this page — raised with every change
-    const APP_VERSION = '1.54';
+    const APP_VERSION = '1.55';
     document.getElementById('app-ver').innerHTML = `<b>v${APP_VERSION}</b>`;
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
@@ -2815,7 +2815,7 @@
         setImportStep(2);
         showView('import');
         loadImportTemplates();
-        toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''}${r.otherWarehouse ? `, ${r.otherWarehouse} of other warehouses left out` : ''}${r.pickers ? `, ${r.pickers.matched} with a picker` : ''}${r.parcel && r.parcel.parcelOrders ? `, ${r.parcel.parcelOrders} small parcel by pick list (SPK)` : ''} — check the matching, then import`);
+        toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''}${r.otherWarehouse ? `, ${r.otherWarehouse} of other warehouses left out` : ''}${r.notCommitted ? `, ${r.notCommitted} not committed yet (no pick list / picking task)` : ''}${r.pickers ? `, ${r.pickers.matched} with a picker` : ''}${r.parcel && r.parcel.parcelOrders ? `, ${r.parcel.parcelOrders} small parcel by pick list (SPK)` : ''} — check the matching, then import`);
     }
 
     /** Small parcel orders use the pick list number (SPK…) as the Order # */
