@@ -136,6 +136,18 @@ async def main():
                 print(f"    {'PASS' if ok2 else 'FAIL'} parcel reminder ticked: late small parcel counted on the card:", on)
                 req({'fn':'saveBoardState','args':[json.dumps(state)],'key':'ont-e2e','warehouse':'ONT'})
                 await pg.reload(); await pg.wait_for_timeout(3500)
+                # A search on the staging page → the matching lanes flash here for ~12 s
+                req({'fn':'flashLanes','args':[{'kind':'order','label':'SO-40122','lanes':['S30','S31','S32','S54']}],'key':'ont-e2e','warehouse':'ONT'})
+                await pg.evaluate('refresh()'); await pg.wait_for_timeout(1500)
+                fl=await pg.evaluate("({lanes:[...document.querySelectorAll('.lane.flash .lname')].map(e=>e.textContent), banner: document.getElementById('flash-banner').classList.contains('on') ? document.getElementById('flash-banner').textContent : ''})")
+                await pg.screenshot(path=f'{E2E}/out/dashboard_flash.png')
+                ok3 = fl['lanes']==['S30','S31','S32','S54'] and 'Order SO-40122 · 4 lanes' in fl['banner']
+                print(f"    {'PASS' if ok3 else 'FAIL'} search on the staging page flashes the matching lanes + banner:", fl)
+                await pg.evaluate('refresh()'); await pg.wait_for_timeout(500)
+                again=await pg.evaluate("document.querySelectorAll('.lane.flash').length")
+                await pg.wait_for_timeout(12500)
+                gone=await pg.evaluate("document.querySelectorAll('.lane.flash').length === 0 && !document.getElementById('flash-banner').classList.contains('on')")
+                print(f"    {'PASS' if (again==4 and gone) else 'FAIL'} the same flash isn't restarted by the next refresh and stops after ~12 s:", again, gone)
             await ctx.close()
         await b.close()
 os.makedirs(os.path.join(E2E, 'out'), exist_ok=True)

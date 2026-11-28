@@ -205,7 +205,7 @@
                         <h1 class="text-xs sm:text-sm md:text-base font-extrabold tracking-tight leading-none truncate">
                             Outbound Pallet Staging
                         </h1>
-                        <span id="app-version-badge" class="text-[10px] font-mono-code font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded" title="App version">v1.63</span>
+                        <span id="app-version-badge" class="text-[10px] font-mono-code font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.2 rounded" title="App version">v1.64</span>
                         <button
                             type="button"
                             id="cloud-sync-pill"
@@ -1972,7 +1972,7 @@
          * 1. STATE & CONSTANTS
          * =========================================================================
          */
-        const APP_VERSION = 'v1.63';   // raised with every change; shown in the header
+        const APP_VERSION = 'v1.64';   // raised with every change; shown in the header
 
         /**
          * Warehouses. Each has its own board, access code, scan queue and sheet tabs.
@@ -3592,6 +3592,8 @@
 
             const searchActive = Boolean(q || carrierFilter || filterDoubleStackedOnly);
             let lanesShown = 0;
+            const flashNames = [];   // lanes matching the search / carrier: flashed on the TV dashboard
+            let flashByName = 0;
             // Location search: "S55", "s5" (S50–S59), "N09", "w06.7", "n0915" — matched from the start of the name
             const laneKey = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             const qLane = laneKey(q);
@@ -3643,6 +3645,7 @@
                 const laneNameMatches = laneHit && !carrierFilter && !filterDoubleStackedOnly;
                 if (isFiltering && visiblePallets.length === 0 && !laneNameMatches) return '';
                 lanesShown++;
+                if (q || carrierFilter) { flashNames.push(col.name); if (laneNameMatches) flashByName++; }
                 const filteringCards = isFiltering && !laneNameMatches;   // a lane found by name isn't "no match" when empty
                 const cardsHtml = appState.cardGroupMode === 'grouped'
                     ? renderGroupedOrderCardsForColumn(visiblePallets, orderSlpMap, filteringCards, pairMap)
@@ -3711,6 +3714,17 @@
                 board.innerHTML = `<div class="col-span-full w-full text-center py-10 text-sm font-semibold text-slate-500 bg-white/70 border border-dashed border-slate-300 rounded-xl">
                     No lane has a pallet matching this search.
                 </div>`;
+            }
+
+            // Tell the TV dashboard which lanes this search found (debounced; only when it changes)
+            if (q || carrierFilter) {
+                const kind = carrierFilter ? 'carrier'
+                    : flashByName ? 'location'
+                    : appState.pallets.some(p => String(p.orderNumber || '').toLowerCase().includes(q)) ? 'order'
+                    : appState.pallets.some(p => String(p.carrier || '').toLowerCase().includes(q)) ? 'carrier' : 'search';
+                queueLaneFlash({ kind, label: carrierFilter ? selectedCarrierFilter.trim() : searchQuery.trim(), lanes: flashNames });
+            } else {
+                queueLaneFlash(null);
             }
 
             updateShipTodayBadge();   // ships / staging change the Ship Today count
@@ -7234,6 +7248,21 @@
          * 13. SEARCH, CONFIRMATION MODAL & TOAST NOTIFICATIONS
          * =========================================================================
          */
+        // Lane flash on the TV dashboard: sent ~1.5 s after the search stops changing, once per different result
+        let laneFlashTimer = null;
+        let laneFlashSent = '';
+        function queueLaneFlash(payload) {
+            clearTimeout(laneFlashTimer);
+            if (!payload) { laneFlashSent = ''; return; }
+            if (payload.label.length < 2 || !payload.lanes.length || payload.lanes.length > 80) return;
+            const sig = `${payload.kind}|${payload.label.toLowerCase()}|${payload.lanes.join(',')}`;
+            if (sig === laneFlashSent) return;
+            laneFlashTimer = setTimeout(() => {
+                laneFlashSent = sig;
+                try { callCloud('flashLanes', [payload], () => {}, () => {}); } catch (e) { /* the dashboard just won't flash */ }
+            }, 1500);
+        }
+
         function handleSearchFilter(val) {
             searchQuery = val || '';
             const clearBtn = document.getElementById('clear-search-btn');
