@@ -61,6 +61,8 @@
     .brand-icon { background: var(--amber); color: #020617; border-radius: 8px; padding: 6px; display: inline-flex; }
     .brand h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
     .brand .sub { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+    .app-ver { font-family: var(--mono); font-size: 10.5px; color: #94a3b8; white-space: nowrap; }
+    .app-ver b { color: #e2e8f0; font-weight: 700; }
     .wh-chip { font-family: var(--mono); font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.45); color: #bae6fd; }
     .wh-chip.chino { color: #fde68a; border-color: rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.15); }
     .wh-chip.test { color: #fecaca; border-color: rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.15); }
@@ -416,6 +418,7 @@
             </div>
         </div>
         <span class="wh-chip" id="wh-chip">—</span>
+        <span class="app-ver" id="app-ver"></span>
         <span class="spacer"></span>
         <div class="who">
             <span class="name-label">Entered by</span>
@@ -737,7 +740,6 @@
                         <div class="field span2"><label for="wms-url">API address (orders list)</label><input type="url" id="wms-url" maxlength="500" placeholder="https://api.your-wms.com/orders?updatedSince={{from}}">
                             <div class="hint">Must start with https://. Optional: <span class="mono">{{from}}</span> / <span class="mono">{{to}}</span> (YYYY-MM-DD), <span class="mono">{{fromIso}}</span> / <span class="mono">{{toIso}}</span> are filled in with the look-back below.</div></div>
                         <div class="field"><label for="wms-method">Method</label><select id="wms-method"><option>GET</option><option>POST</option></select></div>
-                        <div class="field span2 wms-post hidden"><label for="wms-body">Request body (JSON, for POST)</label><textarea id="wms-body" rows="3" maxlength="4000" placeholder='{"status":"Released","from":"{{fromIso}}"}'></textarea></div>
                         <div class="field"><label for="wms-auth">Sign-in type</label>
                             <select id="wms-auth">
                                 <option value="none">No sign-in</option>
@@ -750,6 +752,15 @@
                             </select></div>
                         <div class="field wms-a wms-a-header hidden"><label for="wms-header-name">Header name</label><input type="text" id="wms-header-name" maxlength="80" placeholder="X-API-Key"></div>
                         <div class="field wms-a wms-a-basic wms-a-login hidden"><label for="wms-username">Username</label><input type="text" id="wms-username" maxlength="120" autocomplete="off"></div>
+                        <div class="field wms-secret hidden"><label for="wms-secret" id="wms-secret-label">API key</label><input type="password" id="wms-secret" maxlength="2000" autocomplete="new-password">
+                            <div class="hint" id="wms-secret-hint"></div></div>
+                        <div class="field wms-a wms-a-login hidden" id="wms-login-row" style="align-self:end">
+                            <div id="wms-login-state" class="sub2"></div>
+                            <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+                                <button type="button" class="btn primary" id="wms-login-btn">Sign in to WMS</button>
+                                <button type="button" class="btn hidden" id="wms-signout-btn">Sign out of WMS</button>
+                            </div>
+                        </div>
                         <div class="field wms-a wms-a-login hidden span2"><label for="wms-login-url">WMS login address</label><input type="url" id="wms-login-url" maxlength="500" placeholder="https://prd-onus.target-ai.com:18890/api/login">
                             <div class="hint">The address the WMS web page calls when you sign in.</div></div>
                         <div class="field wms-a wms-a-login hidden span2"><label for="wms-login-body">Login request body</label><textarea id="wms-login-body" rows="2" maxlength="1000" placeholder='{"username":"{{username}}","password":"{{password}}","client":"web_client"}'></textarea>
@@ -760,15 +771,7 @@
                         <div class="field wms-a wms-a-oauth2 hidden span2"><label for="wms-token-url">Token address</label><input type="url" id="wms-token-url" maxlength="500" placeholder="https://api.your-wms.com/oauth/token"></div>
                         <div class="field wms-a wms-a-oauth2 hidden"><label for="wms-client-id">Client ID</label><input type="text" id="wms-client-id" maxlength="200" autocomplete="off"></div>
                         <div class="field wms-a wms-a-oauth2 hidden"><label for="wms-scope">Scope (optional)</label><input type="text" id="wms-scope" maxlength="200"></div>
-                        <div class="field wms-secret hidden"><label for="wms-secret" id="wms-secret-label">API key</label><input type="password" id="wms-secret" maxlength="2000" autocomplete="new-password">
-                            <div class="hint" id="wms-secret-hint"></div></div>
-                        <div class="field wms-a wms-a-login hidden span2" id="wms-login-row">
-                            <div id="wms-login-state" class="sub2"></div>
-                            <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
-                                <button type="button" class="btn primary" id="wms-login-btn">Sign in to WMS</button>
-                                <button type="button" class="btn hidden" id="wms-signout-btn">Sign out of WMS</button>
-                            </div>
-                            <div class="hint">Your password goes straight to the WMS and is never saved — only the sign-in token is kept, on the server. When it expires you'll be asked to sign in again.</div></div>
+                        <div class="field span2 wms-post hidden"><label for="wms-body">Request body (JSON, for POST)</label><textarea id="wms-body" rows="3" maxlength="4000" placeholder='{"status":"Released","from":"{{fromIso}}"}'></textarea></div>
                     </div>
                     <details class="wms-more" style="margin-top:10px">
                         <summary>More options: where the orders are, pages, extra headers</summary>
@@ -878,6 +881,29 @@
     // Settings
     // ===================================================================================
     /** Same Apps Script web app as the staging board. */
+    // Version of this page — raised with every change. The release date is the date of the latest commit on main.
+    const APP_VERSION = '1.51';
+    (function showVersion() {
+        const el = document.getElementById('app-ver');
+        const show = (date, sha) => {
+            el.innerHTML = `<b>v${APP_VERSION}</b>${date ? ` · Released ${date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`;
+            el.title = `Order Intake v${APP_VERSION}${sha ? ' · commit ' + sha.slice(0, 7) : ''}${date ? ' · ' + date.toLocaleString() : ''}`;
+        };
+        show(null, '');
+        let cached = null;
+        try { cached = JSON.parse(sessionStorage.getItem('intake-release') || 'null'); } catch (e) { /* none */ }
+        if (cached && cached.v === APP_VERSION && Date.now() - cached.at < 3600000) { show(new Date(cached.date), cached.sha); return; }
+        fetch('https://api.github.com/repos/xperia888/outbound-stage-manager/commits?sha=main&per_page=1', { headers: { Accept: 'application/vnd.github+json' } })
+            .then(r => (r.ok ? r.json() : null))
+            .then(list => {
+                const c = list && list[0];
+                const d = c && c.commit && (c.commit.committer || c.commit.author) && (c.commit.committer || c.commit.author).date;
+                if (!d) return;
+                show(new Date(d), c.sha || '');
+                try { sessionStorage.setItem('intake-release', JSON.stringify({ v: APP_VERSION, date: d, sha: c.sha || '', at: Date.now() })); } catch (e) { /* fine */ }
+            })
+            .catch(() => { /* offline or rate-limited: the version alone is shown */ });
+    })();
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
     const WAREHOUSES = {
@@ -2631,7 +2657,7 @@
         if (auth === 'login') {
             const L = wmsState.login;
             $('wms-secret').placeholder = L ? 'Only needed to sign in again' : 'Your WMS password';
-            $('wms-secret-hint').textContent = 'Used once to sign in, never saved.';
+            $('wms-secret-hint').textContent = 'Goes straight to the WMS, never saved — only the sign-in token is kept on the server.';
             $('wms-login-state').innerHTML = L
                 ? `<span class="chip shipped">Signed in as ${esc(L.user)}</span> since ${esc(fmtShort(L.at))}`
                 : '<span class="chip waiting">Not signed in to the WMS</span>';
