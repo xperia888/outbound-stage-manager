@@ -222,6 +222,18 @@
     main { padding: 14px 24px 16px; min-height: 0; min-width: 0; display: flex; }
 
     /* Floor plan */
+    /* Lane flash (a search on the staging page) */
+    .lane.flash { position: relative; z-index: 2; animation: lane-flash 0.9s ease-in-out infinite; }
+    @keyframes lane-flash {
+        0%, 100% { box-shadow: 0 0 0 3px var(--brand), 0 0 18px 4px rgba(245, 158, 11, 0.75); background-color: rgba(253, 230, 138, 0.55); }
+        50% { box-shadow: 0 0 0 1px var(--brand), 0 0 4px 0 rgba(245, 158, 11, 0.2); background-color: transparent; }
+    }
+    .flash-banner { position: absolute; top: 8px; left: 50%; transform: translate(-50%, -140%); opacity: 0; z-index: 20;
+        display: flex; align-items: center; gap: 10px; padding: 8px 18px; border-radius: 999px; background: #1c1917; color: #fff;
+        font-size: 20px; font-weight: 700; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); border: 2px solid var(--brand);
+        transition: transform 0.35s ease, opacity 0.35s ease; pointer-events: none; white-space: nowrap; }
+    .flash-banner.on { transform: translate(-50%, 0); opacity: 1; }
+    .flash-banner b { color: var(--brand); font-family: var(--mono); }
     .floor {
         position: relative;
         display: grid;
@@ -549,6 +561,7 @@
     </header>
     <main>
         <section class="floor" aria-label="Staging floor plan">
+            <div id="flash-banner" class="flash-banner" aria-live="polite"></div>
             <div class="floor-title">
                 <span class="sec-tag" style="--sec-accent: var(--sec-docks-accent)">Loading doors</span>
                 <span class="legend">
@@ -597,7 +610,7 @@
 
     /** Same Apps Script web app the staging board uses. */
     /** Version of this page — raised with every change. */
-    const APP_VERSION = '1.62';
+    const APP_VERSION = '1.63';
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const REFRESH_MS = 10000;
     const STALE_AFTER_MS = 60000;
@@ -690,6 +703,7 @@
             if (r && r.unauthorized) { showSignIn('That access code no longer works. Please enter it again.'); return; }
             if (!r || !r.ok) throw new Error((r && r.error) || 'No answer');
             board = parseBoard(r.stateJson);
+            takeLaneFlash(r.flash);
             lastOkAt = Date.now();
             lastError = '';
         } catch (e) {
@@ -704,6 +718,30 @@
             } catch (e) { /* keep the last list */ }
         }
         render();
+    }
+
+    // ---- Lane flash: a search on the staging page (order / location / carrier) flashes the matching lanes here
+    const LANE_FLASH_MS = 12000;
+    let laneFlash = null;          // { names: Set of lane names (upper case), label, kind, until }
+    let laneFlashSeen = '';
+    function takeLaneFlash(f) {
+        if (!f || !f.id || f.id === laneFlashSeen) return;
+        laneFlashSeen = f.id;
+        if (Number(f.ageMs) > 60000) return;   // too old to point at anything now
+        laneFlash = { names: new Set((f.lanes || []).map(n => String(n).trim().toUpperCase())), label: f.label || '', kind: f.kind || 'search', until: Date.now() + LANE_FLASH_MS };
+        setTimeout(() => { if (laneFlash && Date.now() >= laneFlash.until) { laneFlash = null; render(); } }, LANE_FLASH_MS + 50);
+    }
+    const laneFlashing = name => Boolean(laneFlash && Date.now() < laneFlash.until && laneFlash.names.has(String(name || '').trim().toUpperCase()));
+    function renderLaneFlashBanner() {
+        const el = document.getElementById('flash-banner');
+        if (!el) return;
+        const on = laneFlash && Date.now() < laneFlash.until;
+        el.classList.toggle('on', Boolean(on));
+        if (on) {
+            const what = { order: 'Order', location: 'Location', carrier: 'Carrier', search: 'Search' }[laneFlash.kind] || 'Search';
+            const n = laneFlash.names.size;
+            el.innerHTML = `<span class="fb-icon">🔍</span><span>${what} <b>${esc(laneFlash.label)}</b> · ${n} lane${n === 1 ? '' : 's'}</span>`;
+        }
     }
 
     // Regular orders past their ship date and not shipped (from Order Intake): pallets drawn red
@@ -847,6 +885,7 @@
     // ===================================================================================
     function render() {
         renderSync();
+        renderLaneFlashBanner();
         if (!board) return;
         const cols = board.columns;
         const pallets = board.pallets;
@@ -1094,7 +1133,7 @@
         }
         const docks = [...new Set(inLane.map(p => norm(p.dockNumber)).filter(Boolean))];
         const parcel = Boolean(col.smallParcel);
-        return `<div class="lane${used ? ' used' : ''}${over ? ' over' : ''}${tens}${parcel ? ' parcel' : ''}">
+        return `<div class="lane${used ? ' used' : ''}${over ? ' over' : ''}${tens}${parcel ? ' parcel' : ''}${laneFlashing(col.name) ? ' flash' : ''}">
             <div class="lane-head" title="${esc(col.name)}${parcel ? ' · small parcel lane (UPS / FedEx / USPS / DHL)' : ''}"><span class="lname">${esc(shortName || col.name)}</span>${parcel ? '<span class="pcl">PCL</span>' : `<span class="count">${used}/${capacity}</span>`}</div>
             <div class="spots${rows > 8 ? ' two' : ''}">${spotsHtml}</div>
             <div class="lane-foot" title="${esc(docks.join(', '))}">${esc(docks.length ? dockLabel(docks[0]) + (docks.length > 1 ? '+' : '') : '')}</div>

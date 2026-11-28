@@ -55,7 +55,7 @@ WAREHOUSES_.TEST.pickerNamesProperty = 'PICKER_NAMES_TEST';
 
 /** What each kind of key may call. */
 const ROLE_FUNCTIONS_ = {
-  floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'setShipDates', 'orderProgress', 'intakeStatus',
+  floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'flashLanes', 'listOrders', 'upsertOrders', 'setOrderStatus', 'setShipDates', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
     'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut', 'getPickerNames', 'savePickerNames'],
   cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'deleteOrders', 'setShipDates', 'orderProgress', 'intakeStatus',
@@ -159,7 +159,12 @@ function resolveWarehouse_(key) {
 function runRequest_(req, role) {
   const args = Array.isArray(req.args) ? req.args : [];
   switch (req.fn) {
-    case 'loadBoardState': return loadBoardState_();
+    case 'loadBoardState': {
+      const r = loadBoardState_();
+      if (r && r.ok) r.flash = readLaneFlash_();   // a search on the staging page, for the dashboard to flash
+      return r;
+    }
+    case 'flashLanes': return flashLanes_(args[0]);
     case 'saveBoardState': return saveBoardState_(args[0], args[1]);
     case 'logScanEvents': return logScanEvents_(args[0]);
     case 'listOrders': return listOrders_(args[0]);
@@ -1745,6 +1750,36 @@ function setShipDates_(orderNumbers, shipDate, options) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Lane flash: a search on the staging page (order, location, carrier) makes the matching lanes
+// flash on the TV dashboard. Kept ~90 s in the script cache only — never in the board.
+// ---------------------------------------------------------------------------------------------
+const LANE_FLASH_TTL_S_ = 90;
+function laneFlashKey_() { return 'LANE_FLASH_' + (ACTIVE_WH_.stateSheet || ''); }
+
+/** payload: { label, kind: 'order' | 'location' | 'carrier' | 'search', lanes: [lane names] } */
+function flashLanes_(payload) {
+  const p = payload || {};
+  const lanes = (Array.isArray(p.lanes) ? p.lanes : []).map(x => String(x || '').trim().slice(0, 40)).filter(Boolean);
+  if (!lanes.length) return { ok: false, error: 'No lanes to flash' };
+  if (lanes.length > 80) return { ok: false, error: 'Too many lanes — search for something more specific' };
+  const kind = ['order', 'location', 'carrier', 'search'].indexOf(p.kind) !== -1 ? p.kind : 'search';
+  const flash = { id: Utilities.getUuid ? Utilities.getUuid() : String(Date.now()) + Math.random(), at: Date.now(), kind: kind,
+    label: String(p.label || '').trim().slice(0, 80), lanes: lanes };
+  CacheService.getScriptCache().put(laneFlashKey_(), JSON.stringify(flash), LANE_FLASH_TTL_S_);
+  return { ok: true, id: flash.id };
+}
+
+/** The last lane flash (or null), with how long ago it was sent (ageMs, by the server's clock). */
+function readLaneFlash_() {
+  try {
+    const f = JSON.parse(CacheService.getScriptCache().get(laneFlashKey_()) || 'null');
+    if (!f || !f.id) return null;
+    f.ageMs = Math.max(0, Date.now() - Number(f.at || 0));
+    return f;
+  } catch (e) { return null; }
 }
 
 const DELETE_ORDERS_MAX_ = 2000;

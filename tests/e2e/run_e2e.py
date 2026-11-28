@@ -264,6 +264,20 @@ async def run_round(browser, wh, rnd, devices):
     record(wh, rnd, 'Ship Today: unticking hides them again (and for every device)', f'SPK{tag}LATE' not in await listed() and shared.get('parcelLate') is False, shared)
     await A.evaluate("closeShipTodayModal()")
 
+    # Search on the staging page → the TV dashboard flashes the matching lanes (sent via the server)
+    await A.fill('#search-filter-input', rel); await A.wait_for_timeout(2800)
+    want = await A.evaluate(f"[...new Set(appState.pallets.filter(p => p.orderNumber === {json.dumps(rel)}).map(p => appState.columns.find(c => c.id === p.columnId).name))].sort()")
+    fl = gas_call({'fn': 'loadBoardState', 'warehouse': wh, 'key': code}).get('flash') or {}
+    record(wh, rnd, 'Search an order → its lanes are sent for the dashboard to flash', fl.get('kind') == 'order' and fl.get('label') == rel and sorted(fl.get('lanes', [])) == want, [fl.get('kind'), fl.get('label'), fl.get('lanes'), want])
+    first_id = fl.get('id')
+    await A.evaluate('renderBoard()'); await A.wait_for_timeout(2000)
+    same = (gas_call({'fn': 'loadBoardState', 'warehouse': wh, 'key': code}).get('flash') or {}).get('id') == first_id
+    lane0 = want[0] if want else ''
+    await A.fill('#search-filter-input', lane0); await A.wait_for_timeout(2800)
+    fl2 = gas_call({'fn': 'loadBoardState', 'warehouse': wh, 'key': code}).get('flash') or {}
+    record(wh, rnd, 'Search flash: not re-sent while the result is the same; a location search sends that lane', same and fl2.get('kind') == 'location' and lane0 in fl2.get('lanes', []), [same, fl2.get('kind'), fl2.get('lanes')])
+    await A.evaluate('clearSearch()')
+
     # --- Scan Order window: order + carrier/destination + number of pallets ---------------------------
     await open_scan_window(A)
     await A.wait_for_timeout(200)

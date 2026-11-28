@@ -54,6 +54,7 @@ function makeSheet(name) {
     return sheet;
 }
 
+const valueCache = new Map();
 const cache = new Map();
 const ctx = {
     SpreadsheetApp: {
@@ -65,7 +66,9 @@ const ctx = {
     CacheService: {
         getScriptCache: () => ({
             getAll: ks => Object.fromEntries(ks.filter(k => cache.has(k)).map(k => [k, '1'])),
-            putAll: o => Object.keys(o).forEach(k => cache.set(k, '1'))
+            putAll: o => Object.keys(o).forEach(k => cache.set(k, '1')),
+            get: k => (valueCache.has(k) ? valueCache.get(k) : null),
+            put: (k, v) => valueCache.set(k, v)
         })
     },
     Session: { getActiveUser: () => ({ getEmail: () => '' }), getScriptTimeZone: () => 'America/Los_Angeles' },

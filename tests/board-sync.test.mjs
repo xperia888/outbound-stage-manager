@@ -262,7 +262,9 @@ function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null
         CacheService: {
             getScriptCache: () => ({
                 getAll: keys => Object.fromEntries(keys.filter(k => cacheStore.has(k)).map(k => [k, cacheStore.get(k)])),
-                putAll: obj => Object.entries(obj).forEach(([k, v]) => cacheStore.set(k, v))
+                putAll: obj => Object.entries(obj).forEach(([k, v]) => cacheStore.set(k, v)),
+                get: k => (cacheStore.has(k) ? cacheStore.get(k) : null),
+                put: (k, v) => cacheStore.set(k, v)
             })
         },
         Session: { getActiveUser: () => ({ getEmail: () => 'lead@example.com' }) },
@@ -1520,4 +1522,20 @@ test('batch ship / appt date: only that field (and Updated) changes; unknown ord
     // The floor code may set it too; blank clears it
     assert.equal(JSON.parse(JSON.stringify(ctx.api({ fn: 'setShipDates', key: 'secret-1', args: [['B1'], '', { by: 'Floor' }] }))).ok, true);
     assert.equal(call('listOrders', [{ days: 0 }]).orders.find(o => o.orderNumber === 'B1').shipDate, '');
+});
+
+test('lane flash: the staging page sends a search, the dashboard reads it with the board (floor code only)', () => {
+    const { ctx, call } = wmsGs();
+    const api = (fn, args, key = 'secret-1') => JSON.parse(JSON.stringify(ctx.api({ fn, key, args })));
+    assert.equal(api('loadBoardState', []).flash, null);
+    assert.equal(call('flashLanes', [{ label: 'x', lanes: ['S51'] }]).ok, false, 'not for the CS code');
+    assert.match(api('flashLanes', [{ label: 'x', lanes: [] }]).error, /No lanes/);
+    assert.match(api('flashLanes', [{ label: 'x', lanes: Array.from({ length: 81 }, (_, i) => 'S' + i) }]).error, /specific/);
+    const r = api('flashLanes', [{ label: 'DN123', kind: 'order', lanes: ['S51', 'S52'] }]);
+    assert.equal(r.ok, true, r.error);
+    const f = api('loadBoardState', []).flash;
+    assert.deepEqual([f.id, f.kind, f.label, f.lanes], [r.id, 'order', 'DN123', ['S51', 'S52']]);
+    assert.ok(f.ageMs >= 0 && f.ageMs < 5000);
+    assert.equal(api('flashLanes', [{ label: 'y', kind: 'weird', lanes: ['S1'] }]).ok, true);
+    assert.equal(api('loadBoardState', []).flash.kind, 'search');
 });
