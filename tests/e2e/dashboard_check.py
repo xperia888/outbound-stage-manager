@@ -44,6 +44,17 @@ state={'columns':cols,'pallets':pallets,'shippedPallets':shipped,'dwellSettings'
 gas=subprocess.Popen(['node',E2E+'/fake-apps-script.mjs',REPO+'/Code.gs','8790'],stdout=subprocess.PIPE); gas.stdout.readline()
 req=lambda body: json.loads(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8790/exec',data=json.dumps(body).encode(),method='POST')).read())
 print('seed:',req({'fn':'saveBoardState','args':[json.dumps(state),''],'key':'ont-e2e','warehouse':'ONT'})['ok'])
+# Order Intake ship dates for the "Need to ship today" card
+import datetime
+today=datetime.date.today(); yday=today-datetime.timedelta(days=1)
+intake=[{'orderNumber':'SO-40160','customer':'A','shipDate':today.isoformat()},                    # on the floor → to ship
+        {'orderNumber':'SO-40131','customer':'A','shipDate':today.isoformat()},                    # on the floor → to ship
+        {'orderNumber':'SO-40099','customer':'A','shipDate':today.isoformat()},                    # all shipped → done
+        {'orderNumber':'SO-40200','customer':'A','shipDate':today.strftime('%m/%d/%Y')},           # not staged yet → to ship
+        {'orderNumber':'SO-40201','customer':'A','shipDate':today.isoformat(),'status':'Cancelled'},  # cancelled → not counted
+        {'orderNumber':'SO-40122','customer':'A','shipDate':yday.isoformat()},                     # yesterday, still on floor → late
+        {'orderNumber':'SO-40118','customer':'A','shipDate':(today+datetime.timedelta(days=2)).isoformat()}]
+print('intake:',req({'fn':'upsertOrders','args':[intake,{'enteredBy':'E2E'}],'key':'ont-e2e','warehouse':'ONT'}).get('ok'))
 site=http.server.ThreadingHTTPServer(('127.0.0.1',8769),functools.partial(http.server.SimpleHTTPRequestHandler,directory=REPO))
 site.RequestHandlerClass.log_message=lambda *a: None
 threading.Thread(target=site.serve_forever,daemon=True).start()
@@ -66,7 +77,7 @@ async def main():
                 ph=await pg.evaluate("() => ({phone: document.body.classList.contains('phone'), pageOverflow: document.documentElement.scrollWidth - innerWidth, laneW: Math.round(document.querySelector('#lanes-row .lane').getBoundingClientRect().width), sScrolls: document.querySelector('.sec-s .lane-scroll').scrollWidth > document.querySelector('.sec-s .lane-scroll').clientWidth, kpiFont: getComputedStyle(document.querySelector('.kpi .value')).fontSize})")
                 print('    phone layout:', ph)
             print(f'{w}x{h}: signin shown={signin} errors={errs[:2]} truncated={over} sync=', await pg.text_content('#sync-text'))
-            info=await pg.evaluate("() => ({docks:[...document.querySelectorAll('.door .name')].map(e=>e.textContent), lanes:document.querySelectorAll('.lane').length, first:document.querySelector('.lane .lname').textContent, laneW:Math.round(document.querySelector('.lane').getBoundingClientRect().width), spans:[...document.querySelectorAll('.order-span:not(.blank)')].map(e=>e.textContent), other:document.getElementById('other-lanes').textContent})")
+            info=await pg.evaluate("() => ({docks:[...document.querySelectorAll('.door .name')].map(e=>e.textContent), lanes:document.querySelectorAll('.lane').length, first:document.querySelector('.lane .lname').textContent, laneW:Math.round(document.querySelector('.lane').getBoundingClientRect().width), spans:[...document.querySelectorAll('.order-span:not(.blank)')].map(e=>e.textContent), foot:document.getElementById('floor-foot-right').textContent})")
             print('   ',info)
             chk=await pg.evaluate("""() => {
                 const zones=[...document.querySelectorAll('#zones-row .zone .zname')].map(e=>e.textContent);
@@ -77,12 +88,24 @@ async def main():
                 // every tile in a 2x spot has the same height
                 const halves=[...document.querySelectorAll('#lanes-row .spot.filled')].filter(s=>s.querySelectorAll('.tile').length===2).map(s=>[...s.querySelectorAll('.tile')].map(t=>Math.round(t.getBoundingClientRect().height)));
                 const lone=document.querySelectorAll('.tile.open-half').length;
-                return {zones, firstLanes, dhlDim: first.querySelectorAll('.lane')[1]?.style.opacity, pcl, staged, halvesSame: halves.every(h=>Math.abs(h[0]-h[1])<=1), twoXHeights:[...new Set(halves.flat())], lone,
+                const sRow=[...document.querySelectorAll('#lanes-row .lane .lname')].map(e=>e.textContent);
+                const fl=document.querySelector('.floor').getBoundingClientRect(), st=document.getElementById('stage').getBoundingClientRect();
+                const ship=document.getElementById('kpi-ship');
+                const stack=document.querySelector('.zone-stack');
+                const stackNames=stack ? [...stack.querySelectorAll('.zname')].map(e=>e.textContent) : [];
+                const zr=[...document.querySelectorAll('#zones-row > *')].map(e=>Math.round(e.getBoundingClientRect().width));
+                return {ship: ship ? ship.querySelector('.value').textContent + ' | ' + ship.querySelector('.note').textContent : null, stackNames, zoneWidths: zr,
+                    zones, firstLanes, sHasParcel: sRow.includes('S60') || sRow.includes('S61'), aside: !!document.querySelector('aside'),
+                    kpis:[...document.querySelectorAll('.kpi .label')].map(e=>e.textContent), ver: document.getElementById('app-ver').textContent,
+                    floorToBottom: Math.round((st.bottom - fl.bottom) / (st.height / 1080)), dhlDim: first.querySelectorAll('.lane')[1]?.style.opacity, pcl, staged, halvesSame: halves.every(h=>Math.abs(h[0]-h[1])<=1), twoXHeights:[...new Set(halves.flat())], lone,
                     bad: [...document.querySelectorAll('#lanes-row .spot.filled')].filter(s=>s.querySelectorAll('.tile').length===2).map(s=>[s.closest('.lane').querySelector('.lname').textContent, ...[...s.querySelectorAll('.tile')].map(t=>t.className+':'+t.getBoundingClientRect().height.toFixed(1))]).filter(x=>Math.abs(parseFloat(x[1].split(':')[1])-parseFloat(x[2].split(':')[1]))>1).slice(0,4)};
             }""")
-            ok = (chk['zones'][:2]==['USPS · DHL','N09'] and chk['firstLanes']==['USPS','DHL'] and chk['dhlDim']=='0.45'
+            ok = (chk['zones'][:4]==['Parcel','N09','W05','W06'] and chk['stackNames']==['W05','W06']
+                  and chk['ship']=='3 / 4 | +1 late · 29 plts on floor' and chk['firstLanes']==['USPS','DHL','S60','S61'] and chk['dhlDim']=='0.45'
+                  and not chk['sHasParcel'] and not chk['aside'] and chk['ver'].startswith('v1.')
+                  and any('Dwell' in k for k in chk['kpis']) and 'Staged today' in chk['kpis'] and (w < 900 or chk['floorToBottom'] <= 20)
                   and {'S60','S61','USPS'} <= set(chk['pcl']) and chk['staged'] in ('rgb(21, 128, 61)',) and chk['halvesSame'] and chk['lone']>=1)
-            print(f"    {'PASS' if ok else 'FAIL'} USPS/DHL left of N09, PCL lanes, dark-green staged, equal 2x halves:", chk)
+            print(f"    {'PASS' if ok else 'FAIL'} Parcel block (USPS, DHL, S60, S61) left of N09, no bottom cards, dwell + staged today on top, version, floor fills the screen, dark-green staged, equal 2x halves:", chk)
             await pg.screenshot(path=f'{E2E}/out/dashboard_{w}x{h}.png', full_page=(w < 900))
             # Theme button switches to dark and back
             await pg.click('#theme-btn'); await pg.wait_for_timeout(300)
