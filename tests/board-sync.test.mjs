@@ -1277,7 +1277,8 @@ test('WMS login: signs in with username + password, keeps only the token, sends 
     // Right password (JSON-escaped): the token is found at data.user.token and "Bearer " removed
     const ok = call('wmsLogin', ['jli@ongfs.com', 'p"w\\1']);
     assert.equal(ok.ok, true, ok.error);
-    assert.equal(ok.login.user, 'jli@ongfs.com');
+    assert.ok(ok.login && ok.login.at, 'signed in');
+    assert.equal(JSON.stringify(props).includes('jli@ongfs.com'), false, 'the WMS username is not kept on the server');
     assert.equal(JSON.stringify(ok).includes('tok-abc'), false, 'the token never goes to the browser');
     assert.equal(Object.values(props).some(v => String(v).includes('p"w')), false, 'the password is never stored');
     assert.equal(seen.at(-1).headers.Authorization, undefined, 'no Authorization header on the login call');
@@ -1480,4 +1481,43 @@ test('bulk delete: CS code only; floor-touched orders kept; deleted rows copied 
     assert.equal(log[0].at(-1), 'Deleted By');
     assert.deepEqual(log.slice(1).map(x => [x[0], x.at(-1)]).sort(), [['A1', 'Amy'], ['A2', 'Amy'], ['A4', 'Amy']]);
     assert.equal(log[1][1], 'Acme', 'the whole order is kept');
+});
+
+test('WMS login: Save settings never stores the username on the server; older saved usernames are removed', () => {
+    const { call, props } = wmsGs();
+    const cfg = { url: 'https://w.example.com/q', auth: 'login', loginUrl: 'https://w.example.com/api/login', username: 'jli@ongfs.com' };
+    const r = call('wmsPullSaveConfig', [cfg, 'pw-should-not-save']);
+    assert.equal(r.config.username, undefined);
+    assert.equal(JSON.stringify(props).includes('jli@ongfs.com'), false);
+    assert.equal(JSON.stringify(props).includes('pw-should-not-save'), false);
+    // Basic auth still needs its username on the server (it sends it on every request)
+    assert.equal(call('wmsPullSaveConfig', [Object.assign({}, cfg, { auth: 'basic' }), 'x']).config.username, 'jli@ongfs.com');
+    // A username saved by an older version (and an old sign-in with the user) is removed when settings are read
+    props.WMS_PULL_CONFIG = JSON.stringify(cfg);
+    props.WMS_PULL_TOKEN = JSON.stringify({ token: 't', user: 'jli@ongfs.com', at: 1, expires: 0 });
+    const g = call('wmsPullGetConfig', []);
+    assert.equal(g.config.username, undefined);
+    assert.ok(g.login, 'still signed in');
+    assert.equal(JSON.stringify(props).includes('jli@ongfs.com'), false);
+});
+
+test('batch ship / appt date: only that field (and Updated) changes; unknown orders are not created', () => {
+    const { call, ctx } = wmsGs();
+    call('upsertOrders', [[{ orderNumber: 'B1', customer: 'Acme', shipDate: '11/20', carrier: 'Saia' }, { orderNumber: 'B2', customer: 'Acme' }, { orderNumber: 'B3', customer: 'Acme', shipDate: '11/21' }], { enteredBy: 'Amy' }]);
+    assert.match(call('setShipDates', [['B1'], '2026-11-30', {}]).error, /name/);
+    assert.equal(call('setShipDates', [['B1'], '2026-11-30', { by: 'X' }], 'wms-key-1').ok, false, 'not for the WMS API key');
+    const r = call('setShipDates', [['b1', 'B2', 'NOPE'], '2026-11-30', { by: 'Bob' }]);
+    assert.equal(r.ok, true, r.error);
+    assert.equal(r.updated, 2);
+    assert.deepEqual(r.notFound, ['NOPE']);
+    const by = Object.fromEntries(call('listOrders', [{ days: 0 }]).orders.map(o => [o.orderNumber, o]));
+    assert.equal(by.B1.shipDate, '2026-11-30');
+    assert.equal(by.B2.shipDate, '2026-11-30');
+    assert.equal(by.B3.shipDate, '11/21', 'not selected: unchanged');
+    assert.equal(by.B1.enteredBy, 'Amy', 'Entered By is not changed');
+    assert.equal(by.B1.carrier, 'Saia');
+    assert.equal(by.NOPE, undefined, 'not created');
+    // The floor code may set it too; blank clears it
+    assert.equal(JSON.parse(JSON.stringify(ctx.api({ fn: 'setShipDates', key: 'secret-1', args: [['B1'], '', { by: 'Floor' }] }))).ok, true);
+    assert.equal(call('listOrders', [{ days: 0 }]).orders.find(o => o.orderNumber === 'B1').shipDate, '');
 });

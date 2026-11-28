@@ -55,10 +55,10 @@ WAREHOUSES_.TEST.pickerNamesProperty = 'PICKER_NAMES_TEST';
 
 /** What each kind of key may call. */
 const ROLE_FUNCTIONS_ = {
-  floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
+  floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'setShipDates', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
     'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut', 'getPickerNames', 'savePickerNames'],
-  cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'deleteOrders', 'orderProgress', 'intakeStatus',
+  cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'deleteOrders', 'setShipDates', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
     'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers', 'wmsLogin', 'wmsSignOut', 'getPickerNames', 'savePickerNames'],
   api: ['listOrders', 'upsertOrders']
@@ -174,6 +174,7 @@ function runRequest_(req, role) {
     case 'savePickerNames': return savePickerNames_(args[0]);
     case 'setOrderStatus': return setOrderStatus_(args[0], args[1], args[2]);
     case 'deleteOrders': return deleteOrders_(args[0], args[1]);
+    case 'setShipDates': return setShipDates_(args[0], args[1], args[2]);
     case 'orderProgress': return orderProgress_();
     case 'intakeStatus': return intakeStatus_(role);
     case 'listImportTemplates': return listImportTemplates_();
@@ -1071,12 +1072,22 @@ function readWmsPullConfig_() {
 
 function wmsPullGetConfig_() {
   const p = wmsPullProps_();
+  const config = readWmsPullConfig_();
+  if (config.auth === 'login' && config.username) {
+    // Saved by an older version: a WMS login username isn't kept on the server any more
+    delete config.username;
+    p.props.setProperty(p.config, JSON.stringify(config));
+  }
+  try {
+    const s = JSON.parse(p.props.getProperty(p.token) || 'null');
+    if (s && s.user) { delete s.user; p.props.setProperty(p.token, JSON.stringify(s)); }
+  } catch (e) { /* no sign-in */ }
   return {
     ok: true,
-    config: readWmsPullConfig_(),
+    config: config,
     hasSecret: Boolean(p.props.getProperty(p.secret)),
     lastPullAt: p.props.getProperty(p.last) || '',
-    login: (s => (s ? { user: s.user, at: s.at, expires: s.expires } : null))(wmsLoginSession_())
+    login: (s => (s ? { at: s.at, expires: s.expires } : null))(wmsLoginSession_())
   };
 }
 
@@ -1088,15 +1099,15 @@ function wmsPullSaveConfig_(config, secret, options) {
   if (clean.url && !/^https:\/\//i.test(clean.url)) return { ok: false, error: 'The API address must start with https://' };
   if (clean.tokenUrl && !/^https:\/\//i.test(clean.tokenUrl)) return { ok: false, error: 'The token address must start with https://' };
   if (clean.loginUrl && !/^https:\/\//i.test(clean.loginUrl)) return { ok: false, error: 'The WMS login address must start with https://' };
+  if (clean.auth === 'login') delete clean.username;   // WMS login: the username stays on the user's PC, never on the server
   const p = wmsPullProps_();
   const before = readWmsPullConfig_();
   p.props.setProperty(p.config, JSON.stringify(clean));
   const sec = secret == null || clean.auth === 'login' ? '' : String(secret);   // WMS login: the password is never stored
   if (options && options.clearSecret) p.props.deleteProperty(p.secret);
   else if (sec.trim()) p.props.setProperty(p.secret, sec.trim());
-  // Keep a WMS sign-in while the same account signs in at the same address; anything else drops the saved token
-  const keepLogin = clean.auth === 'login' && before.auth === 'login' && clean.loginUrl === before.loginUrl
-    && String(clean.username || '').trim() === String(before.username || '').trim();
+  // Keep a WMS sign-in while it signs in at the same address; anything else drops the saved token
+  const keepLogin = clean.auth === 'login' && before.auth === 'login' && clean.loginUrl === before.loginUrl;
   if (!keepLogin) { try { p.props.deleteProperty(p.token); } catch (e) { /* no cached token */ } }
   return wmsPullGetConfig_();
 }
@@ -1191,11 +1202,9 @@ function wmsLogin_(username, password) {
     return { ok: false, error: 'Signed in, but no token was found. The answer has these fields: ' + names.slice(0, 40).join(', ') + ' — enter which one holds the token in "Where the token is".' };
   }
   const ttl = Number(wmsFindKey_(data, ['expires_in', 'expiresIn'])) || 0;
-  p.props.setProperty(p.token, JSON.stringify({ token: token, user: user, at: Date.now(), expires: ttl ? Date.now() + ttl * 1000 : 0 }));
+  // Only the token is kept on the server (it calls the WMS); the username and password are not
+  p.props.setProperty(p.token, JSON.stringify({ token: token, at: Date.now(), expires: ttl ? Date.now() + ttl * 1000 : 0 }));
   p.props.deleteProperty(failKey);
-  // Remember who signed in (not the password)
-  cfg.username = user;
-  p.props.setProperty(p.config, JSON.stringify(cfg));
   return wmsPullGetConfig_();
 }
 
@@ -1210,7 +1219,7 @@ function wmsLoginSession_() {
   const p = wmsPullProps_();
   try {
     const s = JSON.parse(p.props.getProperty(p.token) || 'null');
-    if (s && s.token && s.user && (!s.expires || s.expires > Date.now() + 30000)) return s;
+    if (s && s.token && s.at && (!s.expires || s.expires > Date.now() + 30000)) return s;
   } catch (e) { /* none */ }
   return null;
 }
@@ -1691,6 +1700,53 @@ function wmsFillPickers_(options) {
 }
 
 /** Before a WMS pull adds orders: copy of the Orders tab ("Orders backup 2026-11-27 14:50"); the newest 3 are kept. */
+/**
+ * Sets the Ship / Appt Date of existing orders (blank clears it). Only that field and Updated change —
+ * not Entered By or anything else; orders not in Order Intake are reported, never created.
+ */
+function setShipDates_(orderNumbers, shipDate, options) {
+  const by = String((options && options.by) || '').trim();
+  if (!by) return { ok: false, error: 'Enter your name first' };
+  if (!Array.isArray(orderNumbers) || !orderNumbers.length) return { ok: false, error: 'No orders selected' };
+  if (orderNumbers.length > DELETE_ORDERS_MAX_) return { ok: false, error: 'At most ' + DELETE_ORDERS_MAX_ + ' orders at a time' };
+  const col = {};
+  ORDER_FIELDS_.forEach((f, i) => { col[f.key] = i; });
+  const value = cleanOrderValue_(ORDER_FIELDS_[col.shipDate], shipDate == null ? '' : shipDate);
+  const want = {};
+  orderNumbers.forEach(n => { const k = normalizeOrderNumber_(n); if (k) want[k] = true; });
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { ok: false, error: 'Busy — try again' };
+  try {
+    const sheet = getOrdersSheet_();
+    const rows = readOrderRows_(sheet);
+    const now = new Date();
+    const found = {};
+    let updated = 0;
+    // Whole columns are read and written once (fast for many orders); other columns are not touched
+    const ship = rows.map(r => [r[col.shipDate]]);
+    const upd = rows.map(r => [r[col.updatedAt]]);
+    rows.forEach((r, i) => {
+      const k = normalizeOrderNumber_(r[0]);
+      if (!k || !want[k]) return;
+      found[k] = true;
+      ship[i][0] = value;
+      upd[i][0] = now;
+      updated++;
+    });
+    if (updated) {
+      sheet.getRange(2, col.shipDate + 1, rows.length, 1).setNumberFormat('@').setValues(ship);
+      sheet.getRange(2, col.updatedAt + 1, rows.length, 1).setValues(upd);
+    }
+    const notFound = Object.keys(want).filter(k => !found[k]);
+    console.log('setShipDates: ' + by + ' set ' + updated + ' order(s) to "' + value + '" in ' + ACTIVE_WH_.ordersSheet);
+    return { ok: true, updated: updated, shipDate: value, notFound: notFound };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 const DELETE_ORDERS_MAX_ = 2000;
 
 /**
