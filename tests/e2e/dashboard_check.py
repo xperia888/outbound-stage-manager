@@ -44,6 +44,17 @@ state={'columns':cols,'pallets':pallets,'shippedPallets':shipped,'dwellSettings'
 gas=subprocess.Popen(['node',E2E+'/fake-apps-script.mjs',REPO+'/Code.gs','8790'],stdout=subprocess.PIPE); gas.stdout.readline()
 req=lambda body: json.loads(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8790/exec',data=json.dumps(body).encode(),method='POST')).read())
 print('seed:',req({'fn':'saveBoardState','args':[json.dumps(state),''],'key':'ont-e2e','warehouse':'ONT'})['ok'])
+# Order Intake ship dates for the "Need to ship today" card
+import datetime
+today=datetime.date.today(); yday=today-datetime.timedelta(days=1)
+intake=[{'orderNumber':'SO-40160','customer':'A','shipDate':today.isoformat()},                    # on the floor → to ship
+        {'orderNumber':'SO-40131','customer':'A','shipDate':today.isoformat()},                    # on the floor → to ship
+        {'orderNumber':'SO-40099','customer':'A','shipDate':today.isoformat()},                    # all shipped → done
+        {'orderNumber':'SO-40200','customer':'A','shipDate':today.strftime('%m/%d/%Y')},           # not staged yet → to ship
+        {'orderNumber':'SO-40201','customer':'A','shipDate':today.isoformat(),'status':'Cancelled'},  # cancelled → not counted
+        {'orderNumber':'SO-40122','customer':'A','shipDate':yday.isoformat()},                     # yesterday, still on floor → late
+        {'orderNumber':'SO-40118','customer':'A','shipDate':(today+datetime.timedelta(days=2)).isoformat()}]
+print('intake:',req({'fn':'upsertOrders','args':[intake,{'enteredBy':'E2E'}],'key':'ont-e2e','warehouse':'ONT'}).get('ok'))
 site=http.server.ThreadingHTTPServer(('127.0.0.1',8769),functools.partial(http.server.SimpleHTTPRequestHandler,directory=REPO))
 site.RequestHandlerClass.log_message=lambda *a: None
 threading.Thread(target=site.serve_forever,daemon=True).start()
@@ -79,12 +90,18 @@ async def main():
                 const lone=document.querySelectorAll('.tile.open-half').length;
                 const sRow=[...document.querySelectorAll('#lanes-row .lane .lname')].map(e=>e.textContent);
                 const fl=document.querySelector('.floor').getBoundingClientRect(), st=document.getElementById('stage').getBoundingClientRect();
-                return {zones, firstLanes, sHasParcel: sRow.includes('S60') || sRow.includes('S61'), aside: !!document.querySelector('aside'),
+                const ship=document.getElementById('kpi-ship');
+                const stack=document.querySelector('.zone-stack');
+                const stackNames=stack ? [...stack.querySelectorAll('.zname')].map(e=>e.textContent) : [];
+                const zr=[...document.querySelectorAll('#zones-row > *')].map(e=>Math.round(e.getBoundingClientRect().width));
+                return {ship: ship ? ship.querySelector('.value').textContent + ' | ' + ship.querySelector('.note').textContent : null, stackNames, zoneWidths: zr,
+                    zones, firstLanes, sHasParcel: sRow.includes('S60') || sRow.includes('S61'), aside: !!document.querySelector('aside'),
                     kpis:[...document.querySelectorAll('.kpi .label')].map(e=>e.textContent), ver: document.getElementById('app-ver').textContent,
                     floorToBottom: Math.round((st.bottom - fl.bottom) / (st.height / 1080)), dhlDim: first.querySelectorAll('.lane')[1]?.style.opacity, pcl, staged, halvesSame: halves.every(h=>Math.abs(h[0]-h[1])<=1), twoXHeights:[...new Set(halves.flat())], lone,
                     bad: [...document.querySelectorAll('#lanes-row .spot.filled')].filter(s=>s.querySelectorAll('.tile').length===2).map(s=>[s.closest('.lane').querySelector('.lname').textContent, ...[...s.querySelectorAll('.tile')].map(t=>t.className+':'+t.getBoundingClientRect().height.toFixed(1))]).filter(x=>Math.abs(parseFloat(x[1].split(':')[1])-parseFloat(x[2].split(':')[1]))>1).slice(0,4)};
             }""")
-            ok = (chk['zones'][:4]==['Parcel','N09','W05','W06'] and chk['firstLanes']==['USPS','DHL','S60','S61'] and chk['dhlDim']=='0.45'
+            ok = (chk['zones'][:4]==['Parcel','N09','W05','W06'] and chk['stackNames']==['W05','W06']
+                  and chk['ship']=='3 / 4 | +1 late · 29 plts on floor' and chk['firstLanes']==['USPS','DHL','S60','S61'] and chk['dhlDim']=='0.45'
                   and not chk['sHasParcel'] and not chk['aside'] and chk['ver'].startswith('v1.')
                   and any('Dwell' in k for k in chk['kpis']) and 'Staged today' in chk['kpis'] and (w < 900 or chk['floorToBottom'] <= 20)
                   and {'S60','S61','USPS'} <= set(chk['pcl']) and chk['staged'] in ('rgb(21, 128, 61)',) and chk['halvesSame'] and chk['lone']>=1)

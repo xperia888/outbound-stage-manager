@@ -136,8 +136,8 @@
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
         align-items: center;
-        gap: 28px;
-        padding: 0 32px;
+        gap: 18px;
+        padding: 0 24px;
         background: var(--header-bg);
         border-bottom: 4px solid var(--header-border);
         /* the header keeps light-on-dark text */
@@ -159,7 +159,7 @@
     }
     .brand-mark svg { width: 34px; height: 34px; }
     .brand-text { display: flex; flex-direction: column; gap: 6px; }
-    .brand h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; }
+    .brand h1 { font-size: 27px; font-weight: 800; letter-spacing: -0.01em; }
     .brand .sub { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--text-secondary); }
     .wh-chip {
         font-family: var(--mono); font-weight: 800; font-size: 16px;
@@ -176,20 +176,20 @@
     }
     .theme-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
     body.idle .theme-btn { opacity: 0.35; }
-    .kpis { display: flex; justify-content: center; align-items: center; gap: 10px; min-width: 0; }
+    .kpis { display: flex; justify-content: center; align-items: center; gap: 6px; min-width: 0; }
     .kpi {
-        min-width: 112px; padding: 9px 12px; border-radius: 12px;
+        flex: none; min-width: 90px; padding: 8px 10px; border-radius: 12px;
         background: var(--surface-2); border: 1px solid var(--line);
     }
-    .kpi .label { white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
-    .kpi .value { font-size: 38px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+    .kpi .label { white-space: nowrap; font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em; }
+    .kpi .value { font-size: 34px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
     .kpi .value small { font-size: 20px; font-weight: 700; color: var(--text-secondary); }
     .kpi .meter { height: 6px; border-radius: 3px; background: var(--surface-3); margin-top: 6px; overflow: hidden; }
     .kpi .meter > i { display: block; height: 100%; background: var(--brand); border-radius: 3px; }
     .kpi.alert .value { color: var(--critical); }
     .kpi .value { white-space: nowrap; }
     #kpi-dwell { flex: none; }
-    #kpi-dwell .value { font-size: 30px; line-height: 1.2; }
+    #kpi-dwell .value { font-size: 28px; line-height: 1.2; }
     .kpi .value .dw { display: inline-flex; align-items: baseline; gap: 3px; margin-right: 12px; }
     .kpi .value .dw:last-child { margin-right: 0; }
     .kpi .value .dw i { font-style: normal; font-size: 16px; }
@@ -197,10 +197,12 @@
     .kpi .value .dw.overdue { color: var(--serious); }
     .kpi .value .dw.overweek { color: var(--critical); }
     .kpi .value .dw.zero { color: var(--text-muted); }
+    .kpi .note b.late { color: var(--critical); }
+    #kpi-ship.alert .value { color: var(--text-primary); }
     .kpi .note { font-size: 12px; color: var(--text-muted); white-space: nowrap; margin-top: 0; }
     .app-ver { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--text-muted); }
     .clock { text-align: right; }
-    .clock .time { font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+    .clock .time { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
     .clock .date { font-size: 16px; color: var(--text-secondary); margin-top: 4px; }
     .sync { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 15px; color: var(--text-secondary); }
     .sync .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); }
@@ -335,6 +337,9 @@
 
     /* Other staging zones (N09, W05, W06 …) in a row under the S lanes */
     .zones { display: grid; gap: 10px; min-height: 0; }
+    .zone-stack { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; min-width: 0; min-height: 0; }
+    .zone-stack .zone { grid-template-rows: 22px minmax(0, 1fr); padding-top: 2px; padding-bottom: 4px; }
+    .zone-stack .lane { grid-template-rows: 26px minmax(0, 1fr) 13px; }
     .zone { display: grid; grid-template-rows: 24px minmax(0, 1fr); min-width: 0; min-height: 0; }
     .lane-scroll-x { display: grid; min-width: 0; min-height: 0; }
     .zone-head .zinfo { color: var(--text-secondary); }
@@ -478,6 +483,8 @@
     }
     body.phone .sec-s .lane-line { height: 230px; }
     body.phone .zones { display: block; }
+    body.phone .zone-stack { display: block; margin-top: 10px; }
+    body.phone .zone-stack .zone + .zone { margin-top: 10px; }
     body.phone .zone { display: block; }
     body.phone .zone + .zone { margin-top: 10px; }
     body.phone .zone-head { flex-wrap: wrap; white-space: normal; padding-bottom: 6px; }
@@ -508,7 +515,7 @@
             </div>
             <div class="brand-text">
                 <h1>Outbound Staging — Live</h1>
-                <div class="sub"><span class="wh-chip" id="wh-chip">ONUS-ONT</span><span>Staging area &amp; loading docks</span><span class="app-ver" id="app-ver"></span>
+                <div class="sub"><span class="wh-chip" id="wh-chip">ONUS-ONT</span><span class="app-ver" id="app-ver"></span>
                     <button type="button" class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Switch light / dark (shortcut: T)"></button></div>
             </div>
         </div>
@@ -568,7 +575,7 @@
 
     /** Same Apps Script web app the staging board uses. */
     /** Version of this page — raised with every change. */
-    const APP_VERSION = '1.58';
+    const APP_VERSION = '1.59';
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const REFRESH_MS = 10000;
     const STALE_AFTER_MS = 60000;
@@ -590,7 +597,8 @@
         // A block can also list single locations by their full name: { name: 'Parcel', locations: ['USPS', 'DHL'] }
         // (shown even before they are added on the board, dimmed).
         // smallParcelLanes: true also puts every lane marked "small parcel" on the board (e.g. S60, S61) in this block.
-        zones: [{ name: 'Parcel', locations: ['USPS', 'DHL'], smallParcelLanes: true }, 'N09', 'W05', 'W06']
+        // A list inside the list stacks those zones on top of each other (W05 over W06: they hold fewer pallets).
+        zones: [{ name: 'Parcel', locations: ['USPS', 'DHL'], smallParcelLanes: true }, 'N09', ['W05', 'W06']]
     };
 
     // Shared with the staging app (same site → same saved code and warehouse on this device)
@@ -630,11 +638,11 @@
     // ===================================================================================
     // Cloud (read-only)
     // ===================================================================================
-    async function cloud(fn, key, warehouse) {
+    async function cloud(fn, key, warehouse, args = []) {
         const res = await fetch(CLOUD_API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // no CORS preflight
-            body: JSON.stringify({ fn, args: [], key, warehouse })
+            body: JSON.stringify({ fn, args, key, warehouse })
         });
         return res.json();
     }
@@ -665,7 +673,61 @@
         } catch (e) {
             lastError = String(e.message || e);
         }
+        // Order Intake (for ship dates): once a minute is enough
+        if (Date.now() - intakeLoadedAt > ORDERS_REFRESH_MS) {
+            intakeLoadedAt = Date.now();
+            try {
+                const o = await cloud('listOrders', key, WH, [{ days: 60 }]);
+                if (o && o.ok) intakeOrders = o.orders || [];
+            } catch (e) { /* keep the last list */ }
+        }
         render();
+    }
+
+    // Order Intake orders (ship / appointment dates). null = not loaded (older server or no access)
+    let intakeOrders = null;
+    let intakeLoadedAt = 0;
+    const ORDERS_REFRESH_MS = 60000;
+
+    /** "2026-11-27", "11/27/2026", "11/27", or a date string → "YYYY-MM-DD" (local day), else ''. */
+    function dayKey(v) {
+        const s = String(v == null ? '' : v).trim();
+        if (!s) return '';
+        const pad = n => String(n).padStart(2, '0');
+        let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+        if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+        m = /^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?\b/.exec(s);
+        if (m) {
+            const y = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : String(new Date().getFullYear());
+            return `${y}-${pad(m[1])}-${pad(m[2])}`;
+        }
+        const d = new Date(s);
+        return isNaN(d) ? '' : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+
+    /**
+     * Orders whose ship / appointment date is today (and earlier ones still not shipped).
+     * Shipped = it has shipped pallets and nothing left on the floor.
+     */
+    function shipToday(pallets, shipped) {
+        if (!intakeOrders) return null;
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const onFloor = {}, out = {};
+        pallets.forEach(p => { const o = norm(p.orderNumber); if (o) onFloor[o] = (onFloor[o] || 0) + 1; });
+        shipped.forEach(p => { const o = norm(p.orderNumber); if (o) out[o] = (out[o] || 0) + 1; });
+        const done = o => out[o] > 0 && !onFloor[o];
+        const due = [], late = [];
+        intakeOrders.forEach(o => {
+            if (String(o.status || '').toLowerCase() === 'cancelled') return;
+            const d = dayKey(o.shipDate);
+            const ono = norm(o.orderNumber);
+            if (!d || !ono) return;
+            if (d === today) due.push(ono);
+            else if (d < today && !done(ono)) late.push(ono);
+        });
+        const left = due.filter(o => !done(o));
+        return { due: due.length, left, late, floorPallets: left.reduce((t, o) => t + (onFloor[o] || 0), 0) };
     }
 
     function parseBoard(json) {
@@ -764,6 +826,7 @@
         const pct = totalSpots ? Math.round((usedSpots / totalSpots) * 100) : 0;
         const alertsTotal = levels.overdue.length + levels.overweek.length;
 
+        const ship = shipToday(pallets, board.shippedPallets);
         const oldest = pallets.reduce((o, p) => (!o || (Number(p.createdAt) || Infinity) < (Number(o.createdAt) || Infinity) ? p : o), null);
         const oldestCol = oldest ? colById.get(oldest.columnId) : null;
         const t = dwellThresholds();
@@ -777,6 +840,9 @@
             <div class="kpi${alertsTotal ? ' alert' : ''}" id="kpi-dwell" title="Aging ${t.warningDays}d · overdue ${t.overdueDays}d · over a week ${t.overWeekDays}d+">
                 <div class="label">Dwell ⚠ ⏱ ⛔</div><div class="value">${dw('warning', '⚠')}${dw('overdue', '⏱')}${dw('overweek', '⛔')}</div>
                 <div class="note">${oldest ? `oldest ${age(oldest.createdAt)}${oldestCol ? ' · ' + esc(oldestCol.name) : ''}` : 'no pallets'}</div></div>
+            ${ship ? `<div class="kpi${ship.late.length ? ' alert' : ''}" id="kpi-ship" title="Ship / appt date today, from Order Intake${ship.left.length ? ' — still to ship: ' + esc(ship.left.join(', ')) : ''}${ship.late.length ? ' — past their date, not shipped: ' + esc(ship.late.join(', ')) : ''}">
+                <div class="label">Need to ship today</div><div class="value">${ship.left.length}<small> / ${ship.due}</small></div>
+                <div class="note">${ship.late.length ? `<b class="late">+${ship.late.length} late</b> · ` : ''}${ship.floorPallets} plts on floor</div></div>` : ''}
             <div class="kpi"><div class="label">Staged today</div><div class="value">${stagedToday}</div></div>
             <div class="kpi"><div class="label">Shipped today</div><div class="value">${shippedToday.length}</div></div>`;
 
@@ -831,11 +897,12 @@
         zones.forEach(z => z.cols.forEach(c => mappedColIds.add(c.id)));
         const zonesRow = document.getElementById('zones-row');
         zonesRow.style.display = zones.length ? '' : 'none';
-        // Single named locations (USPS, DHL) get wider lanes so the block stays readable
-        zonesRow.style.gridTemplateColumns = zones.map(z => `minmax(0, ${z.singles ? Math.max(4, z.cols.length * 1.6) : Math.max(1, z.cols.length)}fr)`).join(' ');
+        // Single named locations (USPS, DHL) get wider lanes; a stack is as wide as its widest zone
+        const weight = z => (z.stack ? Math.max(...z.stack.map(weight)) : z.singles ? Math.max(4, z.cols.length * 1.6) : Math.max(1, z.cols.length));
+        zonesRow.style.gridTemplateColumns = zones.map(z => `minmax(0, ${weight(z)}fr)`).join(' ');
         let zoneTint = 0;
         const inCol = c => (c.missing ? [] : palletsIn(c.id));
-        zonesRow.innerHTML = zones.map(z => {
+        const zoneHtml = z => {
             const tint = z.singles ? 'sec-zp' : `sec-z${(zoneTint++ % 3) + 1}`;
             const used = z.cols.filter(c => inCol(c).length).length;
             const spots = z.cols.reduce((t, c) => t + floorSpotsUsed(inCol(c)), 0);
@@ -850,7 +917,8 @@
                     ${z.cols.map(c => (c.missing ? renderLane(null, [], c.name) : renderLane(c, palletsIn(c.id), c.name, z.singles ? c.name : zoneSuffix(c.name)))).join('')}
                 </div></div>
             </div>`;
-        }).join('');
+        };
+        zonesRow.innerHTML = zones.map(z => (z.stack ? `<div class="zone-stack">${z.stack.map(zoneHtml).join('')}</div>` : zoneHtml(z))).join('');
 
         // Locations not on the plan and other docks in use: in the footer
         const others = cols.filter(c => !mappedColIds.has(c.id));
@@ -871,7 +939,7 @@
             return laneNames.map(n => byName.get(norm(n)) || null);
         }
         const dir = FLOOR_LAYOUT.laneDirection === 'descending' ? -1 : 1;
-        const parcelBlock = (FLOOR_LAYOUT.zones || []).some(z => z && z.smallParcelLanes);
+        const parcelBlock = (Array.isArray(FLOOR_LAYOUT.zones) ? FLOOR_LAYOUT.zones.flat() : []).some(z => z && z.smallParcelLanes);
         const lanes = cols
             .map(c => ({ c, m: /^S\s*-?\s*(\d+)$/i.exec(String(c.name || '').trim()) }))
             .filter(x => x.m && !(parcelBlock && x.c.smallParcel))   // small parcel lanes go in the Parcel block
@@ -887,7 +955,7 @@
 
     /** [{ name, cols }] for the zones under the S lanes, each sorted by location number. */
     function zoneColumns(cols, alreadyMapped) {
-        const parcelBlock = (Array.isArray(FLOOR_LAYOUT.zones) ? FLOOR_LAYOUT.zones : []).some(z => z && z.smallParcelLanes);
+        const parcelBlock = (Array.isArray(FLOOR_LAYOUT.zones) ? FLOOR_LAYOUT.zones.flat() : []).some(z => z && z.smallParcelLanes);
         const byZone = new Map();
         cols.forEach(c => {
             if (alreadyMapped.has(c.id)) return;
@@ -901,7 +969,11 @@
             return [...byZone.keys()].sort().map(name => ({ name, cols: sortZone(byZone.get(name)) }));
         }
         const byName = new Map(cols.filter(c => !alreadyMapped.has(c.id)).map(c => [String(c.name).trim().toUpperCase(), c]));
-        return FLOOR_LAYOUT.zones.map(z => {
+        const resolve = z => {
+            if (Array.isArray(z)) {
+                const stack = z.map(resolve).filter(Boolean);
+                return stack.length ? { stack, cols: [].concat(...stack.map(x => x.cols)) } : null;
+            }
             if (z && typeof z === 'object' && Array.isArray(z.locations)) {
                 // Named single locations, in the order given; missing ones show as dimmed placeholders
                 const list = z.locations.map(n => byName.get(String(n).trim().toUpperCase()) || { id: null, name: String(n), missing: true });
@@ -916,7 +988,8 @@
             }
             const name = String(z).toUpperCase();
             return byZone.has(name) ? { name, cols: sortZone(byZone.get(name)) } : null;
-        }).filter(Boolean);
+        };
+        return FLOOR_LAYOUT.zones.map(resolve).filter(Boolean);
     }
     function sortZone(list) {
         return list.sort((a, b) => String(zoneSuffix(a.name)).localeCompare(String(zoneSuffix(b.name)), undefined, { numeric: true }));
