@@ -197,8 +197,17 @@
     .kpi .value .dw.overdue { color: var(--serious); }
     .kpi .value .dw.overweek { color: var(--critical); }
     .kpi .value .dw.zero { color: var(--text-muted); }
-    .kpi .note b.late { color: var(--critical); }
-    #kpi-ship.alert .value { color: var(--text-primary); }
+    /* Ship today: stands out from the other cards */
+    #kpi-ship { min-width: 128px; padding: 8px 14px; transform: scale(1.06); margin: 0 6px; }
+    #kpi-ship .value { font-size: 38px; }
+    #kpi-ship.todo { background: var(--brand); border-color: #fde68a; color: #1c1917;
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.45), 0 0 22px rgba(245, 158, 11, 0.55); animation: ship-glow 2.4s ease-in-out infinite; }
+    #kpi-ship.todo .label, #kpi-ship.todo .note { color: #422006; font-weight: 700; }
+    #kpi-ship.done { background: #15803d; border-color: #4ade80; }
+    #kpi-ship.done .label, #kpi-ship.done .note { color: #dcfce7; }
+    #kpi-ship.none { border: 2px solid var(--brand); }
+    @keyframes ship-glow { 50% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.7), 0 0 34px rgba(245, 158, 11, 0.8); } }
+    body.phone #kpi-ship { transform: none; }
     .kpi .note { font-size: 12px; color: var(--text-muted); white-space: nowrap; margin-top: 0; }
     .app-ver { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--text-muted); }
     .clock { text-align: right; }
@@ -575,7 +584,7 @@
 
     /** Same Apps Script web app the staging board uses. */
     /** Version of this page — raised with every change. */
-    const APP_VERSION = '1.59';
+    const APP_VERSION = '1.60';
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const REFRESH_MS = 10000;
     const STALE_AFTER_MS = 60000;
@@ -709,6 +718,19 @@
      * Orders whose ship / appointment date is today (and earlier ones still not shipped).
      * Shipped = it has shipped pallets and nothing left on the floor.
      */
+    /** Small parcel: pick list order # (SPK… / P + digits), drop ship, or a UPS / FedEx / USPS / DHL carrier (not freight). */
+    function isSmallParcelOrder(o, ono) {
+        if (/^SPK|^P\d/i.test(ono)) return true;
+        if (/^drop[\s_-]*ship/i.test(String(o.orderType || '').trim())) return true;
+        const c = String(o.carrier || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+        if (!c.trim() || /freight|\bltl\b/.test(c)) return false;
+        return /\bups\b|fed ?ex|\busps\b|postal|\bdhl\b/.test(c);
+    }
+
+    /**
+     * Regular orders (not small parcel) whose ship / appointment date is today.
+     * Shipped = it has shipped pallets and nothing left on the floor.
+     */
     function shipToday(pallets, shipped) {
         if (!intakeOrders) return null;
         const now = new Date();
@@ -717,17 +739,15 @@
         pallets.forEach(p => { const o = norm(p.orderNumber); if (o) onFloor[o] = (onFloor[o] || 0) + 1; });
         shipped.forEach(p => { const o = norm(p.orderNumber); if (o) out[o] = (out[o] || 0) + 1; });
         const done = o => out[o] > 0 && !onFloor[o];
-        const due = [], late = [];
+        const due = [];
         intakeOrders.forEach(o => {
             if (String(o.status || '').toLowerCase() === 'cancelled') return;
-            const d = dayKey(o.shipDate);
             const ono = norm(o.orderNumber);
-            if (!d || !ono) return;
-            if (d === today) due.push(ono);
-            else if (d < today && !done(ono)) late.push(ono);
+            if (!ono || dayKey(o.shipDate) !== today || isSmallParcelOrder(o, ono)) return;
+            due.push(ono);
         });
         const left = due.filter(o => !done(o));
-        return { due: due.length, left, late, floorPallets: left.reduce((t, o) => t + (onFloor[o] || 0), 0) };
+        return { due: due.length, left, floorPallets: left.reduce((t, o) => t + (onFloor[o] || 0), 0) };
     }
 
     function parseBoard(json) {
@@ -840,9 +860,9 @@
             <div class="kpi${alertsTotal ? ' alert' : ''}" id="kpi-dwell" title="Aging ${t.warningDays}d · overdue ${t.overdueDays}d · over a week ${t.overWeekDays}d+">
                 <div class="label">Dwell ⚠ ⏱ ⛔</div><div class="value">${dw('warning', '⚠')}${dw('overdue', '⏱')}${dw('overweek', '⛔')}</div>
                 <div class="note">${oldest ? `oldest ${age(oldest.createdAt)}${oldestCol ? ' · ' + esc(oldestCol.name) : ''}` : 'no pallets'}</div></div>
-            ${ship ? `<div class="kpi${ship.late.length ? ' alert' : ''}" id="kpi-ship" title="Ship / appt date today, from Order Intake${ship.left.length ? ' — still to ship: ' + esc(ship.left.join(', ')) : ''}${ship.late.length ? ' — past their date, not shipped: ' + esc(ship.late.join(', ')) : ''}">
-                <div class="label">Need to ship today</div><div class="value">${ship.left.length}<small> / ${ship.due}</small></div>
-                <div class="note">${ship.late.length ? `<b class="late">+${ship.late.length} late</b> · ` : ''}${ship.floorPallets} plts on floor</div></div>` : ''}
+            ${ship ? `<div class="kpi ship-card ${ship.left.length ? 'todo' : ship.due ? 'done' : 'none'}" id="kpi-ship" title="Regular orders (no small parcel) with today's ship / appt date in Order Intake${ship.left.length ? ' — still to ship: ' + esc(ship.left.join(', ')) : ''}">
+                <div class="label">Ship today</div><div class="value">${ship.left.length ? ship.left.length : ship.due ? '✓' : '0'}</div>
+                <div class="note">${ship.due ? `of ${ship.due} due · ${ship.floorPallets} plts on floor` : 'no regular orders due'}</div></div>` : ''}
             <div class="kpi"><div class="label">Staged today</div><div class="value">${stagedToday}</div></div>
             <div class="kpi"><div class="label">Shipped today</div><div class="value">${shippedToday.length}</div></div>`;
 
