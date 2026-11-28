@@ -773,11 +773,27 @@
                                 <div class="hint">Not for keys or passwords — put those in the key / password box.</div></div>
                         </div>
                     </details>
+                    <details class="wms-more" id="wms-task-box" style="margin-top:10px">
+                        <summary>Picker from pick tasks (optional)</summary>
+                        <p class="sub2" style="margin:8px 0 0">Uses the same sign-in. Each order's pick list is matched to its one picking task, and the task's <b>assigned to</b> becomes the Picker. Pick tasks appear once the order is committed — use <b>Fill missing pickers</b> later for orders already here (it only fills blank Pickers).</p>
+                        <div class="form-grid" style="margin-top:10px">
+                            <div class="field span2"><label for="wms-task-url">Task API address</label><input type="url" id="wms-task-url" maxlength="500" placeholder="https://…/api/task/query/for/outbound"></div>
+                            <div class="field"><label for="wms-task-type">Task type</label><input type="text" id="wms-task-type" maxlength="40" placeholder="PICKING"></div>
+                            <div class="field"><label for="wms-task-page-size">Rows per request</label><input type="number" id="wms-task-page-size" min="1" max="50000" placeholder="50000"></div>
+                            <div class="field span2"><label for="wms-task-body">Task request body (JSON)</label><textarea id="wms-task-body" rows="3" maxlength="4000"></textarea></div>
+                            <div class="field"><label for="wms-group-field">Order's pick list field</label><input type="text" id="wms-group-field" maxlength="80" placeholder="pickinglist_no_byproduct"></div>
+                            <div class="field"><label for="wms-task-group-field">Task's pick list field</label><input type="text" id="wms-task-group-field" maxlength="80" placeholder="group_no"></div>
+                            <div class="field"><label for="wms-picker-field">Picker name field</label><input type="text" id="wms-picker-field" maxlength="80" placeholder="assigned_to"></div>
+                            <div class="field"><label for="wms-picker-id-field">Picker ID field</label><input type="text" id="wms-picker-id-field" maxlength="80" placeholder="assigned_to_id"></div>
+                            <div class="field"><label for="wms-order-key-field">Order # field (for filling pickers)</label><input type="text" id="wms-order-key-field" maxlength="80" placeholder="outbound_no"></div>
+                        </div>
+                    </details>
                     <div class="actions-row" style="margin-top:14px">
                         <span class="sub2" id="wms-msg"></span>
                         <button type="button" class="btn" id="wms-preset-btn" title="Fill in the ONUS WMS Outbound Query settings">Use ONUS WMS settings</button>
                         <button type="button" class="btn" id="wms-save-btn">Save settings</button>
                         <button type="button" class="btn" id="wms-test-btn">Test connection</button>
+                        <button type="button" class="btn" id="wms-fill-btn" title="Fill the Picker on orders already here — only where it is blank">Fill missing pickers…</button>
                         <button type="button" class="btn primary" id="wms-pull-btn">Pull orders →</button>
                     </div>
                 </form>
@@ -2549,13 +2565,22 @@
         username: 'wms-username', queryName: 'wms-query-name', tokenUrl: 'wms-token-url', clientId: 'wms-client-id', scope: 'wms-scope',
         extraHeaders: 'wms-extra-headers', listPath: 'wms-list-path', paging: 'wms-paging', pageParam: 'wms-page-param', sizeParam: 'wms-size-param',
         pageSize: 'wms-page-size', firstPage: 'wms-first-page', maxPages: 'wms-max-pages', lookbackDays: 'wms-lookback',
-        skipField: 'wms-skip-field', skipValues: 'wms-skip-values' };
+        skipField: 'wms-skip-field', skipValues: 'wms-skip-values',
+        taskUrl: 'wms-task-url', taskBody: 'wms-task-body', taskPageSize: 'wms-task-page-size', taskType: 'wms-task-type',
+        taskGroupField: 'wms-task-group-field', groupField: 'wms-group-field', pickerField: 'wms-picker-field', pickerIdField: 'wms-picker-id-field',
+        orderKeyField: 'wms-order-key-field' };
 
     // ONUS WMS "Outbound Query" (POST /api/outbound/query, AG Grid row model, Bearer token, answer = plain array)
     const ONUS_WMS_PRESET = {
         name: 'ONUS WMS', url: 'https://prd-onus.target-ai.com:18890/api/outbound/query', method: 'POST', auth: 'bearer',
         body: JSON.stringify({ startRow: 0, endRow: 100, rowGroupCols: [], valueCols: [], pivotCols: [], pivotMode: false, groupKeys: [], filterModel: {}, sortModel: [{ colId: 'created_at', sort: 'desc' }] }, null, 1),
-        paging: 'rows', pageSize: '100', maxPages: '10', listPath: '', skipField: 'outbound_status', skipValues: 'SHIPPED, CANCELLED, CANCELED, VOID'
+        paging: 'rows', pageSize: '100', maxPages: '10', listPath: '', skipField: 'outbound_status', skipValues: 'SHIPPED, CANCELLED, CANCELED, VOID',
+        // Outbound Task Query: picking tasks (status spelling "CANCLE" is the WMS's own)
+        taskUrl: 'https://prd-onus.target-ai.com:18890/api/task/query/for/outbound', taskPageSize: '50000', taskType: 'PICKING',
+        taskBody: JSON.stringify({ startRow: 0, endRow: 50000, rowGroupCols: [], valueCols: [], pivotCols: [], pivotMode: false, groupKeys: [],
+            filterModel: { status: { values: ['COMPLETED', 'ASSIGNED', 'INPROGRESS', 'CANCLE'], filterType: 'set' }, type: { values: ['PICKING'], filterType: 'set' } },
+            sortModel: [{ sort: 'asc', colId: 'created_by' }] }, null, 1),
+        groupField: 'pickinglist_no_byproduct', taskGroupField: 'group_no', pickerField: 'assigned_to', pickerIdField: 'assigned_to_id', orderKeyField: 'outbound_no'
     };
     // Matching for its fields: outbound_no is the DN number (order_no is the WMS's own OB… number)
     const ONUS_WMS_TEMPLATE = {
@@ -2563,7 +2588,7 @@
         template: { mode: 'insertOnly', defaults: { refType: 'PO#' }, mapping: {
             orderNumber: ['outbound_no'], customer: ['owner_name'], cartons: ['ttl_box'], pallets: ['ttl_pallet'], carrier: ['carrier_name'],
             scac: ['scac'], proBol: ['bol_no'], reference: ['po_no'], orderType: ['outbound_type'], shipDate: ['ship_no_later'],
-            destination: ['consignee_city', 'consignee_state'], notes: ['outbound_note'] } }
+            destination: ['consignee_city', 'consignee_state'], notes: ['outbound_note'], picker: ['picker_name'] } }
     };
     $('wms-preset-btn').addEventListener('click', () => {
         Object.entries(WMS_FIELDS).forEach(([k, id]) => {
@@ -2571,7 +2596,7 @@
             if (k in ONUS_WMS_PRESET) el.value = ONUS_WMS_PRESET[k];
             else el.value = el.tagName === 'SELECT' ? el.options[0].value : '';   // clear leftovers from another setup
         });
-        document.querySelector('.wms-more').open = true;
+        document.querySelectorAll('.wms-more').forEach(d => { d.open = true; });
         wmsShowFields();
         $('wms-secret').focus();
         toast('ONUS WMS settings filled in — paste the Bearer token in the Token box, then Test connection');
@@ -2644,7 +2669,7 @@
         if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read orders:</b> ${esc(r.error || 'No answer')}</div>`; return; }
         const keys = r.keys || [];
         const show = keys.slice(0, 8);
-        $('wms-test-out').innerHTML = `<div class="note ok"><b>Connected.</b> ${r.records.length} order(s) on the first page${r.skippedByRule ? ` (${r.skippedByRule} left out by your rule)` : ''} · ${keys.length} field(s). Nothing was saved.</div>
+        $('wms-test-out').innerHTML = `<div class="note ok"><b>Connected.</b> ${r.records.length} order(s) on the first page${r.skippedByRule ? ` (${r.skippedByRule} left out by your rule)` : ''} · ${keys.length} field(s).${pickerLine(r.pickers)} Nothing was saved.</div>
             <div class="wms-keys">${keys.slice(0, 60).map(k => `<span>${esc(k)}</span>`).join('')}${keys.length > 60 ? `<span>+${keys.length - 60} more</span>` : ''}</div>
             ${r.records.length ? `<div class="table-wrap"><table class="fit wms-sample"><thead><tr>${show.map(k => `<th>${esc(k)}</th>`).join('')}</tr></thead>
             <tbody>${r.records.slice(0, 3).map(rec => `<tr>${show.map(k => `<td class="w-mid">${esc(rec[k] == null ? '' : String(rec[k]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}`;
@@ -2684,8 +2709,40 @@
         setImportStep(2);
         showView('import');
         loadImportTemplates();
-        toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''} — check the matching, then import`);
+        toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''}${r.pickers ? `, ${r.pickers.matched} with a picker` : ''} — check the matching, then import`);
     }
+
+    /** " · Pick tasks: 40 with a picker, 3 without a task, 1 to check" */
+    function pickerLine(pk) {
+        if (!pk) return '';
+        return ` Pick tasks: ${pk.tasks} read · ${pk.matched} order(s) with a picker${pk.noTask ? `, ${pk.noTask} without a task yet` : ''}${pk.noPicker ? `, ${pk.noPicker} not assigned yet` : ''}${pk.conflicts ? `, <b>${pk.conflicts} with more than one picking task (left blank — check in the WMS)</b>` : ''}.`;
+    }
+
+    // Fill missing pickers: list first, then fill only blank Pickers on confirm
+    $('wms-fill-btn').addEventListener('click', async () => {
+        if (!(await wmsSave(true))) return;
+        $('wms-fill-btn').disabled = true;
+        $('wms-test-out').innerHTML = '<div class="sub2">Reading orders and pick tasks from the WMS…</div>';
+        const r = await cloud('wmsFillPickers', [{ apply: false }]);
+        $('wms-fill-btn').disabled = false;
+        if (!r.ok) { $('wms-test-out').innerHTML = `<div class="note warn"><b>Could not read pick tasks:</b> ${esc(r.error || 'No answer')}</div>`; return; }
+        const n = r.fills.length;
+        $('wms-test-out').innerHTML = `<div class="note ${n ? '' : 'ok'}"><b>${n ? `${n} order(s) in Order Intake can get their picker` : 'No blank pickers to fill'}.</b>
+            ${r.alreadySet} already have a picker (kept as they are) · ${r.notFound} not found in the WMS or not picked yet.${pickerLine(r.pickers)}</div>
+            ${n ? `<div class="table-wrap" style="max-height:260px;overflow:auto;margin-top:8px"><table class="fit"><thead><tr><th>Order #</th><th>Picker to fill in</th></tr></thead>
+            <tbody>${r.fills.slice(0, 300).map(f => `<tr><td class="ono">${esc(f.orderNumber)}</td><td>${esc(f.picker)}</td></tr>`).join('')}</tbody></table></div>
+            <div class="actions-row" style="margin-top:8px"><span class="sub2">Only the Picker cell of these orders is written; nothing else changes.</span>
+            <button type="button" class="btn primary" id="wms-fill-go">Fill ${n} picker(s)</button></div>` : ''}`;
+        const go = $('wms-fill-go');
+        if (go) go.addEventListener('click', async () => {
+            go.disabled = true;
+            const a = await cloud('wmsFillPickers', [{ apply: true }]);
+            if (!a.ok) { toast(a.error || 'Could not fill pickers', true); go.disabled = false; return; }
+            $('wms-test-out').innerHTML = `<div class="note ok"><b>Filled ${a.fills.length} picker(s).</b> ${a.alreadySet} already had one and were left as they were.</div>`;
+            toast(`Filled ${a.fills.length} picker(s)`);
+            loadOrders();
+        });
+    });
 
     /** WMS pulls are add-new-only: the "update existing" choice is locked off. */
     function setWmsImportLock(on) {

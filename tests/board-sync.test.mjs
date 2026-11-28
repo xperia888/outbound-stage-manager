@@ -1156,3 +1156,92 @@ test('WMS pull: ONUS style — POST body startRow/endRow, plain-array answer, SH
     assert.equal(n, 2, 'stopped when the page repeated');
 });
 
+function onusFake(outbound, tasks, calls = []) {
+    return (url, o) => {
+        const b = JSON.parse(o.payload || '{}');
+        calls.push({ url, b });
+        if (url.includes('/task/')) return { code: 200, body: tasks.slice(b.startRow, b.endRow) };
+        return { code: 200, body: outbound.slice(b.startRow, b.endRow) };
+    };
+}
+const ONUS_CFG = {
+    url: 'https://wms.example.com/api/outbound/query', method: 'POST', auth: 'bearer', paging: 'rows', pageSize: '100',
+    body: '{"startRow":0,"endRow":100,"filterModel":{}}', skipField: 'outbound_status', skipValues: 'SHIPPED',
+    taskUrl: 'https://wms.example.com/api/task/query/for/outbound', taskPageSize: '50000', taskType: 'PICKING',
+    taskBody: '{"startRow":0,"endRow":50000,"filterModel":{"type":{"values":["PICKING"],"filterType":"set"}}}',
+    groupField: 'pickinglist_no_byproduct', taskGroupField: 'group_no', pickerField: 'assigned_to', pickerIdField: 'assigned_to_id', orderKeyField: 'outbound_no'
+};
+
+test('WMS pickers: outbound pick list = task group_no; only PICKING tasks; no task / unassigned / duplicate tasks handled', () => {
+    const outbound = [
+        { outbound_no: 'DN1', pickinglist_no_byproduct: 'SPK1', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN2', pickinglist_no_byproduct: 'SPK1', outbound_status: 'ALLOCATED' },   // same pick list → same picker
+        { outbound_no: 'DN3', pickinglist_no_byproduct: 'SPK2', outbound_status: 'ALLOCATED' },   // task not assigned yet
+        { outbound_no: 'DN4', pickinglist_no_byproduct: null, outbound_status: 'ALLOCATED' },     // not committed yet
+        { outbound_no: 'DN5', pickinglist_no_byproduct: 'SPK3', outbound_status: 'ALLOCATED' }    // two picking tasks → check
+    ];
+    const tasks = [
+        { task_id: 1, type: 'PICKING', status: 'COMPLETED', group_no: 'SPK1', assigned_to: 'Maria L', assigned_to_id: 77, assigned_by: 'Boss', created_by: 'Boss' },
+        { task_id: 2, type: 'LOADING', status: 'ASSIGNED', group_no: 'SPK2', assigned_to: 'Loader Lou' },   // not a picking task
+        { task_id: 3, type: 'PICKING', status: 'ASSIGNED', group_no: 'SPK2', assigned_to: null, assigned_by: 'Boss' },
+        { task_id: 4, type: 'PICKING', status: 'ASSIGNED', group_no: 'SPK3', assigned_to: 'A' },
+        { task_id: 5, type: 'PICKING', status: 'ASSIGNED', group_no: 'SPK3', assigned_to: 'B' }
+    ];
+    const { call } = wmsGs(onusFake(outbound, tasks));
+    call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
+    const r = call('wmsPullFetch', [{}]);
+    assert.equal(r.ok, true, r.error);
+    const by = Object.fromEntries(r.records.map(x => [x.outbound_no, x]));
+    assert.equal(by.DN1['picker_name'], 'Maria L');
+    assert.equal(by.DN1['picker_id'], '77');
+    assert.equal(by.DN2['picker_name'], 'Maria L', 'one task → many outbound records');
+    assert.equal(by.DN3['picker_name'], '', 'unassigned: no other user is used instead');
+    assert.equal(by.DN4['picker_name'], '');
+    assert.equal(by.DN5['picker_name'], '', 'two picking tasks: none is picked');
+    assert.match(by.DN5.picker_exception, /2 PICKING tasks share pick list SPK3/);
+    assert.equal(by.DN1.picking_task_id, '1');
+    assert.equal(by.DN1.picking_task_status, 'COMPLETED');
+    assert.equal(by.DN1.pickinglist_no_byproduct, 'SPK1', 'original fields kept');
+    assert.equal(by.DN4.picker_exception, '');
+    assert.deepEqual(JSON.parse(JSON.stringify(r.pickers)), { tasks: 4, matched: 2, noTask: 1, noPicker: 1, conflicts: 1 });
+});
+
+test('WMS fill pickers: fills ONLY blank Pickers, only the Picker cell; lists first, writes on apply', () => {
+    const outbound = [
+        { outbound_no: 'DN1', pickinglist_no_byproduct: 'SPK1', outbound_status: 'SHIPPED' },   // shipped orders still get their picker
+        { outbound_no: 'DN2', pickinglist_no_byproduct: 'SPK2', outbound_status: 'PICKING' },
+        { outbound_no: 'DN3', pickinglist_no_byproduct: 'SPK3', outbound_status: 'PICKING' }
+    ];
+    const tasks = [
+        { type: 'PICKING', group_no: 'SPK1', assigned_to: 'Maria L' },
+        { type: 'PICKING', group_no: 'SPK2', assigned_to: 'Jose M' },
+        { type: 'PICKING', group_no: 'SPK3', assigned_to: 'Kim' }
+    ];
+    const { call, sheets } = wmsGs(onusFake(outbound, tasks));
+    call('upsertOrders', [[
+        { orderNumber: 'DN1', customer: 'Acme', pallets: 4 },
+        { orderNumber: 'DN2', customer: 'Acme', picker: 'Typed By CS' },   // already has a picker: kept
+        { orderNumber: 'DN9', customer: 'Other' }                          // not in the WMS
+    ], { enteredBy: 'Amy' }]);
+    call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
+    const before = JSON.parse(JSON.stringify(sheets.get('Orders').rows));
+    const dry = call('wmsFillPickers', [{ apply: false }]);
+    assert.equal(dry.ok, true, dry.error);
+    assert.deepEqual(dry.fills, [{ orderNumber: 'DN1', picker: 'Maria L' }]);
+    assert.equal(dry.alreadySet, 1);
+    assert.equal(dry.notFound, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(sheets.get('Orders').rows)), before, 'listing writes nothing');
+    const done = call('wmsFillPickers', [{ apply: true }]);
+    assert.equal(done.fills.length, 1);
+    const after = sheets.get('Orders').rows;
+    const hdr = after[0];
+    const pIdx = hdr.indexOf('Picker');
+    after.forEach((row, i) => row.forEach((v, j) => {
+        if (i === 1 && j === pIdx) assert.equal(v, 'Maria L');
+        else assert.equal(JSON.stringify(v), JSON.stringify(before[i][j]), `row ${i} col ${hdr[j]} unchanged`);
+    }));
+    assert.equal(after[2][pIdx], 'Typed By CS', 'an entered picker is never overwritten');
+    // The WMS push key can't run it
+    assert.equal(call('wmsFillPickers', [{ apply: true }], 'wms-key-1').ok, false);
+});
+

@@ -32,10 +32,23 @@ ONUS_ROWS = [  # shaped like the ONUS WMS Outbound Query answer (plain array)
      'carrier_name': 'UPS Ground', 'scac': 'UPSN', 'bol_no': None, 'consignee_city': 'Reno', 'consignee_state': 'NV', 'ship_no_later': '2026-11-29 00:00:00', 'outbound_note': None},
     {'outbound_id': 434127, 'outbound_no': 'DN2611201698', 'order_no': 'OB2', 'po_no': 'PO-2', 'outbound_status': 'SHIPPED', 'owner_name': 'Etekcity Corp', 'ttl_pallet': 1},
     {'outbound_id': 434128, 'outbound_no': 'DN-E2E-1', 'order_no': 'OB3', 'po_no': 'PO-3', 'outbound_status': 'PICKING', 'owner_name': 'NOT THIS', 'ttl_pallet': 50},
+    {'outbound_id': 434129, 'outbound_no': 'DN-OLD-7', 'order_no': 'OB4', 'outbound_status': 'SHIPPED', 'owner_name': 'NOT THIS EITHER', 'pickinglist_no_byproduct': 'SPK-OLD-7'},
+]
+ONUS_TASKS = [
+    {'task_id': 9001, 'type': 'PICKING', 'status': 'COMPLETED', 'group_no': 'SPK202611200082', 'assigned_to': 'Maria L', 'assigned_to_id': 77, 'assigned_by': 'Lead Lee', 'created_by': 'Lead Lee'},
+    {'task_id': 9002, 'type': 'PICKING', 'status': 'ASSIGNED', 'group_no': 'SPK-OLD-7', 'assigned_to': 'Jose M', 'assigned_to_id': 78},
+    {'task_id': 9003, 'type': 'LOADING', 'status': 'ASSIGNED', 'group_no': 'SPK-OLD-7', 'assigned_to': 'Loader Lou'},
 ]
 class WmsHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_POST(self):
+        if '/task/' in self.path:
+            body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
+            wms_calls.append({'path': self.path, 'key': self.headers.get('Authorization'), 'task_body': body})
+            if self.headers.get('Authorization') != 'Bearer ' + ONUS_TOKEN:
+                self.send_response(401); self.end_headers(); return
+            out = json.dumps(ONUS_TASKS[body.get('startRow', 0):body.get('endRow', 50000)]).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(out); return
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
         wms_calls.append({'path': self.path, 'key': self.headers.get('Authorization'), 'body': body})
         if self.headers.get('Authorization') != 'Bearer ' + ONUS_TOKEN:
@@ -602,10 +615,12 @@ async def main():
         preset = await pg.evaluate("[$('wms-url').value, $('wms-method').value, $('wms-auth').value, $('wms-paging').value, $('wms-skip-field').value, JSON.parse($('wms-body').value).endRow]")
         record('"Use ONUS WMS settings" fills in the Outbound Query setup', preset == ['https://prd-onus.target-ai.com:18890/api/outbound/query', 'POST', 'bearer', 'rows', 'outbound_status', 100], preset)
         await pg.fill('#wms-url', 'https://fake-wms.local/api/outbound/query')   # the test WMS instead of the real one
+        await pg.fill('#wms-task-url', 'https://fake-wms.local/api/task/query/for/outbound')
         await pg.locator('#wms-pull-card').screenshot(path=f'{OUT}/wms_onus_preset.png')
         await pg.fill('#wms-page-size', '2'); await pg.fill('#wms-secret', ONUS_TOKEN)
         await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(2500)
         mapped = await pg.evaluate("Object.fromEntries(Object.entries(imp.mapping).map(([k, v]) => [k, v.map(i => imp.headers[i]).join(' + ')]))")
+        record('ONUS pull: picker comes from the picking task (assigned_to)', mapped.get('picker') == 'picker_name', mapped)
         record('ONUS pull: built-in matching uses outbound_no as the Order # (not order_no)', mapped.get('orderNumber') == 'outbound_no' and mapped.get('customer') == 'owner_name'
                and mapped.get('pallets') == 'ttl_pallet' and mapped.get('destination') == 'consignee_city + consignee_state' and 'status' not in mapped, mapped)
         await pg.click('#imp-preview-btn'); await pg.wait_for_timeout(400)
@@ -617,9 +632,25 @@ async def main():
         o = dict(zip(rows2[0], after2.get('DN2611201697', [])))
         record('ONUS pull: new order saved, nothing else changed', all(after2.get(k) == v for k, v in before2.items()) and len(after2) == len(before2) + 1
                and o.get('Customer') == 'Etekcity Corp' and o.get('Pallets') == 3 and o.get('Cartons') == 12 and o.get('Carrier') == 'UPS Ground'
-               and o.get('Reference') == 'SF-RO-20261120-27139' and o.get('Destination') == 'Reno, NV' and o.get('Source') == 'WMS pull', o)
+               and o.get('Reference') == 'SF-RO-20261120-27139' and o.get('Destination') == 'Reno, NV' and o.get('Source') == 'WMS pull'
+               and o.get('Picker') == 'Maria L', o)
         onus_bodies = [c['body'] for c in wms_calls if c.get('body') is not None]
         record('ONUS pull: startRow/endRow paged in the body until an empty page', [(b['startRow'], b['endRow']) for b in onus_bodies[-3:]] == [(0, 2), (2, 4), (4, 6)], onus_bodies[-3:])
+        tb = [c['task_body'] for c in wms_calls if c.get('task_body')]
+        record('task query sent with the PICKING filter and the CANCLE spelling', tb and tb[-1]['filterModel']['type']['values'] == ['PICKING']
+               and 'CANCLE' in tb[-1]['filterModel']['status']['values'] and tb[-1]['endRow'] == 50000, tb[-1:] )
+        # Fill missing pickers on orders already here (DN-OLD-7 has none): list, then fill only that cell
+        await pg.click('#tabs button[data-view="api"]'); await pg.wait_for_timeout(300)
+        before3 = dump()['Orders']
+        await pg.click('#wms-fill-btn'); await pg.wait_for_timeout(2500)
+        fill_txt = await pg.text_content('#wms-test-out') or ''
+        record('Fill missing pickers lists what it would fill, writes nothing yet', 'DN-OLD-7' in fill_txt and 'Jose M' in fill_txt and dump()['Orders'] == before3, fill_txt[:200])
+        await pg.click('#wms-fill-go'); await pg.wait_for_timeout(2000)
+        after3 = dump()['Orders']; h3 = after3[0]; pidx = h3.index('Picker')
+        changed = [(after3[i][0], h3[j]) for i in range(1, len(after3)) for j in range(len(h3)) if (after3[i][j] if j < len(after3[i]) else '') != (before3[i][j] if j < len(before3[i]) else '')]
+        record('only the blank Picker of DN-OLD-7 was filled — nothing else changed', changed == [('DN-OLD-7', 'Picker')]
+               and next(r for r in after3 if r[0] == 'DN-OLD-7')[pidx] == 'Jose M', changed)
+        await pg.screenshot(path=f'{OUT}/wms_fill_pickers.png')
         await pg.evaluate("setWmsImportLock(false)")
         record('a normal file import can update again', not await pg.is_disabled('input[name=imp-mode][value=upsert]'))
         await pg.evaluate("showView('orders')")

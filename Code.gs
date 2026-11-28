@@ -53,10 +53,10 @@ WAREHOUSES_.TEST.wmsPullPrefix = 'WMS_PULL_TEST';
 const ROLE_FUNCTIONS_ = {
   floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
-    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch'],
+    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers'],
   cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
     'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
-    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch'],
+    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers'],
   api: ['listOrders', 'upsertOrders']
 };
 let ACTIVE_WH_ = WAREHOUSES_.ONT; // set per request by api(); each request runs on its own
@@ -163,6 +163,7 @@ function runRequest_(req, role) {
     case 'wmsPullGetConfig': return wmsPullGetConfig_();
     case 'wmsPullSaveConfig': return wmsPullSaveConfig_(args[0], args[1], args[2]);
     case 'wmsPullFetch': return wmsPullFetch_(args[0]);
+    case 'wmsFillPickers': return wmsFillPickers_(args[0]);
     case 'setOrderStatus': return setOrderStatus_(args[0], args[1], args[2]);
     case 'orderProgress': return orderProgress_();
     case 'intakeStatus': return intakeStatus_(role);
@@ -1004,7 +1005,9 @@ const WMS_PULL_MAX_RECORDS_ = 5000;
 const WMS_PULL_MAX_PAGES_ = 50;
 const WMS_PULL_KEEP_BACKUPS_ = 3;
 const WMS_PULL_FIELDS_ = ['name', 'url', 'method', 'body', 'auth', 'headerName', 'username', 'queryName', 'tokenUrl', 'clientId', 'scope',
-  'extraHeaders', 'listPath', 'paging', 'pageParam', 'sizeParam', 'pageSize', 'firstPage', 'maxPages', 'lookbackDays', 'skipField', 'skipValues'];
+  'extraHeaders', 'listPath', 'paging', 'pageParam', 'sizeParam', 'pageSize', 'firstPage', 'maxPages', 'lookbackDays', 'skipField', 'skipValues',
+  // Picker from pick tasks (same sign-in): task list address + body, and the fields that link them
+  'taskUrl', 'taskBody', 'taskPageSize', 'taskType', 'taskGroupField', 'groupField', 'pickerField', 'pickerIdField', 'orderKeyField'];
 
 function wmsPullProps_() {
   const props = PropertiesService.getScriptProperties();
@@ -1172,6 +1175,20 @@ function wmsPullFetch_(options) {
   const secret = p.props.getProperty(p.secret) || '';
   if ((cfg.auth || 'none') !== 'none' && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
   try {
+    const got = wmsPullRecords_(cfg, secret, opts);
+    const pick = cfg.taskUrl ? wmsAddPickers_(cfg, secret, got.records) : null;
+    const keys = [];
+    const seen = {};
+    got.records.forEach(r => Object.keys(r).forEach(k => { if (!seen[k]) { seen[k] = true; keys.push(k); } }));
+    if (!opts.test) p.props.setProperty(p.last, new Date().toISOString());
+    return Object.assign({ ok: true, keys: keys, pickers: pick }, got);
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+/** Reads the outbound records (all pages); options.test = first page; options.noSkip = keep the leave-out records too. */
+function wmsPullRecords_(cfg, secret, opts) {
     const base = wmsPullFill_(cfg.url, cfg);
     const paging = cfg.paging || 'none';
     const size = Math.max(1, Math.min(1000, Number(cfg.pageSize) || 100));
@@ -1181,7 +1198,7 @@ function wmsPullFetch_(options) {
     const seenRec = {};
     let pages = 0, more = false, skippedByRule = 0;
     // Records to leave out, e.g. outbound_status = SHIPPED, CANCELLED
-    const skipField = String(cfg.skipField || '').trim();
+    const skipField = opts.noSkip ? '' : String(cfg.skipField || '').trim();
     const skipValues = String(cfg.skipValues || '').split(',').map(v => v.trim().toUpperCase()).filter(Boolean);
     let bodyObj = null;
     if (paging === 'rows') {
@@ -1217,13 +1234,113 @@ function wmsPullFetch_(options) {
       if (paging === 'none' || list.length === 0 || fresh === 0 || (paging !== 'rows' && list.length < size) || records.length >= WMS_PULL_MAX_RECORDS_) break;
       if (i === maxPages - 1) more = true;
     }
-    const keys = [];
-    const seen = {};
-    records.forEach(r => Object.keys(r).forEach(k => { if (!seen[k]) { seen[k] = true; keys.push(k); } }));
-    if (!opts.test) p.props.setProperty(p.last, new Date().toISOString());
-    return { ok: true, records: records, keys: keys, pages: pages, skippedByRule: skippedByRule, truncated: records.length >= WMS_PULL_MAX_RECORDS_, morePages: more };
+    return { records: records, pages: pages, skippedByRule: skippedByRule, truncated: records.length >= WMS_PULL_MAX_RECORDS_, morePages: more };
+}
+
+/**
+ * Picking tasks → picker per pick list. Returns { byGroup: { group_no: { picker, pickerId, status, taskId } | { conflict: n } }, tasks }.
+ * Only tasks of taskType (PICKING). Two tasks on one pick list = a data problem: no picker is chosen for it.
+ */
+function wmsPickTasks_(cfg, secret) {
+  const size = Math.max(1, Math.min(50000, Number(cfg.taskPageSize) || 50000));
+  const type = String(cfg.taskType || 'PICKING').toUpperCase();
+  const gField = cfg.taskGroupField || 'group_no', pField = cfg.pickerField || 'assigned_to', idField = cfg.pickerIdField || 'assigned_to_id';
+  let body;
+  try { body = JSON.parse(wmsPullFill_(cfg.taskBody || '{}', cfg)); } catch (e) { throw new Error('The task request body is not valid JSON'); }
+  const taskCfg = Object.assign({}, cfg, { method: 'POST', listPath: '' });
+  const byGroup = {};
+  let total = 0;
+  for (let i = 0; i < 20; i++) {
+    body.startRow = i * size;
+    body.endRow = (i + 1) * size;
+    const list = wmsPullList_(wmsPullRequest_(cfg.taskUrl, taskCfg, secret, JSON.stringify(body)), '');
+    list.forEach(t => {
+      if (!t || String(t.type || '').toUpperCase() !== type) return;   // only picking tasks
+      total++;
+      const g = String(t[gField] == null ? '' : t[gField]).trim();
+      if (!g) return;
+      const cur = byGroup[g];
+      if (cur) { byGroup[g] = { conflict: (cur.conflict || 1) + 1 }; return; }
+      byGroup[g] = { picker: t[pField] == null ? '' : String(t[pField]).trim(), pickerId: t[idField] == null ? '' : String(t[idField]), status: t.status || '', taskId: t.task_id == null ? '' : String(t.task_id) };
+    });
+    if (list.length < size) break;   // a full page means there may be more
+  }
+  return { byGroup: byGroup, tasks: total };
+}
+
+/** Adds picker_id / picker_name / picking_task_id / picking_task_status (+ picker_exception) to each outbound record
+ *  by pick list (pickinglist_no_byproduct = group_no). The original fields are kept as they are. */
+function wmsAddPickers_(cfg, secret, records) {
+  const t = wmsPickTasks_(cfg, secret);
+  const gField = cfg.groupField || 'pickinglist_no_byproduct';
+  const out = { tasks: t.tasks, matched: 0, noTask: 0, noPicker: 0, conflicts: 0 };
+  records.forEach(r => {
+    const g = String(r[gField] == null ? '' : r[gField]).trim();
+    const task = g ? t.byGroup[g] : null;
+    // Field names from the "Outbound & Picker Data Integration Rules"; empty when there is no single matching task
+    r.picker_id = ''; r.picker_name = ''; r.picking_task_id = ''; r.picking_task_status = ''; r.picker_exception = '';
+    if (!task) { out.noTask++; return; }
+    if (task.conflict) { out.conflicts++; r.picker_exception = task.conflict + ' PICKING tasks share pick list ' + g + ' — none was chosen'; return; }
+    r.picker_name = task.picker; r.picker_id = task.pickerId; r.picking_task_status = task.status; r.picking_task_id = task.taskId;
+    if (task.picker) out.matched++; else out.noPicker++;
+  });
+  return out;
+}
+
+/**
+ * Fills the Picker on orders already in Order Intake — ONLY where Picker is blank, and nothing else.
+ * options.apply = false → just lists what would be filled. Picks come from the WMS: order (orderKeyField,
+ * e.g. outbound_no) → pick list → its one picking task's assigned_to.
+ */
+function wmsFillPickers_(options) {
+  const opts = options || {};
+  const cfg = readWmsPullConfig_();
+  if (!cfg.url || !cfg.taskUrl) return { ok: false, error: 'Enter and save the WMS API and the task API addresses first' };
+  const p = wmsPullProps_();
+  const secret = p.props.getProperty(p.secret) || '';
+  if ((cfg.auth || 'none') !== 'none' && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
+  let got, stats;
+  try {
+    got = wmsPullRecords_(cfg, secret, { noSkip: true });
+    stats = wmsAddPickers_(cfg, secret, got.records);
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
+  }
+  const keyField = cfg.orderKeyField || 'outbound_no';
+  const pickerByOrder = {};
+  got.records.forEach(r => {
+    const k = normalizeOrderNumber_(r[keyField]);
+    if (k && r.picker_name) pickerByOrder[k] = String(r.picker_name).slice(0, 80);
+  });
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { ok: false, error: 'Busy — try again' };
+  try {
+    const sheet = getOrdersSheet_();
+    const rows = readOrderRows_(sheet);
+    const col = {};
+    ORDER_FIELDS_.forEach((f, i) => { col[f.key] = i; });
+    const fills = [];
+    let alreadySet = 0, notFound = 0;
+    rows.forEach((r, i) => {
+      const ord = normalizeOrderNumber_(r[col.orderNumber]);
+      if (!ord) return;
+      const picker = pickerByOrder[ord];
+      if (!picker) { notFound++; return; }
+      if (String(r[col.picker] || '').trim()) { alreadySet++; return; }   // never overwrite a picker
+      fills.push({ row: i, orderNumber: ord, picker: picker });
+    });
+    if (opts.apply && fills.length) {
+      if (typeof sheet.getRange === 'function') {
+        fills.forEach(f => sheet.getRange(f.row + 2, col.picker + 1).setValue(f.picker));   // only the Picker cell
+        SpreadsheetApp.flush();
+      }
+    }
+    return {
+      ok: true, applied: Boolean(opts.apply), fills: fills.map(f => ({ orderNumber: f.orderNumber, picker: f.picker })),
+      alreadySet: alreadySet, notFound: notFound, wmsRecords: got.records.length, pickers: stats
+    };
+  } finally {
+    lock.releaseLock();
   }
 }
 
