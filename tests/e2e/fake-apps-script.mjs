@@ -69,7 +69,7 @@ const ctx = {
     },
     Session: { getActiveUser: () => ({ getEmail: () => '' }), getScriptTimeZone: () => 'America/Los_Angeles' },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => PROPS[k] ?? null, setProperty: (k, v) => { PROPS[k] = String(v); }, deleteProperty: k => { delete PROPS[k]; } }) },
-    UrlFetchApp: { fetch: fakeFetch },
+    UrlFetchApp: { fetch: fakeFetch, fetchAll: reqs => reqs.map(r => fakeFetch(r.url, r)) },
     Utilities: { base64Encode: t => Buffer.from(String(t)).toString('base64'), formatDate: d => new Date(d).toISOString().replace('T', ' ').slice(0, 19) },
     console,
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ t, setMimeType() { return this; } }) },

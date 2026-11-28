@@ -1005,6 +1005,7 @@ function reportData_(options) {
 // =====================================================================================
 const WMS_PULL_MAX_RECORDS_ = 5000;
 const WMS_PULL_MAX_PAGES_ = 50;
+const WMS_PULL_BATCH_ = 5;   // order pages asked for at the same time
 const WMS_PULL_KEEP_BACKUPS_ = 3;
 const WMS_PULL_FIELDS_ = ['name', 'url', 'method', 'body', 'auth', 'headerName', 'username', 'queryName', 'tokenUrl', 'clientId', 'scope',
   'extraHeaders', 'listPath', 'paging', 'pageParam', 'sizeParam', 'pageSize', 'firstPage', 'maxPages', 'lookbackDays', 'skipField', 'skipValues',
@@ -1274,12 +1275,28 @@ function wmsPullFlatten_(rec) {
 }
 
 function wmsPullRequest_(url, cfg, secret, bodyText) {
+  return wmsPullRequestAll_([wmsPullBuild_(url, cfg, secret, bodyText)], cfg)[0];
+}
+
+/** One WMS request, ready for UrlFetchApp.fetch / fetchAll. */
+function wmsPullBuild_(url, cfg, secret, bodyText) {
   const method = String(cfg.method || 'GET').toLowerCase() === 'post' ? 'post' : 'get';
   let fullUrl = url;
   if (cfg.auth === 'query') fullUrl += (fullUrl.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(cfg.queryName || 'api_key') + '=' + encodeURIComponent(secret);
-  const opt = { method: method, headers: wmsPullHeaders_(cfg, secret), muteHttpExceptions: true, followRedirects: true };
+  const opt = { url: fullUrl, method: method, headers: wmsPullHeaders_(cfg, secret), muteHttpExceptions: true, followRedirects: true };
   if (method === 'post' && (bodyText || cfg.body)) { opt.payload = bodyText || wmsPullFill_(cfg.body, cfg); opt.contentType = 'application/json'; }
-  const resp = UrlFetchApp.fetch(fullUrl, opt);
+  return opt;
+}
+
+/** Sends several WMS requests at the same time (UrlFetchApp.fetchAll) and reads each answer. */
+function wmsPullRequestAll_(reqs, cfg) {
+  const resps = reqs.length > 1 && typeof UrlFetchApp.fetchAll === 'function'
+    ? UrlFetchApp.fetchAll(reqs)
+    : reqs.map(r => UrlFetchApp.fetch(r.url, Object.assign({}, r, { url: undefined })));
+  return resps.map(resp => wmsPullParse_(resp, cfg));
+}
+
+function wmsPullParse_(resp, cfg) {
   const code = resp.getResponseCode();
   if (code === 401 && cfg.auth === 'login') {
     // Token expired: drop it and ask for a new sign-in (the password is never kept, so no silent re-login)
@@ -1304,8 +1321,12 @@ function wmsPullFetch_(options) {
   const secret = p.props.getProperty(p.secret) || '';
   if (!['none', 'login'].includes(cfg.auth || 'none') && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
   try {
-    const got = wmsPullRecords_(cfg, secret, opts);
-    const pick = cfg.taskUrl ? wmsAddPickers_(cfg, secret, got.records) : null;
+    const t0 = Date.now();
+    const got = wmsPullRecords_(cfg, secret, Object.assign({}, opts, { extra: cfg.taskUrl ? [wmsTaskFirstRequest_(cfg, secret)] : [] }));
+    const t1 = Date.now();
+    const pick = cfg.taskUrl ? wmsAddPickers_(cfg, secret, got.records, got.extraAnswers[0]) : null;
+    got.seconds = { wms: Math.round((t1 - t0) / 100) / 10, total: Math.round((Date.now() - t0) / 100) / 10 };
+    delete got.extraAnswers;
     if (pick) {
       // Released to Warehouse = the committed date. Not committed yet (no picking task) → not released: comes in on a later pull
       const before = got.records.length;
@@ -1407,44 +1428,66 @@ function wmsPullRecords_(cfg, secret, opts) {
     if (paging === 'rows') {
       try { bodyObj = JSON.parse(wmsPullFill_(cfg.body || '{}', cfg)); } catch (e) { throw new Error('The request body is not valid JSON'); }
     }
-    for (let i = 0; i < maxPages; i++) {
+    const pageRequest = i => {
       let url = base;
       let bodyText = null;
       if (paging === 'rows') {
         // AG Grid style: startRow / endRow in the POST body
-        bodyObj.startRow = i * size;
-        bodyObj.endRow = (i + 1) * size;
-        bodyText = JSON.stringify(bodyObj);
+        bodyText = JSON.stringify(Object.assign({}, bodyObj, { startRow: i * size, endRow: (i + 1) * size }));
       } else if (paging !== 'none') {
         const add = (k, v) => { url += (url.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(k) + '=' + encodeURIComponent(v); };
         if (paging === 'page') add(cfg.pageParam || 'page', first + i);
         else add(cfg.pageParam || 'offset', i * size);
         if (cfg.sizeParam) add(cfg.sizeParam, size);
       }
-      const list = wmsPullList_(wmsPullRequest_(url, cfg, secret, bodyText), cfg.listPath);
-      pages++;
-      let fresh = 0;
-      list.forEach(r => {
-        const sig = JSON.stringify(r);
-        if (seenRec[sig]) return;          // a WMS that ignores paging sends the same rows again
-        seenRec[sig] = true;
-        fresh++;
-        const flat = r && typeof r === 'object' ? wmsPullFlatten_(r) : { value: r };
-        if (skipField && skipValues.indexOf(String(flat[skipField] == null ? '' : flat[skipField]).trim().toUpperCase()) !== -1) { skippedByRule++; return; }
-        if (records.length < WMS_PULL_MAX_RECORDS_) records.push(flat);
-      });
-      // 'rows' paging: the WMS gives no total, so keep going until a page is empty (or repeats)
-      if (paging === 'none' || list.length === 0 || fresh === 0 || (paging !== 'rows' && list.length < size) || records.length >= WMS_PULL_MAX_RECORDS_) break;
-      if (i === maxPages - 1) more = true;
+      return wmsPullBuild_(url, cfg, secret, bodyText);
+    };
+    // Pages are asked for a few at a time (in parallel); extra requests (the pick tasks) go with the first batch
+    const batch = paging === 'none' ? 1 : WMS_PULL_BATCH_;
+    const extra = opts.extra || [];
+    let extraAnswers = [];
+    let done = false;
+    for (let i = 0; i < maxPages && !done; i += batch) {
+      const idx = [];
+      for (let j = i; j < Math.min(maxPages, i + batch); j++) idx.push(j);
+      const reqs = idx.map(pageRequest).concat(i === 0 ? extra : []);
+      const answers = wmsPullRequestAll_(reqs, cfg);
+      if (i === 0) extraAnswers = answers.slice(idx.length);
+      for (let n = 0; n < idx.length; n++) {
+        const list = wmsPullList_(answers[n], cfg.listPath);
+        pages++;
+        let fresh = 0;
+        list.forEach(r => {
+          const sig = JSON.stringify(r);
+          if (seenRec[sig]) return;          // a WMS that ignores paging sends the same rows again
+          seenRec[sig] = true;
+          fresh++;
+          const flat = r && typeof r === 'object' ? wmsPullFlatten_(r) : { value: r };
+          if (skipField && skipValues.indexOf(String(flat[skipField] == null ? '' : flat[skipField]).trim().toUpperCase()) !== -1) { skippedByRule++; return; }
+          if (records.length < WMS_PULL_MAX_RECORDS_) records.push(flat);
+        });
+        // 'rows' paging: the WMS gives no total, so keep going until a page is empty (or repeats)
+        if (paging === 'none' || list.length === 0 || fresh === 0 || (paging !== 'rows' && list.length < size) || records.length >= WMS_PULL_MAX_RECORDS_) { done = true; break; }
+        if (idx[n] === maxPages - 1) more = true;
+      }
     }
-    return { records: records, pages: pages, skippedByRule: skippedByRule, truncated: records.length >= WMS_PULL_MAX_RECORDS_, morePages: more };
+    return { records: records, pages: pages, skippedByRule: skippedByRule, truncated: records.length >= WMS_PULL_MAX_RECORDS_, morePages: more, extraAnswers: extraAnswers };
 }
 
 /**
  * Picking tasks → picker per pick list. Returns { byGroup: { group_no: { picker, pickerId, status, taskId } | { conflict: n } }, tasks }.
  * Only tasks of taskType (PICKING). Two tasks on one pick list = a data problem: no picker is chosen for it.
  */
-function wmsPickTasks_(cfg, secret) {
+function wmsTaskFirstRequest_(cfg, secret) {
+  const size = Math.max(1, Math.min(50000, Number(cfg.taskPageSize) || 50000));
+  let body;
+  try { body = JSON.parse(wmsPullFill_(cfg.taskBody || '{}', cfg)); } catch (e) { throw new Error('The task request body is not valid JSON'); }
+  body.startRow = 0;
+  body.endRow = size;
+  return wmsPullBuild_(cfg.taskUrl, Object.assign({}, cfg, { method: 'POST', listPath: '' }), secret, JSON.stringify(body));
+}
+
+function wmsPickTasks_(cfg, secret, firstAnswer) {
   const size = Math.max(1, Math.min(50000, Number(cfg.taskPageSize) || 50000));
   const type = String(cfg.taskType || 'PICKING').toUpperCase();
   const gField = cfg.taskGroupField || 'group_no', pField = cfg.pickerField || 'assigned_to', idField = cfg.pickerIdField || 'assigned_to_id';
@@ -1456,7 +1499,8 @@ function wmsPickTasks_(cfg, secret) {
   for (let i = 0; i < 20; i++) {
     body.startRow = i * size;
     body.endRow = (i + 1) * size;
-    const list = wmsPullList_(wmsPullRequest_(cfg.taskUrl, taskCfg, secret, JSON.stringify(body)), '');
+    const answer = i === 0 && firstAnswer !== undefined ? firstAnswer : wmsPullRequest_(cfg.taskUrl, taskCfg, secret, JSON.stringify(body));
+    const list = wmsPullList_(answer, '');
     list.forEach(t => {
       if (!t || String(t.type || '').toUpperCase() !== type) return;   // only picking tasks
       total++;
@@ -1476,8 +1520,8 @@ function wmsPickTasks_(cfg, secret) {
 
 /** Adds picker_id / picker_name / picking_task_id / picking_task_status (+ picker_exception) to each outbound record
  *  by pick list (pickinglist_no_byproduct = group_no). The original fields are kept as they are. */
-function wmsAddPickers_(cfg, secret, records) {
-  const t = wmsPickTasks_(cfg, secret);
+function wmsAddPickers_(cfg, secret, records, firstTaskAnswer) {
+  const t = wmsPickTasks_(cfg, secret, firstTaskAnswer);
   const gField = cfg.groupField || 'pickinglist_no_byproduct';
   const out = { tasks: t.tasks, matched: 0, noTask: 0, noPicker: 0, conflicts: 0 };
   records.forEach(r => {
@@ -1509,8 +1553,8 @@ function wmsFillPickers_(options) {
   if (!['none', 'login'].includes(cfg.auth || 'none') && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
   let got, stats;
   try {
-    got = wmsPullRecords_(cfg, secret, { noSkip: true });
-    stats = wmsAddPickers_(cfg, secret, got.records);
+    got = wmsPullRecords_(cfg, secret, { noSkip: true, extra: [wmsTaskFirstRequest_(cfg, secret)] });
+    stats = wmsAddPickers_(cfg, secret, got.records, got.extraAnswers[0]);
     got.records = wmsOrderNumbers_(cfg, got.records, {}).records;   // SPK… for small parcel, DN otherwise
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };

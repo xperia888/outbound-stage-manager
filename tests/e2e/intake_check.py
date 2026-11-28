@@ -619,7 +619,7 @@ async def main():
         backups = [n for n in dump().keys() if n.startswith('Orders backup ')]
         record('the Orders tab was backed up before the pull import', len(backups) == 1 and len(dump()[backups[0]]) == orders_before + 1, backups)
         record('every WMS call carried the key; pages requested in order', all(c['key'] == WMS_KEY for c in wms_calls[1:])
-               and [c['path'].split('page=')[1][:1] for c in wms_calls[-2:]] == ['1', '2'], wms_calls[-3:])
+               and [c['path'].split('page=')[1][:1] for c in wms_calls[-5:]] == ['1', '2', '3', '4', '5'], wms_calls[-5:])
         await pg.screenshot(path=f'{OUT}/wms_pull_done.png', full_page=True)
         await pg.click('#tabs button[data-view="api"]'); await pg.wait_for_timeout(300)
         await pg.screenshot(path=f'{OUT}/wms_pull_setup.png', full_page=True)
@@ -670,7 +670,7 @@ async def main():
                and str(ltl.get('Released to Warehouse', '')).startswith('2026-11-24') and ltl.get('Release Window') == '12:30pm-14:00pm',
                [o.get('Released to Warehouse'), o.get('Release Window'), ltl.get('Released to Warehouse'), ltl.get('Release Window')])
         onus_bodies = [c['body'] for c in wms_calls if c.get('body') is not None]
-        record('ONUS pull: startRow/endRow paged in the body until an empty page', [(b['startRow'], b['endRow']) for b in onus_bodies[-4:]] == [(0, 2), (2, 4), (4, 6), (6, 8)], onus_bodies[-4:])
+        record('ONUS pull: startRow/endRow paged in the body until an empty page', [(b['startRow'], b['endRow']) for b in onus_bodies[-5:]] == [(0, 2), (2, 4), (4, 6), (6, 8), (8, 10)], onus_bodies[-5:])
         tb = [c['task_body'] for c in wms_calls if c.get('task_body')]
         record('task query sent with the PICKING filter and the CANCLE spelling', tb and tb[-1]['filterModel']['type']['values'] == ['PICKING']
                and 'CANCLE' in tb[-1]['filterModel']['status']['values'] and tb[-1]['endRow'] == 50000, tb[-1:] )
