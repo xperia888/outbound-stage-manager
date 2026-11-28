@@ -179,6 +179,7 @@ async def main():
         record('WMS key rejected at sign-in', 'not recognized' in (await pg.text_content('#signin-error') or ''))
         await pg.fill('#signin-code', 'cs-e2e'); await pg.fill('#signin-name', 'Amy'); await pg.click('#signin-btn')
         await pg.wait_for_timeout(1200)
+        record('version number shown in the header', (await pg.text_content('#app-ver') or '').startswith('v1.'), await pg.text_content('#app-ver'))
         record('CS code signs in to ONT', not await pg.is_visible('#signin') and (await pg.text_content('#wh-chip')) == 'ONUS-ONT')
         record('name shown as Entered by', (await pg.text_content('#user-btn')) == 'Amy')
 
