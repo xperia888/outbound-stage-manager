@@ -648,6 +648,16 @@ async def main():
         props_now = json.loads(full)['props']
         record('WMS login: the password is not stored anywhere', ONUS_PW not in json.dumps(props_now) and ONUS_PW not in json.dumps(json.loads(full)['sheets'])
                and 'token' in props_now.get('WMS_PULL_TOKEN', ''))
+        await pg.click('#wms-save-btn'); await pg.wait_for_timeout(1200)
+        props_now = json.loads(urllib.request.urlopen(f'http://127.0.0.1:{GAS_PORT}/dump').read().decode())['props']
+        record('WMS login: Save settings keeps the username on this PC only, not on the server',
+               ONUS_USER not in json.dumps(props_now) and await pg.evaluate("localStorage.getItem('outbound_intake_wms_user_v1')") == ONUS_USER,
+               [k for k, v in props_now.items() if ONUS_USER in str(v)])
+        await pg.reload(); await pg.wait_for_timeout(1500)
+        await pg.click('#tabs button[data-view="api"]'); await pg.wait_for_timeout(800)
+        record('WMS login: after a reload the username comes back from this PC and it is still signed in',
+               await pg.input_value('#wms-username') == ONUS_USER and ONUS_USER in (await pg.text_content('#wms-login-state') or ''),
+               await pg.text_content('#wms-login-state'))
         # A WMS warehouse (wh_no) must be chosen before pulling
         calls_before = len(wms_calls)
         await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(800)
@@ -765,6 +775,17 @@ async def main():
         record('Bulk delete: the batch is deleted, copies kept in the Deleted tab, other orders untouched',
                gone == [] and sorted(logged) == ['DN-OOPS-1', 'DN-OOPS-2', 'DN-OOPS-3'] and any(r[0] == 'DN-PDA-7' for r in d['Orders'][1:])
                and await pg.locator('tr[data-order^="DN-OOPS"]').count() == 0, [gone, logged])
+        # Batch ship / appt date on the selected orders
+        await pg.click(f'tr[data-order="DN-PDA-7"] .sel-row'); await pg.click(f'tr[data-order="DN-PDA-8"] .sel-row'); await pg.wait_for_timeout(200)
+        await pg.click('#bulk-shipdate'); await pg.wait_for_timeout(300)
+        is_date = await pg.evaluate("$('prompt-input').type") == 'date'
+        await pg.fill('#prompt-input', '2026-12-03'); await pg.press('#prompt-input', 'Enter'); await pg.wait_for_timeout(2000)
+        d = dump(); hdr = d['Orders'][0]
+        rowsd = {r[0]: dict(zip(hdr, r)) for r in d['Orders'][1:]}
+        record('Batch ship / appt date: only the selected orders get the date; Entered By unchanged',
+               is_date and rowsd['DN-PDA-7']['Ship / Appt Date'] == '2026-12-03' and rowsd['DN-PDA-8']['Ship / Appt Date'] == '2026-12-03'
+               and rowsd['DN-PDA-7']['Entered By'] == 'Amy' and sum(1 for r in rowsd.values() if r['Ship / Appt Date'] == '2026-12-03') == 2,
+               [rowsd['DN-PDA-7'].get('Ship / Appt Date'), rowsd['DN-PDA-7'].get('Entered By')])
         await pg.click('#select-btn')
 
         await pg.click('#signout-btn'); await pg.wait_for_timeout(150); await pg.click('#confirm-yes'); await pg.wait_for_timeout(300)

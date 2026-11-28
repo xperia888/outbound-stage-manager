@@ -484,7 +484,8 @@
                 <select id="bulk-batch" aria-label="Select an import batch"><option value="">Select an import batch…</option></select>
                 <button type="button" class="btn" id="bulk-clear">Clear</button>
                 <span class="spacer"></span>
-                <span class="sub2">Orders with pallets on the floor or shipped are never deleted. Deleted rows are kept in the “Deleted” tab of the sheet.</span>
+                <span class="sub2">Delete never removes orders with pallets on the floor or shipped; deleted rows are kept in the “Deleted” tab.</span>
+                <button type="button" class="btn" id="bulk-shipdate" disabled>Set ship / appt date…</button>
                 <button type="button" class="btn danger" id="bulk-delete" disabled>Delete selected…</button>
             </div>
             <div class="table-wrap">
@@ -771,7 +772,8 @@
                                 <option value="login">WMS login (username + password → token)</option>
                             </select></div>
                         <div class="field wms-a wms-a-header hidden"><label for="wms-header-name">Header name</label><input type="text" id="wms-header-name" maxlength="80" placeholder="X-API-Key"></div>
-                        <div class="field wms-a wms-a-basic wms-a-login hidden"><label for="wms-username">Username</label><input type="text" id="wms-username" maxlength="120" autocomplete="off"></div>
+                        <div class="field wms-a wms-a-basic wms-a-login hidden"><label for="wms-username">Username</label><input type="text" id="wms-username" maxlength="120" autocomplete="off">
+                            <div class="hint wms-a wms-a-login hidden">Kept on this PC only — not saved on the server.</div></div>
                         <div class="field wms-secret hidden"><label for="wms-secret" id="wms-secret-label">API key</label><input type="password" id="wms-secret" maxlength="2000" autocomplete="new-password">
                             <div class="hint" id="wms-secret-hint"></div></div>
                         <div class="field wms-a wms-a-login hidden" id="wms-login-row" style="align-self:end">
@@ -919,7 +921,7 @@
     // ===================================================================================
     /** Same Apps Script web app as the staging board. */
     // Version of this page — raised with every change
-    const APP_VERSION = '1.59';
+    const APP_VERSION = '1.60';
     document.getElementById('app-ver').innerHTML = `<b>v${APP_VERSION}</b>`;
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
@@ -933,6 +935,7 @@
     const intakeCodeKey = wh => 'outbound_intake_code_v1' + WAREHOUSES[wh].suffix;
     const floorCodeKey = wh => 'outbound_access_code_v2' + WAREHOUSES[wh].suffix; // the staging app's saved code
     const mappingKey = wh => 'outbound_intake_import_map_v1' + WAREHOUSES[wh].suffix;
+    const wmsUserKey = wh => 'outbound_intake_wms_user_v1' + WAREHOUSES[wh].suffix;   // WMS login username: on this PC only
     const wmsTemplateKey = wh => 'outbound_intake_wms_template_v1' + WAREHOUSES[wh].suffix;   // template last used for WMS pulls
     const REFRESH_MS = 60000;
     const IMPORT_BATCH = 500;
@@ -1443,6 +1446,7 @@
         if (!selectMode) return;
         $('bulk-count').textContent = `${selectedOrders.size} selected`;
         $('bulk-delete').disabled = !selectedOrders.size;
+        $('bulk-shipdate').disabled = !selectedOrders.size;
         const vis = (shown || filteredOrders()).map(o => norm(o.orderNumber));
         const all = $('sel-all');
         all.checked = vis.length > 0 && vis.every(k => selectedOrders.has(k));
@@ -1471,6 +1475,23 @@
         renderOrders();
         toast(`${b.list.length} order(s) of that batch selected${b.list.some(k => !filteredOrders().some(o => norm(o.orderNumber) === k)) ? ' — some are hidden by the filters' : ''}`);
     });
+    $('bulk-shipdate').addEventListener('click', async () => {
+        if (!(await ensureName())) return;
+        const list = [...selectedOrders];
+        if (!list.length) return;
+        const pad = n => String(n).padStart(2, '0'), t = new Date();
+        const v = await promptBox(`Ship / appt date for ${list.length} order${list.length === 1 ? '' : 's'}`,
+            'Only the Ship / Appt Date of the selected orders changes. Leave it empty and press OK to clear it.',
+            `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`, { type: 'date', cancel: null });
+        if (v == null) return;
+        $('bulk-shipdate').disabled = true;
+        const r = await cloud('setShipDates', [list, v, { by: userName }]);
+        $('bulk-shipdate').disabled = false;
+        if (!r.ok) { toast(r.error || 'Could not update', true); return; }
+        await loadOrders();
+        toast(`${r.updated} order(s) ${v ? 'set to ship ' + shortDay(v) : 'cleared'}${r.notFound && r.notFound.length ? ` · ${r.notFound.length} not found` : ''}`);
+    });
+
     $('bulk-delete').addEventListener('click', async () => {
         if (!(await ensureName())) return;
         const list = [...selectedOrders];
@@ -2015,16 +2036,18 @@
         $('tpl-msg').textContent = `Template “${name}” deleted.`;
     });
 
-    function promptBox(title, text, value = '') {
+    /** opts.type: input type (e.g. 'date'); opts.cancel: what Cancel returns (default ''). */
+    function promptBox(title, text, value = '', opts = {}) {
         return new Promise(resolve => {
             $('prompt-title').textContent = title;
             $('prompt-text').textContent = text;
+            $('prompt-input').type = opts.type || 'text';
             $('prompt-input').value = value;
             $('prompt').classList.remove('hidden');
-            setTimeout(() => { $('prompt-input').focus(); $('prompt-input').select(); }, 30);
-            const done = v => { $('prompt').classList.add('hidden'); $('prompt-form').onsubmit = null; $('prompt-no').onclick = null; resolve(v); };
+            setTimeout(() => { $('prompt-input').focus(); try { $('prompt-input').select(); } catch (e) { /* date inputs */ } }, 30);
+            const done = v => { $('prompt').classList.add('hidden'); $('prompt-form').onsubmit = null; $('prompt-no').onclick = null; $('prompt-input').type = 'text'; resolve(v); };
             $('prompt-form').onsubmit = e => { e.preventDefault(); done($('prompt-input').value.replace(/\s+/g, ' ').trim()); };
-            $('prompt-no').onclick = () => done('');
+            $('prompt-no').onclick = () => done(opts.cancel !== undefined ? opts.cancel : '');
         });
     }
 
@@ -2830,7 +2853,7 @@
             $('wms-secret').placeholder = L ? 'Only needed to sign in again' : 'Your WMS password';
             $('wms-secret-hint').textContent = 'Goes straight to the WMS, never saved — only the sign-in token is kept on the server.';
             $('wms-login-state').innerHTML = L
-                ? `<span class="chip shipped">Signed in as ${esc(L.user)}</span> since ${esc(fmtShort(L.at))}`
+                ? `<span class="chip shipped">Signed in${$('wms-username').value.trim() ? ' as ' + esc($('wms-username').value.trim()) : ''}</span> since ${esc(fmtShort(L.at))}`
                 : '<span class="chip waiting">Not signed in to the WMS</span>';
             $('wms-signout-btn').classList.toggle('hidden', !L);
             return;
@@ -2876,6 +2899,7 @@
             if (el.tagName === 'SELECT') el.value = c[k] || el.options[0].value;
             else el.value = c[k] || '';
         });
+        if (c.auth === 'login') $('wms-username').value = store.get(wmsUserKey(WH)) || '';   // kept on this PC
         $('wms-secret').value = '';
         $('wms-status').innerHTML = !c.url ? '<span class="chip waiting">Not set up</span>'
             : `<span class="chip shipped">Set up${c.name ? ' · ' + esc(c.name) : ''}</span>`;
@@ -2890,6 +2914,12 @@
     async function wmsSave(quiet) {
         const cfg = wmsReadForm();
         if (cfg.url && !/^https:\/\//i.test(cfg.url)) { toast('The API address must start with https://', true); return false; }
+        if (cfg.auth === 'login') {
+            // WMS login: the username stays on this PC (browser storage), never sent with the settings
+            const u = String(cfg.username || '').trim();
+            if (u) store.set(wmsUserKey(WH), u); else store.del(wmsUserKey(WH));
+            delete cfg.username;
+        }
         const r = await cloud('wmsPullSaveConfig', [cfg, cfg.auth === 'login' ? '' : $('wms-secret').value]);   // a WMS login password is never saved
         if (!r.ok) { toast(r.error || 'Could not save', true); return false; }
         wmsApply(r);
