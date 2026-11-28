@@ -1412,3 +1412,20 @@ test('WMS pull: a drop ship order with the pick list missing or a placeholder ("
         assert.equal(r.notCommitted, 4);
     }
 });
+
+test('WMS pull: drop ship orders are small parcel — Order # is the SPK pick list even with no carrier', () => {
+    const outbound = [
+        { outbound_no: 'DN2611273651', pickinglist_no_byproduct: 'SPK202611270050', outbound_type: 'dropship', carrier_name: null, ttl_pallet: 1, outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN2611273148', pickinglist_no_byproduct: 'SPK202611270050', outbound_type: 'Drop Ship', carrier_name: '', ttl_pallet: 2, outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN2611273652', pickinglist_no_byproduct: 'SPK202611270060', outbound_type: 'regular', carrier_name: null, outbound_status: 'ALLOCATED' }
+    ];
+    const tasks = [{ type: 'PICKING', group_no: 'SPK202611270050', assigned_to: 'picker4', created_at: '2026-11-27 12:40:00' },
+                   { type: 'PICKING', group_no: 'SPK202611270060', assigned_to: 'picker4', created_at: '2026-11-27 12:45:00' }];
+    const { call } = wmsGs(onusFake(outbound, tasks));
+    call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
+    const r = call('wmsPullFetch', [{}]);
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(r.records.map(x => x.order_number), ['SPK202611270050', 'DN2611273652']);
+    assert.equal(r.records[0].parcel_dns, 'DNs: DN2611273651, DN2611273148');
+    assert.equal(r.records[0].ttl_pallet, 3);
+});

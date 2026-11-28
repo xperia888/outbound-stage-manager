@@ -1386,6 +1386,8 @@ function wmsByWarehouse_(cfg, records) {
 // SCAC codes of small parcel services (UPS, FedEx, USPS, DHL); freight ones (UPGF, FXFE, FXNL, …) are not here
 const WMS_PARCEL_SCACS_ = ['UPSN', 'UPSS', 'UPSC', 'FDEG', 'FDXG', 'FDXE', 'FDE', 'FEDX', 'FXSP', 'USPS', 'DHL', 'DHLC', 'DHLG', 'DHLE'];
 function wmsIsSmallParcel_(r) {
+  // Drop ship orders go out as small parcel, even when the WMS has no carrier on them yet
+  if (/^drop[\s_-]*ship/i.test(String(r.outbound_type == null ? '' : r.outbound_type).trim())) return true;
   return ['carrier_name', 'ship_method', 'delivery_service', 'delivery_service_code', 'scac'].some(k => {
     const raw = String(r[k] == null ? '' : r[k]).trim();
     if (!raw) return false;
