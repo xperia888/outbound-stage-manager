@@ -1338,9 +1338,10 @@ function wmsPullFetch_(options) {
     // Released to Warehouse = the committed date. Not committed yet → not released: comes in on a later pull.
     // Committed = it has a pick list (SPK…) and, when the task API is set, a picking task for it.
     const plField = cfg.groupField || 'pickinglist_no_byproduct';
+    // This WMS uses pick lists if any record has the field (some answers leave the field out when it's empty)
+    const usesPickLists = Boolean(pick) || got.records.some(r => plField in r);
     const before = got.records.length;
-    got.records = got.records.filter(r => (pick ? r.__committed : true)
-      && !((plField in r) && !String(r[plField] == null ? '' : r[plField]).trim()));
+    got.records = got.records.filter(r => (pick ? r.__committed : true) && (!usesPickLists || wmsPickList_(r, plField)));
     got.notCommitted = before - got.records.length;
     if (pick) pick.notCommitted = got.notCommitted;
     const parcel = wmsOrderNumbers_(cfg, got.records, wmsExistingOrderNumbers_());
@@ -1354,6 +1355,13 @@ function wmsPullFetch_(options) {
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
   }
+}
+
+/** The order's pick list number, or '' when it has none: missing, blank, or a placeholder such as "-", "N/A", "null", "0". */
+function wmsPickList_(r, plField) {
+  const v = String(r[plField] == null ? '' : r[plField]).trim();
+  if (!/[a-z0-9]/i.test(v) || /^(null|none|n\/?a|undefined|0+)$/i.test(v)) return '';
+  return v;
 }
 
 /**
@@ -1378,6 +1386,8 @@ function wmsByWarehouse_(cfg, records) {
 // SCAC codes of small parcel services (UPS, FedEx, USPS, DHL); freight ones (UPGF, FXFE, FXNL, …) are not here
 const WMS_PARCEL_SCACS_ = ['UPSN', 'UPSS', 'UPSC', 'FDEG', 'FDXG', 'FDXE', 'FDE', 'FEDX', 'FXSP', 'USPS', 'DHL', 'DHLC', 'DHLG', 'DHLE'];
 function wmsIsSmallParcel_(r) {
+  // Drop ship orders go out as small parcel, even when the WMS has no carrier on them yet
+  if (/^drop[\s_-]*ship/i.test(String(r.outbound_type == null ? '' : r.outbound_type).trim())) return true;
   return ['carrier_name', 'ship_method', 'delivery_service', 'delivery_service_code', 'scac'].some(k => {
     const raw = String(r[k] == null ? '' : r[k]).trim();
     if (!raw) return false;
@@ -1418,7 +1428,7 @@ function wmsOrderNumbers_(cfg, records, existing) {
   records.forEach(r => {
     const dn = String(r[dnField] == null ? '' : r[dnField]).trim();
     if (!(plField in r) || !wmsIsSmallParcel_(r)) { r.order_number = dn; out.push(r); return; }
-    const pl = String(r[plField] == null ? '' : r[plField]).trim();
+    const pl = wmsPickList_(r, plField);
     if (!pl) { stats.waitingForPickList++; return; }
     if (!groups[pl]) { groups[pl] = []; out.push({ __group: pl }); }
     groups[pl].push(r);
@@ -1561,7 +1571,7 @@ function wmsAddPickers_(cfg, secret, records, firstTaskAnswer) {
   const gField = cfg.groupField || 'pickinglist_no_byproduct';
   const out = { tasks: t.tasks, matched: 0, noTask: 0, noPicker: 0, conflicts: 0 };
   records.forEach(r => {
-    const g = String(r[gField] == null ? '' : r[gField]).trim();
+    const g = wmsPickList_(r, gField);   // '' for a missing or placeholder pick list: no task can match it
     const task = g ? t.byGroup[g] : null;
     // Field names from the "Outbound & Picker Data Integration Rules"; empty when there is no single matching task
     r.picker_id = ''; r.picker_name = ''; r.picking_task_id = ''; r.picking_task_status = ''; r.picker_exception = ''; r.committed_at = '';
