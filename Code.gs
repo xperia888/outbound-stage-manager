@@ -1011,7 +1011,7 @@ const WMS_PULL_FIELDS_ = ['name', 'url', 'method', 'body', 'auth', 'headerName',
   'extraHeaders', 'listPath', 'paging', 'pageParam', 'sizeParam', 'pageSize', 'firstPage', 'maxPages', 'lookbackDays', 'skipField', 'skipValues',
   // Picker from pick tasks (same sign-in): task list address + body, and the fields that link them
   'loginUrl', 'loginBody', 'tokenPath',
-  'taskUrl', 'taskBody', 'taskPageSize', 'taskType', 'taskGroupField', 'groupField', 'pickerField', 'pickerIdField', 'orderKeyField'];
+  'taskUrl', 'taskBody', 'taskPageSize', 'taskType', 'taskGroupField', 'groupField', 'pickerField', 'pickerIdField', 'orderKeyField', 'whNo'];
 
 function wmsPullProps_() {
   const props = PropertiesService.getScriptProperties();
@@ -1324,6 +1324,14 @@ function wmsPullFetch_(options) {
     const t0 = Date.now();
     const got = wmsPullRecords_(cfg, secret, Object.assign({}, opts, { extra: cfg.taskUrl ? [wmsTaskFirstRequest_(cfg, secret)] : [] }));
     const t1 = Date.now();
+    // Only the chosen warehouse (wh_no). A pull needs one chosen; Test connection lists the warehouses it saw.
+    const wh = wmsByWarehouse_(cfg, got.records);
+    got.warehouses = wh.warehouses;
+    if (wh.hasField && !cfg.whNo && !opts.test) {
+      return { ok: false, needWarehouse: true, warehouses: wh.warehouses, error: 'Choose the WMS warehouse (wh_no) before pulling orders' };
+    }
+    got.records = wh.records;
+    got.otherWarehouse = wh.otherWarehouse;
     const pick = cfg.taskUrl ? wmsAddPickers_(cfg, secret, got.records, got.extraAnswers[0]) : null;
     got.seconds = { wms: Math.round((t1 - t0) / 100) / 10, total: Math.round((Date.now() - t0) / 100) / 10 };
     delete got.extraAnswers;
@@ -1344,6 +1352,24 @@ function wmsPullFetch_(options) {
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
   }
+}
+
+/**
+ * Keeps only the records of the chosen WMS warehouse (wh_no). Returns { records, warehouses: {wh_no: count} } —
+ * the counts are of everything read, so the page can offer the warehouses the WMS sent.
+ */
+function wmsByWarehouse_(cfg, records) {
+  const warehouses = {};
+  let hasField = false;
+  records.forEach(r => {
+    if ('wh_no' in r) hasField = true;
+    const w = String(r.wh_no == null ? '' : r.wh_no).trim();
+    if (w) warehouses[w] = (warehouses[w] || 0) + 1;
+  });
+  const want = String(cfg.whNo || '').trim().toUpperCase();
+  if (!hasField || !want) return { records: records, warehouses: warehouses, hasField: hasField, otherWarehouse: 0 };
+  const kept = records.filter(r => String(r.wh_no == null ? '' : r.wh_no).trim().toUpperCase() === want);
+  return { records: kept, warehouses: warehouses, hasField: true, otherWarehouse: records.length - kept.length };
 }
 
 /** UPS / FedEx / USPS / DHL (not "… Freight") — same rule as the staging page's small parcel lanes. */
@@ -1503,6 +1529,7 @@ function wmsPickTasks_(cfg, secret, firstAnswer) {
     const list = wmsPullList_(answer, '');
     list.forEach(t => {
       if (!t || String(t.type || '').toUpperCase() !== type) return;   // only picking tasks
+      if (cfg.whNo && t.wh_no != null && String(t.wh_no).trim().toUpperCase() !== String(cfg.whNo).trim().toUpperCase()) return;   // another warehouse
       total++;
       const g = String(t[gField] == null ? '' : t[gField]).trim();
       if (!g) return;
@@ -1554,6 +1581,9 @@ function wmsFillPickers_(options) {
   let got, stats;
   try {
     got = wmsPullRecords_(cfg, secret, { noSkip: true, extra: [wmsTaskFirstRequest_(cfg, secret)] });
+    const wh = wmsByWarehouse_(cfg, got.records);
+    if (wh.hasField && !cfg.whNo) return { ok: false, needWarehouse: true, warehouses: wh.warehouses, error: 'Choose the WMS warehouse (wh_no) first' };
+    got.records = wh.records;
     stats = wmsAddPickers_(cfg, secret, got.records, got.extraAnswers[0]);
     got.records = wmsOrderNumbers_(cfg, got.records, {}).records;   // SPK… for small parcel, DN otherwise
   } catch (e) {
