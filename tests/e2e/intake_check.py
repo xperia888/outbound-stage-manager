@@ -691,6 +691,25 @@ async def main():
         tb = [c['task_body'] for c in wms_calls if c.get('task_body')]
         record('task query sent with the PICKING filter and the CANCLE spelling', tb and tb[-1]['filterModel']['type']['values'] == ['PICKING']
                and 'CANCLE' in tb[-1]['filterModel']['status']['values'] and tb[-1]['endRow'] == 50000, tb[-1:] )
+        # A matching saved on a WMS pull is used on the next pull — also after a page reload, and when a
+        # field it uses is missing from that pull
+        await pg.click('#tabs button[data-view="api"]'); await pg.wait_for_timeout(300)
+        await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(3000)
+        await pg.evaluate("imp.mapping.reference = [imp.headers.indexOf('order_no')]; renderImportMatching()")
+        await pg.click('#tpl-save'); await pg.wait_for_timeout(300)
+        await pg.fill('#prompt-input', 'ONUS custom'); await pg.press('#prompt-input', 'Enter'); await pg.wait_for_timeout(2000)
+        tl = req({'fn': 'listImportTemplates', 'key': 'cs-e2e', 'warehouse': 'ONT'})
+        mine = next(t for t in tl['templates'] if t['name'] == 'ONUS custom')
+        record('WMS template: saved from a pull (marked as a WMS template)', mine['template'].get('fromWms') is True and mine['template']['mapping'].get('reference') == ['order_no'], mine['template'].get('mapping', {}).get('reference'))
+        mine['template']['mapping']['notes'] = ['ghost_field', 'outbound_note']   # a field this pull won't have
+        req({'fn': 'saveImportTemplate', 'key': 'cs-e2e', 'warehouse': 'ONT', 'args': ['ONUS custom', mine['template'], 'E2E']})
+        await pg.reload(); await pg.wait_for_timeout(1500)
+        await pg.click('#tabs button[data-view="api"]'); await pg.wait_for_timeout(500)
+        await pg.click('#wms-pull-btn'); await pg.wait_for_timeout(3500)
+        again = await pg.evaluate("({ t: imp.template, ref: (imp.mapping.reference || []).map(i => imp.headers[i]), notes: (imp.mapping.notes || []).map(i => imp.headers[i]), ord: (imp.mapping.orderNumber || []).map(i => imp.headers[i]), msg: $('tpl-msg').textContent })")
+        record('WMS template: the next pull (after a reload) uses the saved matching, even with a field missing',
+               again['t'] == 'ONUS custom' and again['ref'] == ['order_no'] and again['notes'] == ['outbound_note'] and again['ord'] == ['order_number'] and 'ghost_field' in again['msg'], again)
+        await pg.evaluate("setWmsImportLock(false); showView('orders')")
         # Fill missing pickers on orders already here (DN-OLD-7 has none): list, then fill only that cell
         await pg.click('#tabs button[data-view="api"]'); await pg.wait_for_timeout(300)
         before3 = dump()['Orders']

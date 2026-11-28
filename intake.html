@@ -901,7 +901,7 @@
     // ===================================================================================
     /** Same Apps Script web app as the staging board. */
     // Version of this page — raised with every change
-    const APP_VERSION = '1.57';
+    const APP_VERSION = '1.58';
     document.getElementById('app-ver').innerHTML = `<b>v${APP_VERSION}</b>`;
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const XLSX_LIB_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
@@ -915,6 +915,7 @@
     const intakeCodeKey = wh => 'outbound_intake_code_v1' + WAREHOUSES[wh].suffix;
     const floorCodeKey = wh => 'outbound_access_code_v2' + WAREHOUSES[wh].suffix; // the staging app's saved code
     const mappingKey = wh => 'outbound_intake_import_map_v1' + WAREHOUSES[wh].suffix;
+    const wmsTemplateKey = wh => 'outbound_intake_wms_template_v1' + WAREHOUSES[wh].suffix;   // template last used for WMS pulls
     const REFRESH_MS = 60000;
     const IMPORT_BATCH = 500;
     const DAY = 86400000;
@@ -1797,7 +1798,8 @@
             mode: document.querySelector('input[name=imp-mode]:checked').value,
             sheetName: imp.sheetNames.length > 1 ? imp.sheet : '',
             headerRow: headerRowNumber(),
-            fileName: imp.fileName
+            fileName: imp.fileName,
+            fromWms: Boolean(imp.fromWms)
         };
     }
 
@@ -1876,7 +1878,7 @@
             $('tpl-msg').textContent = 'No template: columns matched by name.';
         } else {
             const t = importTemplates.find(x => x.name === name);
-            if (t) applyTemplate(t);
+            if (t) { applyTemplate(t); if (imp.fromWms) store.set(wmsTemplateKey(WH), t.name); }
         }
         renderImportMatching();
     });
@@ -1885,6 +1887,7 @@
         const r = await cloud('saveImportTemplate', [name, templateFromCurrent(), userName || '']);
         if (!r.ok) { toast(r.error || 'Could not save the template', true); return; }
         imp.template = r.name;
+        if (imp.fromWms) store.set(wmsTemplateKey(WH), r.name);   // the next WMS pull uses it
         await loadImportTemplates();
         $('tpl-msg').textContent = `Saved as “${r.name}”. Next time a file with these columns is loaded, it is applied automatically.`;
         toast(r.replaced ? `Template “${r.name}” updated` : `Template “${r.name}” saved`);
@@ -2876,6 +2879,29 @@
     });
 
     /** Puts the pulled records into the import screens (matching → check → import, add-new-only). */
+    /**
+     * The template for a WMS pull: the one last saved / chosen on a WMS pull here, else one saved from a WMS pull.
+     * A pull may lack fields that only some pulls have (e.g. parcel_dns), so only its Order # column must be there.
+     */
+    function pickWmsTemplate() {
+        const has = h => imp.headers.some(x => sameHeader(x, h));
+        const usable = t => {
+            const m = (t.template || {}).mapping || {};
+            const ord = [].concat(m.orderNumber || []);
+            return ord.length > 0 && ord.every(has);
+        };
+        const last = store.get(wmsTemplateKey(WH));
+        const lastTpl = last && importTemplates.find(t => sameHeader(t.name, last));
+        if (lastTpl && usable(lastTpl)) return lastTpl;
+        const fromPull = importTemplates.filter(t => {
+            const tpl = t.template || {};
+            return (tpl.fromWms || /^WMS pull/i.test(String(tpl.fileName || ''))) && usable(t);
+        });
+        const score = t => [].concat(...Object.values((t.template || {}).mapping || {}).map(v => [].concat(v))).filter(has).length;
+        fromPull.sort((a, b) => score(b) - score(a) || String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+        return fromPull[0] || null;
+    }
+
     async function startWmsImport(r) {
         const all = await cloud('listOrders', [{ days: 0 }]);
         imp.allOrderNumbers = all && all.ok ? new Set(all.orders.map(o => norm(o.orderNumber))) : null;
@@ -2886,7 +2912,13 @@
             sheets: { WMS: aoa }, sheetNames: ['WMS'], sheetOffsets: { WMS: { row: 0, col: 0 } }, template: '', selectedCol: null, mapping: {}, defaults: {}, fromWms: true });
         loadSheet('WMS', 1);
         $('imp-file-name').textContent = imp.fileName;
-        if (!applyBestTemplate()) {
+        await loadImportTemplates();   // the shared templates, before choosing one
+        const wmsTpl = pickWmsTemplate();
+        if (wmsTpl) {
+            const missing = applyTemplate(wmsTpl);
+            if (missing.length) $('tpl-msg').textContent = `Template “${wmsTpl.name}” applied. Not in this pull (no data this time): ${missing.join(', ')}.`;
+            toast(`Template “${wmsTpl.name}” applied`);
+        } else if (!applyBestTemplate()) {
             if (imp.headers.includes('order_number') && imp.headers.includes('ttl_pallet')) applyTemplate(ONUS_WMS_TEMPLATE);
             else { applyAutoMatch(true); $('tpl-msg').textContent = ''; }
         }
@@ -2894,7 +2926,6 @@
         renderImportMatching();
         setImportStep(2);
         showView('import');
-        loadImportTemplates();
         toast(`${r.records.length} order(s) read from the WMS${r.skippedByRule ? `, ${r.skippedByRule} left out (shipped / cancelled)` : ''}${r.otherWarehouse ? `, ${r.otherWarehouse} of other warehouses left out` : ''}${r.notCommitted ? `, ${r.notCommitted} not committed yet (no pick list / picking task)` : ''}${r.pickers ? `, ${r.pickers.matched} with a picker` : ''}${r.parcel && r.parcel.parcelOrders ? `, ${r.parcel.parcelOrders} small parcel by pick list (SPK)` : ''} — check the matching, then import`);
     }
 
