@@ -1374,3 +1374,22 @@ test('WMS pull: a WMS warehouse (wh_no) must be chosen; only its orders and pick
     assert.equal(r.otherWarehouse, 1);
     assert.equal(r.records[0].picker_name, 'Maria L');
 });
+
+test('WMS pull: an order with no pick list (not committed) never comes in; parcel carriers recognised from codes', () => {
+    const outbound = [
+        { outbound_no: 'DN2611272478', pickinglist_no_byproduct: null, carrier_name: 'UPS_GROUND', outbound_status: 'ALLOCATED' },   // no SPK yet
+        { outbound_no: 'DN2', pickinglist_no_byproduct: '', carrier_name: 'Saia', outbound_status: 'ALLOCATED' },                   // regular, not committed
+        { outbound_no: 'DN3', pickinglist_no_byproduct: 'SPK3', scac: 'FDEG', outbound_status: 'ALLOCATED' },                       // FedEx by SCAC
+        { outbound_no: 'DN4', pickinglist_no_byproduct: 'SPK4', carrier_name: 'UPS_GROUND', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN5', pickinglist_no_byproduct: 'SPK5', carrier_name: 'UPS-Freight', scac: 'UPGF', outbound_status: 'ALLOCATED' },  // freight: DN
+        { outbound_no: 'DN6', pickinglist_no_byproduct: 'SPK6', carrier_name: 'Saia', outbound_status: 'ALLOCATED' }
+    ];
+    // Without the task API too: the blank pick list alone leaves them out
+    const cfg = Object.assign({}, ONUS_CFG, { taskUrl: '' });
+    const { call } = wmsGs(onusFake(outbound, []));
+    call('wmsPullSaveConfig', [cfg, 'tok']);
+    const r = call('wmsPullFetch', [{}]);
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(r.records.map(x => x.order_number), ['SPK3', 'SPK4', 'DN5', 'DN6']);
+    assert.equal(r.notCommitted, 2);
+});

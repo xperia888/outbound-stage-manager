@@ -4006,9 +4006,10 @@
          * are not small parcel.
          */
         function isSmallParcelCarrier(carrier) {
-            const c = String(carrier || '').toLowerCase();
-            if (!c.trim() || /freight/.test(c)) return false;
-            return /\bups\b|fed\s*-?\s*ex|\busps\b|postal|\bdhl\b/.test(c);
+            // "UPS_GROUND", "FedEx-2Day": split on anything that isn't a letter or digit
+            const c = String(carrier || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+            if (!c.trim() || /freight|\bltl\b/.test(c)) return false;
+            return /\bups\b|fed ?ex|\busps\b|postal|\bdhl\b/.test(c);
         }
 
         /** The carrier we know for an order: given here, its pallets on the floor, or Order Intake. */
