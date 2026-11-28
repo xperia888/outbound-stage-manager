@@ -12,7 +12,7 @@
   Read-only: it loads the same board the app saves to Google Sheets and refreshes itself.
   It never writes anything. Sign-in uses the same access code as the app; the code picks the warehouse.
   Layout follows the warehouse floor, left → right:
-    - the loading doors along the wall (D9 … D1, then the ramp), showing what is being loaded at each,
+    - the loading docks along the wall (D9 … D1, then the ramp), showing what is being loaded at each,
     - in front of them, every staging lane in one line (S30 … S80), one box per floor spot.
   Lanes come from the board itself, so lanes added in the app show up here automatically.
   Edit FLOOR_LAYOUT below if the doors or the lane direction change.
@@ -49,7 +49,7 @@
         --header-border: #1e293b;
         --wall: #334155;
         --door-bg: #f8fafc;
-        --door-border: #cbd5e1;
+        --door-border: #94a3b8;
         --door-active-bg: linear-gradient(180deg, #e0f2fe, #f0f9ff);
         --door-active-name: #075985;
         --lane-bg: #f8fafc;
@@ -59,7 +59,7 @@
         --spot-border: #cbd5e1;
         --docked-ring: var(--accent);
         /* Section tints: soft backgrounds + a darker accent for labels, kept clear of the status colours */
-        --sec-docks-bg: #f0f9ff;  --sec-docks-border: #bae6fd;  --sec-docks-accent: #0369a1;   /* sky */
+        --sec-docks-bg: #dfe5ec;  --sec-docks-border: #94a3b8;  --sec-docks-accent: #1e293b;   /* steel grey: the dock wall, apart from the storage lanes */
         --sec-s-bg: #f0fdfa;      --sec-s-border: #99f6e4;      --sec-s-accent: #0f766e;       /* teal */
         --sec-zp-bg: #eef2ff;     --sec-zp-border: #c7d2fe;     --sec-zp-accent: #4338ca;      /* indigo: USPS / DHL */
         --sec-z1-bg: #f5f3ff;     --sec-z1-border: #ddd6fe;     --sec-z1-accent: #6d28d9;      /* violet */
@@ -107,7 +107,7 @@
         --lane-used-border: #475569;
         --spot-border: #2b3850;
         --docked-ring: #7dd3fc;
-        --sec-docks-bg: rgba(14, 165, 233, 0.08);  --sec-docks-border: rgba(14, 165, 233, 0.28);  --sec-docks-accent: #7dd3fc;
+        --sec-docks-bg: rgba(148, 163, 184, 0.16); --sec-docks-border: rgba(148, 163, 184, 0.45); --sec-docks-accent: #e2e8f0;
         --sec-s-bg: rgba(20, 184, 166, 0.08);      --sec-s-border: rgba(20, 184, 166, 0.28);      --sec-s-accent: #5eead4;
         --sec-zp-bg: rgba(99, 102, 241, 0.09);     --sec-zp-border: rgba(99, 102, 241, 0.30);     --sec-zp-accent: #a5b4fc;
         --sec-z1-bg: rgba(139, 92, 246, 0.09);     --sec-z1-border: rgba(139, 92, 246, 0.30);     --sec-z1-accent: #c4b5fd;
@@ -256,7 +256,7 @@
     .row-label { display: flex; align-items: flex-end; gap: 10px; font-size: 14px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; padding-bottom: 4px; }
     .row-label.staging { color: var(--sec-s-accent); }
 
-    /* Tinted sections: doors, S lanes, each zone */
+    /* Tinted sections: docks, S lanes, each zone */
     .section {
         position: relative; min-width: 0; min-height: 0;
         background: var(--sec-bg); border: 1px solid var(--sec-border); border-radius: 10px;
@@ -266,7 +266,8 @@
         content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
         border-radius: 10px 0 0 10px; background: var(--sec-accent);
     }
-    .sec-docks { --sec-bg: var(--sec-docks-bg); --sec-border: var(--sec-docks-border); --sec-accent: var(--sec-docks-accent); padding-top: 0; padding-bottom: 6px; }
+    .sec-docks { --sec-bg: var(--sec-docks-bg); --sec-border: var(--sec-docks-border); --sec-accent: var(--sec-docks-accent); padding-top: 0; padding-bottom: 6px;
+        background-image: repeating-linear-gradient(135deg, transparent 0 14px, rgba(30, 41, 59, 0.035) 14px 16px); }   /* faint dock-plate texture */
     .sec-s { --sec-bg: var(--sec-s-bg); --sec-border: var(--sec-s-border); --sec-accent: var(--sec-s-accent);
         display: grid; grid-template-rows: 22px minmax(0, 1fr); }
     .lane-scroll { display: grid; grid-template-rows: minmax(0, 1fr) 22px; min-width: 0; min-height: 0; }
@@ -282,7 +283,7 @@
     body.dark .sec-tag, body.dark .row-label span.sec-tag { color: #020617; }
     .row-label span { color: var(--text-muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
 
-    /* Loading doors along the wall */
+    /* Loading docks along the wall */
     .doors { display: grid; gap: 8px; border-top: 6px solid var(--wall); }
     .door {
         height: 132px; min-width: 0; overflow: hidden;
@@ -563,7 +564,7 @@
         <section class="floor" aria-label="Staging floor plan">
             <div id="flash-banner" class="flash-banner" aria-live="polite"></div>
             <div class="floor-title">
-                <span class="sec-tag" style="--sec-accent: var(--sec-docks-accent)">Loading doors</span>
+                <span class="sec-tag" style="--sec-accent: var(--sec-docks-accent)">Loading docks</span>
                 <span class="legend">
                     <span><i style="background:var(--staged)"></i>Staged</span>
                     <span><i style="background:var(--accent)"></i>Dock assigned</span>
@@ -585,7 +586,7 @@
             </div>
             <div class="zones" id="zones-row"></div>
             <div class="floor-foot">
-                <span><b>Doors</b> show what's being loaded · <b>Lanes</b>: 1 box = 1 floor spot · the line under the lanes shows which order is in them</span>
+                <span><b>Docks</b> show what's being loaded · <b>Lanes</b>: 1 box = 1 floor spot · the line under the lanes shows which order is in them</span>
                 <span id="floor-foot-right"></span>
             </div>
         </section>
@@ -610,14 +611,14 @@
 
     /** Same Apps Script web app the staging board uses. */
     /** Version of this page — raised with every change. */
-    const APP_VERSION = '1.63';
+    const APP_VERSION = '1.64';
     const CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbyoegTKM7CG9WgCv5tfF0LONRXQ-26Smp45Ct9j1iqOCr6qSTATPl87NxeCQPRcX_MUnw/exec';
     const REFRESH_MS = 10000;
     const STALE_AFTER_MS = 60000;
 
     /**
      * Floor layout, left → right as you face the loading wall.
-     * loadingDocks: the doors, in order. Names must match the docks in the app (Settings → Docks).
+     * loadingDocks: the loading docks, in order. Names must match the docks in the app (Settings → Docks).
      * stagingLanes: null = every lane on the board named S + number, in one line, sorted by number;
      *               or list the lane names in floor order yourself, e.g. ['S80', 'S79', …].
      * laneDirection: 'ascending' puts the lowest lane number on the left, 'descending' on the right.
@@ -1084,7 +1085,7 @@
 
     const dockLabel = d => String(d).replace(/^DOCK-?0*(?=\d)/i, 'D').replace(/^RAMP$/i, 'Ramp');
 
-    /** A loading door and what's being loaded there. */
+    /** A loading dock and what's being loaded there. */
     function renderDock(door, atDoor, colById) {
         const name = esc(dockLabel(door));
         if (!atDoor.length) {

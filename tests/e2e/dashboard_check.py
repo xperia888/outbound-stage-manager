@@ -97,11 +97,13 @@ async def main():
                 const lone=document.querySelectorAll('.tile.open-half').length;
                 const sRow=[...document.querySelectorAll('#lanes-row .lane .lname')].map(e=>e.textContent);
                 const fl=document.querySelector('.floor').getBoundingClientRect(), st=document.getElementById('stage').getBoundingClientRect();
+                const docksTitle=document.querySelector('.floor-title .sec-tag').textContent;
+                const docksBg=getComputedStyle(document.querySelector('.sec-docks')).backgroundColor, sBg=getComputedStyle(document.querySelector('#lanes-row').closest('.section')).backgroundColor;
                 const ship=document.getElementById('kpi-ship');
                 const stack=document.querySelector('.zone-stack');
                 const stackNames=stack ? [...stack.querySelectorAll('.zname')].map(e=>e.textContent) : [];
                 const zr=[...document.querySelectorAll('#zones-row > *')].map(e=>Math.round(e.getBoundingClientRect().width));
-                return {ship: ship ? ship.querySelector('.label').textContent + ' | ' + ship.querySelector('.value').textContent + ' | ' + ship.querySelector('.note').textContent : null,
+                return {docksTitle, docksDistinct: docksBg !== sBg, ship: ship ? ship.querySelector('.label').textContent + ' | ' + ship.querySelector('.value').textContent + ' | ' + ship.querySelector('.note').textContent : null,
                     lateTiles: document.querySelectorAll('.tile.late-order').length,
                     lateTileOrders: [...new Set([...document.querySelectorAll('.tile.late-order')].map(t => t.title.split(' · ')[1]))],
                     lateSpan: [...document.querySelectorAll('.order-span.late')].map(e => e.title),
@@ -111,7 +113,7 @@ async def main():
                     floorToBottom: Math.round((st.bottom - fl.bottom) / (st.height / 1080)), dhlDim: first.querySelectorAll('.lane')[1]?.style.opacity, pcl, staged, halvesSame: halves.every(h=>Math.abs(h[0]-h[1])<=1), twoXHeights:[...new Set(halves.flat())], lone,
                     bad: [...document.querySelectorAll('#lanes-row .spot.filled')].filter(s=>s.querySelectorAll('.tile').length===2).map(s=>[s.closest('.lane').querySelector('.lname').textContent, ...[...s.querySelectorAll('.tile')].map(t=>t.className+':'+t.getBoundingClientRect().height.toFixed(1))]).filter(x=>Math.abs(parseFloat(x[1].split(':')[1])-parseFloat(x[2].split(':')[1]))>1).slice(0,4)};
             }""")
-            ok = (chk['zones'][:4]==['Parcel','N09','W05','W06'] and chk['stackNames']==['W05','W06']
+            ok = (chk['docksTitle']=='Loading docks' and chk['docksDistinct'] and chk['zones'][:4]==['Parcel','N09','W05','W06'] and chk['stackNames']==['W05','W06']
                   and chk['ship']=='Ship today | 4+1 late | of 5 due · 29 plts on floor · 24 late plts' and chk['shipStandsOut']
                   and chk['lateTiles']==24 and chk['lateTileOrders']==['SO-40122'] and 'SO-40122' in chk['lateSpan'] and chk['firstLanes']==['USPS','DHL','S60','S61'] and chk['dhlDim']=='0.45'
                   and not chk['sHasParcel'] and not chk['aside'] and chk['ver'].startswith('v1.')

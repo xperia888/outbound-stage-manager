@@ -59,7 +59,7 @@ Board state is saved to the `StateChunks` tab, split across rows to stay under t
 
 `https://xperia888.github.io/outbound-stage-manager/dashboard.html` is a full-screen live view for a big-screen TV:
 - **Layout:** it follows the warehouse floor, left to right.
-  - **Loading doors:** D9 → D1, then the ramp. Each shows the order being loaded, its carrier, pallet count and the lanes it's coming from.
+  - **Loading docks:** D9 → D1, then the ramp, in a steel-grey band so they stand apart from the storage lanes. Each shows the order being loaded, its carrier, pallet count and the lanes it's coming from.
   - **Staging lanes:** every lane named S + number (now S30–S80) in **one line**, as on the floor. Each lane is a column of floor spots, with every pallet in its spot, 2x stacks split in two, dwell alerts (⚠ aging, ⏱ overdue, ⛔ over a week), and the door it's assigned to underneath.
   - **Parcel block:** USPS, DHL and every lane ticked "Small parcel lane" (e.g. S60, S61 — they leave the S line) in one block, left of N09.
   - **Other zones:** N09, W05 and W06 locations sit in a row under the S lanes, filling the bottom of the screen. Parcel and N09 get the full height; **W05 and W06 are stacked** (they hold fewer pallets, so their lanes get wider) — a list inside `FLOOR_LAYOUT.zones` stacks zones, one block per zone, in location-number order. Locations holding 12 show their spots in two columns. Zones are set in `FLOOR_LAYOUT.zones`.
