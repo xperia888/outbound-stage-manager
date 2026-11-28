@@ -1393,3 +1393,22 @@ test('WMS pull: an order with no pick list (not committed) never comes in; parce
     assert.deepEqual(r.records.map(x => x.order_number), ['SPK3', 'SPK4', 'DN5', 'DN6']);
     assert.equal(r.notCommitted, 2);
 });
+
+test('WMS pull: a drop ship order with the pick list missing or a placeholder ("-", "N/A") is not pulled in', () => {
+    const outbound = [
+        { outbound_no: 'DN2611273651', outbound_type: 'dropship', carrier_name: 'FedEx', outbound_status: 'ALLOCATED' },          // field left out
+        { outbound_no: 'DN7', pickinglist_no_byproduct: '-', outbound_type: 'dropship', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN8', pickinglist_no_byproduct: 'N/A', outbound_type: 'dropship', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN9', pickinglist_no_byproduct: 'null', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN10', pickinglist_no_byproduct: 'SPK10', carrier_name: 'Saia', outbound_status: 'ALLOCATED' }
+    ];
+    for (const taskUrl of ['', ONUS_CFG.taskUrl]) {
+        const tasks = [{ type: 'PICKING', group_no: 'SPK10', created_at: '2026-11-27 09:00:00' }, { type: 'PICKING', group_no: '-', created_at: '2026-11-27 09:00:00' }];
+        const { call } = wmsGs(onusFake(outbound, tasks));
+        call('wmsPullSaveConfig', [Object.assign({}, ONUS_CFG, { taskUrl }), 'tok']);
+        const r = call('wmsPullFetch', [{}]);
+        assert.equal(r.ok, true, r.error);
+        assert.deepEqual(r.records.map(x => x.order_number), ['DN10'], 'task API ' + (taskUrl ? 'set' : 'blank'));
+        assert.equal(r.notCommitted, 4);
+    }
+});
