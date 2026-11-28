@@ -117,6 +117,15 @@ Customer service releases orders to the warehouse here: https://xperia888.github
 - **Name on the sign-in page.** Sign-in asks for the access code and your name. Signing out clears the name, so the next person enters their own. The server refuses orders saved without a name (the WMS API key is exempt). The name is saved in two columns:
   - **Created By:** set once, when the order is first created.
   - **Entered By:** whoever saved the order last.
+- **Pull orders from the WMS** (API Connector tab): Apps Script reads orders from the WMS API and they go through the same import matching. **A WMS pull only adds new orders.** Orders already in Order Intake are skipped and never changed, the server enforces this, and the Orders tab is copied to "Orders backup …" first (newest 3 kept).
+  - **ONUS WMS:** press **Use ONUS WMS settings** (POST `/api/outbound/query`, Bearer token, `startRow`/`endRow` paging, SHIPPED / CANCELLED left out), paste the token in the Token box, then **Test connection** and **Pull orders**. The built-in matching uses `outbound_no` as the Order # (`order_no` is the WMS's own OB… number), `owner_name` → Customer, `ttl_box` → Cartons, `ttl_pallet` → Pallets, `carrier_name`/`scac`/`bol_no`, `po_no` → Reference (PO#), `outbound_type` → Order type, `ship_no_later` → Ship date, consignee city + state → Destination. Save it as your own template to change it.
+  - **Picker from pick tasks** (ONUS Outbound Task Query, same token), following the "Outbound & Picker Data Integration Rules":
+    - Each outbound's `pickinglist_no_byproduct` is matched to the one PICKING task with that `group_no`. The task's `assigned_to` is the Picker, and every outbound on that pick list gets it.
+    - Pulled records gain `picker_name`, `picker_id`, `picking_task_id`, `picking_task_status`. Without a task they stay empty; no other user field is used instead.
+    - Two picking tasks on one pick list are reported in `picker_exception`, and no picker is chosen.
+    - Pick tasks only exist once the order is committed. **Fill missing pickers…** lists the orders already in Order Intake that can get a picker, then writes **only the blank Picker cells**. A picker already entered is never overwritten, and nothing else changes.
+  - Any other WMS: API address, GET/POST + body, sign-in (header key, Bearer, username + password, key in the address, OAuth2 client credentials), where the orders are, paging, and a rule to leave records out.
+  - The key / token is stored in Script Properties (`WMS_PULL_SECRET`, `_CHINO`) and never sent back to the page. Enter it only in the page.
 - **Reports** tab (floor leads and customer service), with **Export CSV** and **Print / PDF**. Each report combines intake orders with the staging floor history from the **Scan Log** and the live board:
   - **End of Day** (pick a day; default is today):
     - Totals: orders released, pallets and cartons released, pallets staged, pallets shipped, orders completed, and orders still open.

@@ -44,13 +44,19 @@ WAREHOUSES_.TEST.ordersSheet = 'Orders TEST';
 WAREHOUSES_.ONT.templatesSheet = 'Import Templates';
 WAREHOUSES_.CHINO.templatesSheet = 'Import Templates CHINO';
 WAREHOUSES_.TEST.templatesSheet = 'Import Templates TEST';
+// WMS pull connector settings (Script Properties): <prefix>_CONFIG (JSON), <prefix>_SECRET (key / password), <prefix>_LAST
+WAREHOUSES_.ONT.wmsPullPrefix = 'WMS_PULL';
+WAREHOUSES_.CHINO.wmsPullPrefix = 'WMS_PULL_CHINO';
+WAREHOUSES_.TEST.wmsPullPrefix = 'WMS_PULL_TEST';
 
 /** What each kind of key may call. */
 const ROLE_FUNCTIONS_ = {
   floor: ['loadBoardState', 'saveBoardState', 'logScanEvents', 'listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
-    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData'],
+    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
+    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers'],
   cs: ['listOrders', 'upsertOrders', 'setOrderStatus', 'orderProgress', 'intakeStatus',
-    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData'],
+    'listImportTemplates', 'saveImportTemplate', 'deleteImportTemplate', 'reportData',
+    'wmsPullGetConfig', 'wmsPullSaveConfig', 'wmsPullFetch', 'wmsFillPickers'],
   api: ['listOrders', 'upsertOrders']
 };
 let ACTIVE_WH_ = WAREHOUSES_.ONT; // set per request by api(); each request runs on its own
@@ -154,6 +160,10 @@ function runRequest_(req, role) {
     case 'logScanEvents': return logScanEvents_(args[0]);
     case 'listOrders': return listOrders_(args[0]);
     case 'upsertOrders': return upsertOrders_(args[0], args[1], role);
+    case 'wmsPullGetConfig': return wmsPullGetConfig_();
+    case 'wmsPullSaveConfig': return wmsPullSaveConfig_(args[0], args[1], args[2]);
+    case 'wmsPullFetch': return wmsPullFetch_(args[0]);
+    case 'wmsFillPickers': return wmsFillPickers_(args[0]);
     case 'setOrderStatus': return setOrderStatus_(args[0], args[1], args[2]);
     case 'orderProgress': return orderProgress_();
     case 'intakeStatus': return intakeStatus_(role);
@@ -482,8 +492,10 @@ function upsertOrders_(orders, options, role) {
   if (list.length === 0) return { ok: true, inserted: 0, updated: 0, skipped: 0, errors: [] };
   if (list.length > ORDERS_MAX_BATCH_) return { ok: false, error: 'Send at most ' + ORDERS_MAX_BATCH_ + ' orders per request' };
   const opts = options || {};
-  const mode = opts.mode === 'insertOnly' ? 'insertOnly' : 'upsert';
-  const source = String(opts.source || (role === 'api' ? 'WMS API' : 'Manual')).slice(0, 40);
+  // Orders pulled from the WMS only ever ADD new orders: existing orders are never changed
+  const fromWmsPull = Boolean(opts.wmsPull);
+  const mode = fromWmsPull || opts.mode === 'insertOnly' ? 'insertOnly' : 'upsert';
+  const source = String(fromWmsPull ? 'WMS pull' : (opts.source || (role === 'api' ? 'WMS API' : 'Manual'))).slice(0, 40);
   // People must say who they are (for the reports); the WMS connection may leave it blank
   const batchUser = String(opts.enteredBy == null ? '' : opts.enteredBy).trim().slice(0, 80);
   if (role !== 'api' && !batchUser && list.some(o => !String((o && o.enteredBy) || '').trim())) {
@@ -494,6 +506,7 @@ function upsertOrders_(orders, options, role) {
   if (!lock.tryLock(20000)) return { ok: false, error: 'Busy — try again' };
   try {
     const sheet = getOrdersSheet_();
+    if (fromWmsPull) backupOrdersSheet_(sheet);
     const rows = readOrderRows_(sheet);
     const index = {};
     rows.forEach((r, i) => { const k = normalizeOrderNumber_(r[0]); if (k) index[k] = i; });
@@ -980,3 +993,371 @@ function reportData_(options) {
     return { ok: false, error: String(err) };
   }
 }
+
+
+// =====================================================================================
+// WMS pull connector: Apps Script fetches orders from the WMS API (the browser can't, and
+// this keeps the key off the page). Settings are kept in Script Properties; the key /
+// password is write-only (never sent back). Pulled orders go through the portal's import
+// matching and are imported "add new only": orders already in Order Intake are never changed.
+// =====================================================================================
+const WMS_PULL_MAX_RECORDS_ = 5000;
+const WMS_PULL_MAX_PAGES_ = 50;
+const WMS_PULL_KEEP_BACKUPS_ = 3;
+const WMS_PULL_FIELDS_ = ['name', 'url', 'method', 'body', 'auth', 'headerName', 'username', 'queryName', 'tokenUrl', 'clientId', 'scope',
+  'extraHeaders', 'listPath', 'paging', 'pageParam', 'sizeParam', 'pageSize', 'firstPage', 'maxPages', 'lookbackDays', 'skipField', 'skipValues',
+  // Picker from pick tasks (same sign-in): task list address + body, and the fields that link them
+  'taskUrl', 'taskBody', 'taskPageSize', 'taskType', 'taskGroupField', 'groupField', 'pickerField', 'pickerIdField', 'orderKeyField'];
+
+function wmsPullProps_() {
+  const props = PropertiesService.getScriptProperties();
+  const prefix = ACTIVE_WH_.wmsPullPrefix || 'WMS_PULL';
+  return { props: props, config: prefix + '_CONFIG', secret: prefix + '_SECRET', last: prefix + '_LAST', token: prefix + '_TOKEN' };
+}
+
+function readWmsPullConfig_() {
+  const p = wmsPullProps_();
+  let cfg = {};
+  try { cfg = JSON.parse(p.props.getProperty(p.config) || '{}') || {}; } catch (e) { cfg = {}; }
+  return cfg;
+}
+
+function wmsPullGetConfig_() {
+  const p = wmsPullProps_();
+  return {
+    ok: true,
+    config: readWmsPullConfig_(),
+    hasSecret: Boolean(p.props.getProperty(p.secret)),
+    lastPullAt: p.props.getProperty(p.last) || ''
+  };
+}
+
+/** Saves the settings. secret: a new key / password (blank = keep the saved one); options.clearSecret removes it. */
+function wmsPullSaveConfig_(config, secret, options) {
+  const c = config || {};
+  const clean = {};
+  WMS_PULL_FIELDS_.forEach(k => { if (c[k] != null && c[k] !== '') clean[k] = String(c[k]).slice(0, k === 'body' || k === 'extraHeaders' ? 4000 : 500); });
+  if (clean.url && !/^https:\/\//i.test(clean.url)) return { ok: false, error: 'The API address must start with https://' };
+  if (clean.tokenUrl && !/^https:\/\//i.test(clean.tokenUrl)) return { ok: false, error: 'The token address must start with https://' };
+  const p = wmsPullProps_();
+  p.props.setProperty(p.config, JSON.stringify(clean));
+  const sec = secret == null ? '' : String(secret);
+  if (options && options.clearSecret) p.props.deleteProperty(p.secret);
+  else if (sec.trim()) p.props.setProperty(p.secret, sec.trim());
+  try { p.props.deleteProperty(p.token); } catch (e) { /* no cached token */ }
+  return wmsPullGetConfig_();
+}
+
+/** {{from}} {{to}} (yyyy-MM-dd), {{fromIso}} {{toIso}} {{now}} in the URL / body: from = lookbackDays ago. */
+function wmsPullFill_(text, cfg) {
+  const days = Math.max(0, Math.min(365, Number(cfg.lookbackDays) || 7));
+  const now = new Date();
+  const from = new Date(now.getTime() - days * 86400000);
+  const ymd = d => d.toISOString().slice(0, 10);
+  return String(text || '')
+    .replace(/\{\{from\}\}/g, ymd(from)).replace(/\{\{to\}\}/g, ymd(now))
+    .replace(/\{\{fromIso\}\}/g, from.toISOString()).replace(/\{\{toIso\}\}/g, now.toISOString())
+    .replace(/\{\{now\}\}/g, now.toISOString());
+}
+
+function wmsPullHeaders_(cfg, secret) {
+  const headers = { Accept: 'application/json' };
+  String(cfg.extraHeaders || '').split(/\r?\n/).forEach(line => {
+    const i = line.indexOf(':');
+    if (i > 0) headers[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  });
+  const auth = cfg.auth || 'none';
+  if (auth === 'header') headers[cfg.headerName || 'X-API-Key'] = secret;
+  else if (auth === 'bearer') headers.Authorization = 'Bearer ' + secret;
+  else if (auth === 'basic') headers.Authorization = 'Basic ' + Utilities.base64Encode(String(cfg.username || '') + ':' + secret);
+  else if (auth === 'oauth2') headers.Authorization = 'Bearer ' + wmsPullOAuthToken_(cfg, secret);
+  return headers;
+}
+
+/** OAuth2 client credentials: client id + secret → access token (kept until it expires). */
+function wmsPullOAuthToken_(cfg, secret) {
+  const p = wmsPullProps_();
+  try {
+    const saved = JSON.parse(p.props.getProperty(p.token) || 'null');
+    if (saved && saved.token && saved.expires > Date.now() + 60000) return saved.token;
+  } catch (e) { /* fetch a new one */ }
+  if (!cfg.tokenUrl) throw new Error('Enter the token address for OAuth2');
+  const resp = UrlFetchApp.fetch(cfg.tokenUrl, {
+    method: 'post',
+    contentType: 'application/x-www-form-urlencoded',
+    payload: 'grant_type=client_credentials' + (cfg.scope ? '&scope=' + encodeURIComponent(cfg.scope) : ''),
+    headers: { Authorization: 'Basic ' + Utilities.base64Encode(String(cfg.clientId || '') + ':' + secret), Accept: 'application/json' },
+    muteHttpExceptions: true
+  });
+  const code = resp.getResponseCode();
+  if (code >= 400) throw new Error('The token request was refused (HTTP ' + code + '). Check the client ID and secret.');
+  let data;
+  try { data = JSON.parse(resp.getContentText()); } catch (e) { throw new Error('The token address did not answer with JSON'); }
+  const token = data.access_token || data.accessToken || data.token;
+  if (!token) throw new Error('No access token in the token answer');
+  p.props.setProperty(p.token, JSON.stringify({ token: token, expires: Date.now() + (Number(data.expires_in) || 3000) * 1000 }));
+  return token;
+}
+
+/** The array of orders inside the answer: listPath ("data.orders"), or the answer itself, or its first list. */
+function wmsPullList_(data, listPath) {
+  let node = data;
+  if (listPath) {
+    String(listPath).split('.').filter(Boolean).forEach(k => { node = node == null ? null : node[k]; });
+    if (!Array.isArray(node)) throw new Error('Nothing is a list at "' + listPath + '" in the WMS answer');
+    return node;
+  }
+  if (Array.isArray(node)) return node;
+  const find = (o, depth) => {
+    if (!o || typeof o !== 'object' || depth > 2) return null;
+    for (const k of Object.keys(o)) if (Array.isArray(o[k]) && o[k].some(x => x && typeof x === 'object')) return o[k];
+    for (const k of Object.keys(o)) { const f = find(o[k], depth + 1); if (f) return f; }
+    return null;
+  };
+  const found = find(node, 0);
+  if (!found) throw new Error('No list of orders found in the WMS answer — enter where the orders are (e.g. data.orders)');
+  return found;
+}
+
+/** One WMS record → flat columns: "shipTo.city", "lines[].qty (total)", "lines[0].sku"; lists of values are joined. */
+function wmsPullFlatten_(rec) {
+  const out = {};
+  const put = (k, v) => { if (Object.keys(out).length < 300) out[k] = v; };
+  const walk = (v, key, depth) => {
+    if (v == null) { if (key) put(key, ''); return; }
+    if (Array.isArray(v)) {
+      if (!v.some(x => x && typeof x === 'object')) { put(key, v.join(', ')); return; }
+      put(key + '[] (count)', v.length);
+      const objs = v.filter(x => x && typeof x === 'object' && !Array.isArray(x));
+      const keys = {};
+      objs.forEach(o => Object.keys(o).forEach(k => { keys[k] = true; }));
+      Object.keys(keys).forEach(k => {
+        const nums = objs.map(o => o[k]).filter(x => typeof x === 'number' || (typeof x === 'string' && x.trim() !== '' && !isNaN(Number(x))));
+        if (nums.length) put(key + '[].' + k + ' (total)', nums.reduce((a, b) => a + Number(b), 0));
+        if (depth < 3 && objs[0] && objs[0][k] != null && typeof objs[0][k] !== 'object') put(key + '[0].' + k, objs[0][k]);
+      });
+      return;
+    }
+    if (typeof v === 'object') {
+      if (depth >= 3) { put(key, JSON.stringify(v).slice(0, 200)); return; }
+      Object.keys(v).forEach(k => walk(v[k], key ? key + '.' + k : k, depth + 1));
+      return;
+    }
+    put(key, v);
+  };
+  walk(rec, '', 0);
+  return out;
+}
+
+function wmsPullRequest_(url, cfg, secret, bodyText) {
+  const method = String(cfg.method || 'GET').toLowerCase() === 'post' ? 'post' : 'get';
+  let fullUrl = url;
+  if (cfg.auth === 'query') fullUrl += (fullUrl.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(cfg.queryName || 'api_key') + '=' + encodeURIComponent(secret);
+  const opt = { method: method, headers: wmsPullHeaders_(cfg, secret), muteHttpExceptions: true, followRedirects: true };
+  if (method === 'post' && (bodyText || cfg.body)) { opt.payload = bodyText || wmsPullFill_(cfg.body, cfg); opt.contentType = 'application/json'; }
+  const resp = UrlFetchApp.fetch(fullUrl, opt);
+  const code = resp.getResponseCode();
+  const text = resp.getContentText();
+  if (code === 401 || code === 403) throw new Error('The WMS refused the sign-in (HTTP ' + code + '). Check the key / password and the sign-in type.');
+  if (code >= 400) throw new Error('The WMS answered HTTP ' + code + ': ' + String(text || '').replace(/\s+/g, ' ').slice(0, 200));
+  try { return JSON.parse(text); } catch (e) { throw new Error('The WMS did not answer with JSON: ' + String(text || '').replace(/\s+/g, ' ').slice(0, 120)); }
+}
+
+/**
+ * Reads orders from the WMS (read-only — nothing is saved here). options.test = first page only.
+ * Returns flat records for the portal's import matching.
+ */
+function wmsPullFetch_(options) {
+  const opts = options || {};
+  const cfg = readWmsPullConfig_();
+  if (!cfg.url) return { ok: false, error: 'Enter and save the WMS API address first' };
+  const p = wmsPullProps_();
+  const secret = p.props.getProperty(p.secret) || '';
+  if ((cfg.auth || 'none') !== 'none' && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
+  try {
+    const got = wmsPullRecords_(cfg, secret, opts);
+    const pick = cfg.taskUrl ? wmsAddPickers_(cfg, secret, got.records) : null;
+    const keys = [];
+    const seen = {};
+    got.records.forEach(r => Object.keys(r).forEach(k => { if (!seen[k]) { seen[k] = true; keys.push(k); } }));
+    if (!opts.test) p.props.setProperty(p.last, new Date().toISOString());
+    return Object.assign({ ok: true, keys: keys, pickers: pick }, got);
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+/** Reads the outbound records (all pages); options.test = first page; options.noSkip = keep the leave-out records too. */
+function wmsPullRecords_(cfg, secret, opts) {
+    const base = wmsPullFill_(cfg.url, cfg);
+    const paging = cfg.paging || 'none';
+    const size = Math.max(1, Math.min(1000, Number(cfg.pageSize) || 100));
+    const maxPages = opts.test ? 1 : Math.max(1, Math.min(WMS_PULL_MAX_PAGES_, Number(cfg.maxPages) || 10));
+    const first = cfg.firstPage === '0' || cfg.firstPage === 0 ? 0 : 1;
+    const records = [];
+    const seenRec = {};
+    let pages = 0, more = false, skippedByRule = 0;
+    // Records to leave out, e.g. outbound_status = SHIPPED, CANCELLED
+    const skipField = opts.noSkip ? '' : String(cfg.skipField || '').trim();
+    const skipValues = String(cfg.skipValues || '').split(',').map(v => v.trim().toUpperCase()).filter(Boolean);
+    let bodyObj = null;
+    if (paging === 'rows') {
+      try { bodyObj = JSON.parse(wmsPullFill_(cfg.body || '{}', cfg)); } catch (e) { throw new Error('The request body is not valid JSON'); }
+    }
+    for (let i = 0; i < maxPages; i++) {
+      let url = base;
+      let bodyText = null;
+      if (paging === 'rows') {
+        // AG Grid style: startRow / endRow in the POST body
+        bodyObj.startRow = i * size;
+        bodyObj.endRow = (i + 1) * size;
+        bodyText = JSON.stringify(bodyObj);
+      } else if (paging !== 'none') {
+        const add = (k, v) => { url += (url.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(k) + '=' + encodeURIComponent(v); };
+        if (paging === 'page') add(cfg.pageParam || 'page', first + i);
+        else add(cfg.pageParam || 'offset', i * size);
+        if (cfg.sizeParam) add(cfg.sizeParam, size);
+      }
+      const list = wmsPullList_(wmsPullRequest_(url, cfg, secret, bodyText), cfg.listPath);
+      pages++;
+      let fresh = 0;
+      list.forEach(r => {
+        const sig = JSON.stringify(r);
+        if (seenRec[sig]) return;          // a WMS that ignores paging sends the same rows again
+        seenRec[sig] = true;
+        fresh++;
+        const flat = r && typeof r === 'object' ? wmsPullFlatten_(r) : { value: r };
+        if (skipField && skipValues.indexOf(String(flat[skipField] == null ? '' : flat[skipField]).trim().toUpperCase()) !== -1) { skippedByRule++; return; }
+        if (records.length < WMS_PULL_MAX_RECORDS_) records.push(flat);
+      });
+      // 'rows' paging: the WMS gives no total, so keep going until a page is empty (or repeats)
+      if (paging === 'none' || list.length === 0 || fresh === 0 || (paging !== 'rows' && list.length < size) || records.length >= WMS_PULL_MAX_RECORDS_) break;
+      if (i === maxPages - 1) more = true;
+    }
+    return { records: records, pages: pages, skippedByRule: skippedByRule, truncated: records.length >= WMS_PULL_MAX_RECORDS_, morePages: more };
+}
+
+/**
+ * Picking tasks → picker per pick list. Returns { byGroup: { group_no: { picker, pickerId, status, taskId } | { conflict: n } }, tasks }.
+ * Only tasks of taskType (PICKING). Two tasks on one pick list = a data problem: no picker is chosen for it.
+ */
+function wmsPickTasks_(cfg, secret) {
+  const size = Math.max(1, Math.min(50000, Number(cfg.taskPageSize) || 50000));
+  const type = String(cfg.taskType || 'PICKING').toUpperCase();
+  const gField = cfg.taskGroupField || 'group_no', pField = cfg.pickerField || 'assigned_to', idField = cfg.pickerIdField || 'assigned_to_id';
+  let body;
+  try { body = JSON.parse(wmsPullFill_(cfg.taskBody || '{}', cfg)); } catch (e) { throw new Error('The task request body is not valid JSON'); }
+  const taskCfg = Object.assign({}, cfg, { method: 'POST', listPath: '' });
+  const byGroup = {};
+  let total = 0;
+  for (let i = 0; i < 20; i++) {
+    body.startRow = i * size;
+    body.endRow = (i + 1) * size;
+    const list = wmsPullList_(wmsPullRequest_(cfg.taskUrl, taskCfg, secret, JSON.stringify(body)), '');
+    list.forEach(t => {
+      if (!t || String(t.type || '').toUpperCase() !== type) return;   // only picking tasks
+      total++;
+      const g = String(t[gField] == null ? '' : t[gField]).trim();
+      if (!g) return;
+      const cur = byGroup[g];
+      if (cur) { byGroup[g] = { conflict: (cur.conflict || 1) + 1 }; return; }
+      byGroup[g] = { picker: t[pField] == null ? '' : String(t[pField]).trim(), pickerId: t[idField] == null ? '' : String(t[idField]), status: t.status || '', taskId: t.task_id == null ? '' : String(t.task_id) };
+    });
+    if (list.length < size) break;   // a full page means there may be more
+  }
+  return { byGroup: byGroup, tasks: total };
+}
+
+/** Adds picker_id / picker_name / picking_task_id / picking_task_status (+ picker_exception) to each outbound record
+ *  by pick list (pickinglist_no_byproduct = group_no). The original fields are kept as they are. */
+function wmsAddPickers_(cfg, secret, records) {
+  const t = wmsPickTasks_(cfg, secret);
+  const gField = cfg.groupField || 'pickinglist_no_byproduct';
+  const out = { tasks: t.tasks, matched: 0, noTask: 0, noPicker: 0, conflicts: 0 };
+  records.forEach(r => {
+    const g = String(r[gField] == null ? '' : r[gField]).trim();
+    const task = g ? t.byGroup[g] : null;
+    // Field names from the "Outbound & Picker Data Integration Rules"; empty when there is no single matching task
+    r.picker_id = ''; r.picker_name = ''; r.picking_task_id = ''; r.picking_task_status = ''; r.picker_exception = '';
+    if (!task) { out.noTask++; return; }
+    if (task.conflict) { out.conflicts++; r.picker_exception = task.conflict + ' PICKING tasks share pick list ' + g + ' — none was chosen'; return; }
+    r.picker_name = task.picker; r.picker_id = task.pickerId; r.picking_task_status = task.status; r.picking_task_id = task.taskId;
+    if (task.picker) out.matched++; else out.noPicker++;
+  });
+  return out;
+}
+
+/**
+ * Fills the Picker on orders already in Order Intake — ONLY where Picker is blank, and nothing else.
+ * options.apply = false → just lists what would be filled. Picks come from the WMS: order (orderKeyField,
+ * e.g. outbound_no) → pick list → its one picking task's assigned_to.
+ */
+function wmsFillPickers_(options) {
+  const opts = options || {};
+  const cfg = readWmsPullConfig_();
+  if (!cfg.url || !cfg.taskUrl) return { ok: false, error: 'Enter and save the WMS API and the task API addresses first' };
+  const p = wmsPullProps_();
+  const secret = p.props.getProperty(p.secret) || '';
+  if ((cfg.auth || 'none') !== 'none' && !secret) return { ok: false, error: 'Enter and save the API key / password first' };
+  let got, stats;
+  try {
+    got = wmsPullRecords_(cfg, secret, { noSkip: true });
+    stats = wmsAddPickers_(cfg, secret, got.records);
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+  const keyField = cfg.orderKeyField || 'outbound_no';
+  const pickerByOrder = {};
+  got.records.forEach(r => {
+    const k = normalizeOrderNumber_(r[keyField]);
+    if (k && r.picker_name) pickerByOrder[k] = String(r.picker_name).slice(0, 80);
+  });
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { ok: false, error: 'Busy — try again' };
+  try {
+    const sheet = getOrdersSheet_();
+    const rows = readOrderRows_(sheet);
+    const col = {};
+    ORDER_FIELDS_.forEach((f, i) => { col[f.key] = i; });
+    const fills = [];
+    let alreadySet = 0, notFound = 0;
+    rows.forEach((r, i) => {
+      const ord = normalizeOrderNumber_(r[col.orderNumber]);
+      if (!ord) return;
+      const picker = pickerByOrder[ord];
+      if (!picker) { notFound++; return; }
+      if (String(r[col.picker] || '').trim()) { alreadySet++; return; }   // never overwrite a picker
+      fills.push({ row: i, orderNumber: ord, picker: picker });
+    });
+    if (opts.apply && fills.length) {
+      if (typeof sheet.getRange === 'function') {
+        fills.forEach(f => sheet.getRange(f.row + 2, col.picker + 1).setValue(f.picker));   // only the Picker cell
+        SpreadsheetApp.flush();
+      }
+    }
+    return {
+      ok: true, applied: Boolean(opts.apply), fills: fills.map(f => ({ orderNumber: f.orderNumber, picker: f.picker })),
+      alreadySet: alreadySet, notFound: notFound, wmsRecords: got.records.length, pickers: stats
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Before a WMS pull adds orders: copy of the Orders tab ("Orders backup 2026-11-27 14:50"); the newest 3 are kept. */
+function backupOrdersSheet_(sheet) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!sheet || typeof sheet.copyTo !== 'function' || typeof ss.getSheets !== 'function') return;
+    const base = ACTIVE_WH_.ordersSheet + ' backup ';
+    const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone ? Session.getScriptTimeZone() : 'America/Los_Angeles', 'yyyy-MM-dd HH:mm:ss');
+    const copy = sheet.copyTo(ss);
+    copy.setName(base + stamp);
+    const old = ss.getSheets().filter(s => s.getName().indexOf(base) === 0).sort((a, b) => (a.getName() < b.getName() ? 1 : -1));
+    old.slice(WMS_PULL_KEEP_BACKUPS_).forEach(s => ss.deleteSheet(s));
+  } catch (e) {
+    // A failed backup never blocks the import (it only adds rows), but say so in the log
+    console.warn('Orders backup before WMS pull failed: ' + e);
+  }
+}
+

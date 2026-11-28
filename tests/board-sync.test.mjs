@@ -213,7 +213,7 @@ test('scan log: nothing is queued in Local Mode', () => {
     assert.equal(run('scanLogQueue.length'), 0);
 });
 
-function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null, extraProps = {} } = {}) {
+function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null, extraProps = {}, fetch = null } = {}) {
     const code = readFileSync(new URL('../Code.gs', import.meta.url), 'utf8');
     const sheets = new Map();
     const makeSheet = () => {
@@ -266,9 +266,19 @@ function loadCodeGs({ accessCode = 'secret-1', chinoCode = null, testMode = null
         Session: { getActiveUser: () => ({ getEmail: () => 'lead@example.com' }) },
         PropertiesService: {
             getScriptProperties: () => ({
-                getProperty: k => (k in extraProps ? extraProps[k] : k === 'ACCESS_CODE' ? accessCode : k === 'ACCESS_CODE_CHINO' ? chinoCode : k === 'TEST_MODE' ? testMode : null)
+                getProperty: k => (k in extraProps ? extraProps[k] : k === 'ACCESS_CODE' ? accessCode : k === 'ACCESS_CODE_CHINO' ? chinoCode : k === 'TEST_MODE' ? testMode : null),
+                setProperty: (k, v) => { extraProps[k] = String(v); },
+                deleteProperty: k => { delete extraProps[k]; }
             })
         },
+        // fetch(url, options) → { code, body } (a fake WMS for the pull connector)
+        UrlFetchApp: {
+            fetch: (url, o) => {
+                const r = fetch ? fetch(url, o || {}) : { code: 500, body: 'no fake WMS' };
+                return { getResponseCode: () => r.code, getContentText: () => (typeof r.body === 'string' ? r.body : JSON.stringify(r.body)) };
+            }
+        },
+        Utilities: { base64Encode: t => Buffer.from(String(t)).toString('base64'), formatDate: d => new Date(d).toISOString() },
         ContentService: {
             MimeType: { JSON: 'json' },
             createTextOutput: text => ({ text, setMimeType() { return this; } })
@@ -1017,3 +1027,221 @@ test('orders: progress counts staged, at dock and shipped pallets per order from
     assert.deepEqual(p.DN9, { staged: 2, atDock: 1, docks: ['DOCK-03'], lanes: ['S51', 'S52'], shipped: 1, firstStagedAt: 50, lastShippedAt: 500 });
     assert.equal(p.DN8.staged, 1);
 });
+
+// ---------------------------------------------------------------------------------------------
+// WMS pull connector
+// ---------------------------------------------------------------------------------------------
+function wmsGs(fetch) {
+    const props = { CS_CODE: 'cs-1', WMS_API_KEY: 'wms-key-1' };
+    const gs = loadCodeGs({ extraProps: props, fetch });
+    const call = (fn, args, key = 'cs-1') => JSON.parse(JSON.stringify(gs.ctx.api({ fn, key, args })));
+    return { ...gs, props, call };
+}
+
+test('WMS pull: settings saved, key is write-only and never returned', () => {
+    const { call, props } = wmsGs();
+    assert.match(call('wmsPullSaveConfig', [{ url: 'http://wms.example.com/orders' }, 'k']).error, /https/);
+    const saved = call('wmsPullSaveConfig', [{ name: 'Acme WMS', url: 'https://wms.example.com/orders', auth: 'header', headerName: 'X-Key' }, 'super-secret']);
+    assert.equal(saved.ok, true);
+    assert.equal(saved.hasSecret, true);
+    assert.equal(JSON.stringify(saved).includes('super-secret'), false, 'the key is never sent back');
+    assert.equal(props.WMS_PULL_SECRET, 'super-secret');
+    // Saving again with a blank key keeps the saved one
+    call('wmsPullSaveConfig', [{ name: 'Acme WMS 2', url: 'https://wms.example.com/orders', auth: 'header' }, '']);
+    assert.equal(props.WMS_PULL_SECRET, 'super-secret');
+    assert.equal(call('wmsPullGetConfig', []).config.name, 'Acme WMS 2');
+    assert.equal(call('wmsPullSaveConfig', [{ url: 'https://wms.example.com/orders' }, '', { clearSecret: true }]).hasSecret, false);
+    // The WMS push key can't read or change the pull settings
+    assert.equal(call('wmsPullGetConfig', [], 'wms-key-1').ok, false);
+});
+
+test('WMS pull: fetches every page with the key, flattens records, saves nothing', () => {
+    const seen = [];
+    const pages = { 1: [{ orderNo: 'W-1', customer: { name: 'Acme' }, lines: [{ sku: 'A', qty: 5 }, { sku: 'B', qty: 7 }], tags: ['rush', 'ltl'] },
+                        { orderNo: 'W-2', customer: { name: 'Globex' }, lines: [] }],
+                    2: [{ orderNo: 'W-3', customer: { name: 'Initech' } }] };
+    const { call, sheets } = wmsGs((url, o) => {
+        seen.push({ url, headers: o.headers });
+        const page = Number(/[?&]page=(\d+)/.exec(url)[1]);
+        return { code: 200, body: { data: { orders: pages[page] || [] } } };
+    });
+    call('wmsPullSaveConfig', [{ url: 'https://wms.example.com/orders?since={{from}}', auth: 'bearer', listPath: 'data.orders',
+        paging: 'page', pageParam: 'page', sizeParam: 'limit', pageSize: '2', lookbackDays: '3' }, 'tok-1']);
+    const r = call('wmsPullFetch', [{}]);
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(r.records.map(x => x.orderNo), ['W-1', 'W-2', 'W-3']);
+    assert.equal(r.pages, 2, 'stops at the short page');
+    assert.equal(seen[0].headers.Authorization, 'Bearer tok-1');
+    assert.match(seen[0].url, /since=\d{4}-\d{2}-\d{2}&page=1&limit=2$/);
+    const w1 = r.records[0];
+    assert.equal(w1['customer.name'], 'Acme');
+    assert.equal(w1['lines[].qty (total)'], 12);
+    assert.equal(w1['lines[] (count)'], 2);
+    assert.equal(w1['lines[0].sku'], 'A');
+    assert.equal(w1.tags, 'rush, ltl');
+    assert.ok(r.keys.includes('customer.name'));
+    assert.equal(sheets.get('Orders'), undefined, 'reading the WMS writes nothing to Orders');
+    // test = first page only
+    assert.equal(call('wmsPullFetch', [{ test: true }]).records.length, 2);
+});
+
+test('WMS pull: basic, query and OAuth2 sign-in; clear errors', () => {
+    let last;
+    const { call } = wmsGs((url, o) => {
+        last = { url, headers: o.headers, payload: o.payload };
+        if (url.includes('/token')) return { code: 200, body: { access_token: 'oauth-xyz', expires_in: 3600 } };
+        if (url.includes('/denied')) return { code: 401, body: 'nope' };
+        if (url.includes('/html')) return { code: 200, body: '<html>login</html>' };
+        return { code: 200, body: [{ id: 1 }] };
+    });
+    call('wmsPullSaveConfig', [{ url: 'https://w.example.com/o', auth: 'basic', username: 'svc' }, 'pw']);
+    call('wmsPullFetch', [{ test: true }]);
+    assert.equal(last.headers.Authorization, 'Basic ' + Buffer.from('svc:pw').toString('base64'));
+    call('wmsPullSaveConfig', [{ url: 'https://w.example.com/o?x=1', auth: 'query', queryName: 'apikey' }, 'qk']);
+    call('wmsPullFetch', [{ test: true }]);
+    assert.equal(last.url, 'https://w.example.com/o?x=1&apikey=qk');
+    call('wmsPullSaveConfig', [{ url: 'https://w.example.com/o', auth: 'oauth2', tokenUrl: 'https://w.example.com/token', clientId: 'cid' }, 'csecret']);
+    assert.equal(call('wmsPullFetch', [{ test: true }]).ok, true);
+    assert.equal(last.headers.Authorization, 'Bearer oauth-xyz');
+    call('wmsPullSaveConfig', [{ url: 'https://w.example.com/denied', auth: 'bearer' }, 't']);
+    assert.match(call('wmsPullFetch', [{}]).error, /refused the sign-in \(HTTP 401\)/);
+    call('wmsPullSaveConfig', [{ url: 'https://w.example.com/html', auth: 'bearer' }]);
+    assert.match(call('wmsPullFetch', [{}]).error, /did not answer with JSON/);
+});
+
+test('WMS pull import: only adds new orders — existing orders are never changed, even if asked to update', () => {
+    const { call, sheets } = wmsGs();
+    call('upsertOrders', [[{ orderNumber: 'DN-1', customer: 'Acme', pallets: 4, carrier: 'Saia', enteredBy: 'Amy' }]]);
+    const before = JSON.stringify(sheets.get('Orders').rows[1]);
+    const r = call('upsertOrders', [[
+        { orderNumber: 'DN-1', customer: 'CHANGED', pallets: 99, carrier: 'UPS' },
+        { orderNumber: 'DN-2', customer: 'Globex', pallets: 2 }
+    ], { wmsPull: true, mode: 'upsert', enteredBy: 'Bo' }]);
+    assert.equal(r.ok, true);
+    assert.equal(r.inserted, 1);
+    assert.equal(r.updated, 0);
+    assert.equal(r.skipped, 1);
+    const rows = sheets.get('Orders').rows;
+    assert.equal(JSON.stringify(rows[1]), before, 'DN-1 row untouched');
+    const dn2 = call('listOrders', []).orders.find(o => o.orderNumber === 'DN-2');
+    assert.equal(dn2.source, 'WMS pull');
+    assert.equal(dn2.createdBy, 'Bo');
+});
+
+test('WMS pull: ONUS style — POST body startRow/endRow, plain-array answer, SHIPPED left out, stops on an empty or repeated page', () => {
+    const rows = Array.from({ length: 5 }, (_, i) => ({ outbound_no: 'DN' + i, owner_name: 'Etekcity Corp', outbound_status: i === 1 ? 'SHIPPED' : 'ALLOCATED', ttl_pallet: i + 1, po_no: null }));
+    const bodies = [];
+    const { call } = wmsGs((url, o) => {
+        const b = JSON.parse(o.payload);
+        bodies.push(b);
+        assert.equal(o.method, 'post');
+        assert.equal(o.headers.Authorization, 'Bearer tkn');
+        return { code: 200, body: rows.slice(b.startRow, b.endRow) };
+    });
+    call('wmsPullSaveConfig', [{ url: 'https://prd.example.com:18890/api/outbound/query', method: 'POST', auth: 'bearer', paging: 'rows', pageSize: '2',
+        body: JSON.stringify({ startRow: 0, endRow: 100, filterModel: {}, sortModel: [] }), skipField: 'outbound_status', skipValues: 'SHIPPED, CANCELLED' }, 'tkn']);
+    const r = call('wmsPullFetch', [{}]);
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(r.records.map(x => x.outbound_no), ['DN0', 'DN2', 'DN3', 'DN4'], 'SHIPPED DN1 left out');
+    assert.equal(r.skippedByRule, 1);
+    assert.deepEqual(bodies.map(b => [b.startRow, b.endRow]), [[0, 2], [2, 4], [4, 6], [6, 8]], 'keeps paging past a short page until an empty one');
+    assert.deepEqual(bodies[0].filterModel, {}, 'the rest of the body is sent as entered');
+    assert.equal(r.records[0].po_no, '', 'null fields are kept as blanks');
+
+    // A WMS that ignores startRow/endRow returns the same rows each time → stop after one repeat
+    let n = 0;
+    const g2 = wmsGs(() => { n++; return { code: 200, body: rows.slice(0, 2) }; });
+    g2.call('wmsPullSaveConfig', [{ url: 'https://x.example.com/q', method: 'POST', auth: 'bearer', paging: 'rows', pageSize: '2', body: '{}' }, 't']);
+    assert.equal(g2.call('wmsPullFetch', [{}]).records.length, 2);
+    assert.equal(n, 2, 'stopped when the page repeated');
+});
+
+function onusFake(outbound, tasks, calls = []) {
+    return (url, o) => {
+        const b = JSON.parse(o.payload || '{}');
+        calls.push({ url, b });
+        if (url.includes('/task/')) return { code: 200, body: tasks.slice(b.startRow, b.endRow) };
+        return { code: 200, body: outbound.slice(b.startRow, b.endRow) };
+    };
+}
+const ONUS_CFG = {
+    url: 'https://wms.example.com/api/outbound/query', method: 'POST', auth: 'bearer', paging: 'rows', pageSize: '100',
+    body: '{"startRow":0,"endRow":100,"filterModel":{}}', skipField: 'outbound_status', skipValues: 'SHIPPED',
+    taskUrl: 'https://wms.example.com/api/task/query/for/outbound', taskPageSize: '50000', taskType: 'PICKING',
+    taskBody: '{"startRow":0,"endRow":50000,"filterModel":{"type":{"values":["PICKING"],"filterType":"set"}}}',
+    groupField: 'pickinglist_no_byproduct', taskGroupField: 'group_no', pickerField: 'assigned_to', pickerIdField: 'assigned_to_id', orderKeyField: 'outbound_no'
+};
+
+test('WMS pickers: outbound pick list = task group_no; only PICKING tasks; no task / unassigned / duplicate tasks handled', () => {
+    const outbound = [
+        { outbound_no: 'DN1', pickinglist_no_byproduct: 'SPK1', outbound_status: 'ALLOCATED' },
+        { outbound_no: 'DN2', pickinglist_no_byproduct: 'SPK1', outbound_status: 'ALLOCATED' },   // same pick list → same picker
+        { outbound_no: 'DN3', pickinglist_no_byproduct: 'SPK2', outbound_status: 'ALLOCATED' },   // task not assigned yet
+        { outbound_no: 'DN4', pickinglist_no_byproduct: null, outbound_status: 'ALLOCATED' },     // not committed yet
+        { outbound_no: 'DN5', pickinglist_no_byproduct: 'SPK3', outbound_status: 'ALLOCATED' }    // two picking tasks → check
+    ];
+    const tasks = [
+        { task_id: 1, type: 'PICKING', status: 'COMPLETED', group_no: 'SPK1', assigned_to: 'Maria L', assigned_to_id: 77, assigned_by: 'Boss', created_by: 'Boss' },
+        { task_id: 2, type: 'LOADING', status: 'ASSIGNED', group_no: 'SPK2', assigned_to: 'Loader Lou' },   // not a picking task
+        { task_id: 3, type: 'PICKING', status: 'ASSIGNED', group_no: 'SPK2', assigned_to: null, assigned_by: 'Boss' },
+        { task_id: 4, type: 'PICKING', status: 'ASSIGNED', group_no: 'SPK3', assigned_to: 'A' },
+        { task_id: 5, type: 'PICKING', status: 'ASSIGNED', group_no: 'SPK3', assigned_to: 'B' }
+    ];
+    const { call } = wmsGs(onusFake(outbound, tasks));
+    call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
+    const r = call('wmsPullFetch', [{}]);
+    assert.equal(r.ok, true, r.error);
+    const by = Object.fromEntries(r.records.map(x => [x.outbound_no, x]));
+    assert.equal(by.DN1['picker_name'], 'Maria L');
+    assert.equal(by.DN1['picker_id'], '77');
+    assert.equal(by.DN2['picker_name'], 'Maria L', 'one task → many outbound records');
+    assert.equal(by.DN3['picker_name'], '', 'unassigned: no other user is used instead');
+    assert.equal(by.DN4['picker_name'], '');
+    assert.equal(by.DN5['picker_name'], '', 'two picking tasks: none is picked');
+    assert.match(by.DN5.picker_exception, /2 PICKING tasks share pick list SPK3/);
+    assert.equal(by.DN1.picking_task_id, '1');
+    assert.equal(by.DN1.picking_task_status, 'COMPLETED');
+    assert.equal(by.DN1.pickinglist_no_byproduct, 'SPK1', 'original fields kept');
+    assert.equal(by.DN4.picker_exception, '');
+    assert.deepEqual(JSON.parse(JSON.stringify(r.pickers)), { tasks: 4, matched: 2, noTask: 1, noPicker: 1, conflicts: 1 });
+});
+
+test('WMS fill pickers: fills ONLY blank Pickers, only the Picker cell; lists first, writes on apply', () => {
+    const outbound = [
+        { outbound_no: 'DN1', pickinglist_no_byproduct: 'SPK1', outbound_status: 'SHIPPED' },   // shipped orders still get their picker
+        { outbound_no: 'DN2', pickinglist_no_byproduct: 'SPK2', outbound_status: 'PICKING' },
+        { outbound_no: 'DN3', pickinglist_no_byproduct: 'SPK3', outbound_status: 'PICKING' }
+    ];
+    const tasks = [
+        { type: 'PICKING', group_no: 'SPK1', assigned_to: 'Maria L' },
+        { type: 'PICKING', group_no: 'SPK2', assigned_to: 'Jose M' },
+        { type: 'PICKING', group_no: 'SPK3', assigned_to: 'Kim' }
+    ];
+    const { call, sheets } = wmsGs(onusFake(outbound, tasks));
+    call('upsertOrders', [[
+        { orderNumber: 'DN1', customer: 'Acme', pallets: 4 },
+        { orderNumber: 'DN2', customer: 'Acme', picker: 'Typed By CS' },   // already has a picker: kept
+        { orderNumber: 'DN9', customer: 'Other' }                          // not in the WMS
+    ], { enteredBy: 'Amy' }]);
+    call('wmsPullSaveConfig', [ONUS_CFG, 'tok']);
+    const before = JSON.parse(JSON.stringify(sheets.get('Orders').rows));
+    const dry = call('wmsFillPickers', [{ apply: false }]);
+    assert.equal(dry.ok, true, dry.error);
+    assert.deepEqual(dry.fills, [{ orderNumber: 'DN1', picker: 'Maria L' }]);
+    assert.equal(dry.alreadySet, 1);
+    assert.equal(dry.notFound, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(sheets.get('Orders').rows)), before, 'listing writes nothing');
+    const done = call('wmsFillPickers', [{ apply: true }]);
+    assert.equal(done.fills.length, 1);
+    const after = sheets.get('Orders').rows;
+    const hdr = after[0];
+    const pIdx = hdr.indexOf('Picker');
+    after.forEach((row, i) => row.forEach((v, j) => {
+        if (i === 1 && j === pIdx) assert.equal(v, 'Maria L');
+        else assert.equal(JSON.stringify(v), JSON.stringify(before[i][j]), `row ${i} col ${hdr[j]} unchanged`);
+    }));
+    assert.equal(after[2][pIdx], 'Typed By CS', 'an entered picker is never overwritten');
+    // The WMS push key can't run it
+    assert.equal(call('wmsFillPickers', [{ apply: true }], 'wms-key-1').ok, false);
+});
+
